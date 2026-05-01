@@ -38,13 +38,37 @@ function createRuntimeContext(): RuntimeContext {
   };
 }
 
-function runNpx(context: RuntimeContext, packageSpec: string, cliArgs: string[]): void {
-  const npxPath =
+function resolveNpxCommand(context: RuntimeContext): { command: string; prefixArgs: string[] } {
+  // Prefer invoking npm's npx-cli.js directly via the current node executable. This avoids
+  // ENOENT when the npx shim is not on PATH or alongside the node binary, and guarantees we
+  // use the same node runtime that's executing this script.
+  const npxCliCandidates = [
+    // Unix: <prefix>/bin/node + <prefix>/lib/node_modules/npm/bin/npx-cli.js
+    join(context.nodeBinDir, "..", "lib", "node_modules", "npm", "bin", "npx-cli.js"),
+    // Windows: <prefix>/node.exe + <prefix>/node_modules/npm/bin/npx-cli.js
+    join(context.nodeBinDir, "node_modules", "npm", "bin", "npx-cli.js"),
+  ];
+  for (const candidate of npxCliCandidates) {
+    if (existsSync(candidate)) {
+      return { command: process.execPath, prefixArgs: [candidate] };
+    }
+  }
+
+  // Fall back to the npx shim alongside node.
+  const npxShim =
     process.platform === "win32"
       ? join(context.nodeBinDir, "npx.cmd")
       : join(context.nodeBinDir, "npx");
-  execFileSync(npxPath, ["--yes", packageSpec, ...cliArgs], {
-    cwd: process.env.GITHUB_WORKSPACE || context.actionRoot,
+  return { command: npxShim, prefixArgs: [] };
+}
+
+function runNpx(context: RuntimeContext, packageSpec: string, cliArgs: string[]): void {
+  const { command, prefixArgs } = resolveNpxCommand(context);
+  // Run from actionRoot rather than GITHUB_WORKSPACE so that npm's devEngines check (which
+  // reads cwd's package.json) doesn't reject the install when the workspace's package.json
+  // pins a non-npm package manager. The pullfrog CLI itself reads GITHUB_WORKSPACE from env.
+  execFileSync(command, [...prefixArgs, "--yes", packageSpec, ...cliArgs], {
+    cwd: context.actionRoot,
     stdio: "inherit",
     env: context.env,
   });
