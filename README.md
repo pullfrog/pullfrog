@@ -186,6 +186,24 @@ jobs:
           NOTES: ${{ steps.notes.outputs.result }}
 ```
 
+For longer prompts that you want to reuse, commit the prompt text to the repo and pass it with `prompt_file`. The path is resolved relative to `GITHUB_WORKSPACE`, and it is mutually exclusive with `prompt`.
+
+```yaml
+# .github/workflows/triage.yml
+- uses: pullfrog/pullfrog@v0
+  with:
+    prompt_file: .github/pullfrog/triage.md
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+# .github/workflows/weekly-cleanup.yml
+- uses: pullfrog/pullfrog@v0
+  with:
+    prompt_file: .github/pullfrog/triage.md
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
 ### Example: Structured Output with Zod Schema
 
 You can force the agent to return structured JSON output by providing a JSON schema. This allows you to reliably parse and use the agent's response in subsequent workflow steps.

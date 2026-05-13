@@ -1,4 +1,5 @@
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { isAbsolute, resolve, sep } from "node:path";
 import * as core from "@actions/core";
 import { type } from "arktype";
 import type { AuthorPermission, PayloadEvent } from "../external.ts";
@@ -46,7 +47,8 @@ function isCollaborator(event: PayloadEvent): boolean {
 // the property being absent. arktype's "prop?" means "optional to include" but
 // if included, must match the type - so we need to explicitly allow undefined.
 export const Inputs = type({
-  prompt: "string",
+  "prompt?": type.string.or("undefined"),
+  "prompt_file?": type.string.or("undefined"),
   "model?": type.string.or("undefined"),
   "timeout?": type.string.or("undefined"),
   "push?": PushPermissionInput.or("undefined"),
@@ -71,19 +73,32 @@ function resolveCwd(cwd: string | undefined): string | undefined {
 export type ResolvedPromptInput = string | typeof JsonPayload.infer;
 
 export function resolvePromptInput(): ResolvedPromptInput {
-  const prompt = core.getInput("prompt", { required: true });
+  const promptInput = core.getInput("prompt");
+  const promptFile = core.getInput("prompt_file");
+
+  if (promptInput && promptFile) {
+    throw new Error("Set exactly one of 'prompt' or 'prompt_file' inputs, not both.");
+  }
+
+  if (promptFile) {
+    return resolvePromptFile(promptFile);
+  }
+
+  if (!promptInput) {
+    throw new Error("One of 'prompt' or 'prompt_file' inputs is required.");
+  }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(prompt);
+    parsed = JSON.parse(promptInput);
   } catch {
     // JSON parse error is fine (plain text prompt)
-    return prompt;
+    return promptInput;
   }
 
   if (!parsed || typeof parsed !== "object" || !("~pullfrog" in parsed)) {
     // if it doesn't look like a pullfrog payload, return the plain text prompt
-    return prompt;
+    return promptInput;
   }
 
   // validation errors should propagate
@@ -92,8 +107,31 @@ export function resolvePromptInput(): ResolvedPromptInput {
   return jsonPayload;
 }
 
+function resolvePromptFile(input: string): string {
+  const workspace = process.env.GITHUB_WORKSPACE;
+  if (!workspace) {
+    throw new Error("prompt_file is set but GITHUB_WORKSPACE is not defined.");
+  }
+
+  const resolvedWorkspace = resolve(workspace);
+  const candidate = isAbsolute(input) ? resolve(input) : resolve(resolvedWorkspace, input);
+  if (candidate !== resolvedWorkspace && !candidate.startsWith(resolvedWorkspace + sep)) {
+    throw new Error(`prompt_file ${JSON.stringify(input)} resolves outside GITHUB_WORKSPACE.`);
+  }
+
+  try {
+    return readFileSync(candidate, "utf-8");
+  } catch (error) {
+    throw new Error(
+      `Failed to read prompt_file ${JSON.stringify(input)}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
 function resolveNonPromptInputs() {
-  return Inputs.omit("prompt").assert({
+  return Inputs.omit("prompt", "prompt_file").assert({
     model: core.getInput("model") || undefined,
     timeout: core.getInput("timeout") || undefined,
     cwd: core.getInput("cwd") || undefined,

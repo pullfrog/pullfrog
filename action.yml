@@ -5,7 +5,10 @@ author: "Pullfrog"
 inputs:
   prompt:
     description: "Prompt to send to the agent (string or JSON payload)"
-    required: true
+    required: false
+  prompt_file:
+    description: "Path to a file (relative to GITHUB_WORKSPACE) whose contents will be used as the prompt. Exactly one of `prompt` or `prompt_file` must be set."
+    required: false
   timeout:
     description: "Maximum run duration (e.g., 10m, 1h30m). Default: 1h"
     required: false
