@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
 import * as core from "@actions/core";
 import { type } from "arktype";
@@ -107,6 +107,19 @@ export function resolvePromptInput(): ResolvedPromptInput {
   return jsonPayload;
 }
 
+// matches runCli.ts:normalizePathForCompare — windows filesystems are
+// case-insensitive but `resolve()` preserves input case, so we lowercase both
+// sides before comparing.
+function normalizePathForCompare(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function isOutsideWorkspace(candidate: string, workspace: string): boolean {
+  const c = normalizePathForCompare(candidate);
+  const w = normalizePathForCompare(workspace);
+  return c !== w && !c.startsWith(w + sep);
+}
+
 function resolvePromptFile(input: string): string {
   const workspace = process.env.GITHUB_WORKSPACE;
   if (!workspace) {
@@ -115,12 +128,22 @@ function resolvePromptFile(input: string): string {
 
   const resolvedWorkspace = resolve(workspace);
   const candidate = isAbsolute(input) ? resolve(input) : resolve(resolvedWorkspace, input);
-  if (candidate !== resolvedWorkspace && !candidate.startsWith(resolvedWorkspace + sep)) {
+
+  // lexical boundary check — fires before any filesystem call so a path like
+  // "../triage.md" produces a clean "resolves outside" error instead of ENOENT.
+  if (isOutsideWorkspace(candidate, resolvedWorkspace)) {
     throw new Error(`prompt_file ${JSON.stringify(input)} resolves outside GITHUB_WORKSPACE.`);
   }
 
+  // expand symlinks and re-check. without this, a symlink committed inside the
+  // workspace pointing to e.g. /etc/passwd would pass the lexical check and
+  // get read by readFileSync. realpath both sides so macOS /var → /private/var
+  // (and similar canonicalization) does not produce a false positive.
+  let realCandidate: string;
+  let realWorkspace: string;
   try {
-    return readFileSync(candidate, "utf-8");
+    realCandidate = realpathSync(candidate);
+    realWorkspace = realpathSync(resolvedWorkspace);
   } catch (error) {
     throw new Error(
       `Failed to read prompt_file ${JSON.stringify(input)}: ${
@@ -128,6 +151,26 @@ function resolvePromptFile(input: string): string {
       }`
     );
   }
+
+  if (isOutsideWorkspace(realCandidate, realWorkspace)) {
+    throw new Error(`prompt_file ${JSON.stringify(input)} resolves outside GITHUB_WORKSPACE.`);
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(realCandidate, "utf-8");
+  } catch (error) {
+    throw new Error(
+      `Failed to read prompt_file ${JSON.stringify(input)}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  if (!content.trim()) {
+    throw new Error(`prompt_file ${JSON.stringify(input)} is empty.`);
+  }
+  return content;
 }
 
 function resolveNonPromptInputs() {

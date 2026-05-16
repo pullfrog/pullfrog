@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -121,6 +121,79 @@ describe("resolvePromptInput", () => {
 
     expect(resolvePromptInput()).toBe(prompt);
   });
+
+  it("rejects a symlink that resolves outside GITHUB_WORKSPACE", () => {
+    // workspace lives under a sibling directory; the symlink itself is inside
+    // workspace but points to an "outside" target. lexical check passes
+    // (`.github/escape.md` does not traverse out of workspace), so only the
+    // realpath check can catch the bypass.
+    const workspace = join(tempDir, "workspace");
+    const outside = join(tempDir, "outside");
+    mkdirSync(workspace, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    const outsideFile = join(outside, "secret.md");
+    writeFileSync(outsideFile, "secret\n");
+    const symlinkDir = join(workspace, ".github");
+    mkdirSync(symlinkDir, { recursive: true });
+    symlinkSync(outsideFile, join(symlinkDir, "escape.md"));
+
+    process.env.GITHUB_WORKSPACE = workspace;
+    process.env.INPUT_PROMPT_FILE = ".github/escape.md";
+
+    expect(() => resolvePromptInput()).toThrow(
+      'prompt_file ".github/escape.md" resolves outside GITHUB_WORKSPACE.'
+    );
+  });
+
+  it("allows a symlink that resolves inside GITHUB_WORKSPACE", () => {
+    // sanity check the symlink path: a symlink whose realpath stays inside
+    // the workspace should still be readable.
+    const workspace = realpathSync(tempDir);
+    const target = join(workspace, "shared", "triage.md");
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, "shared prompt\n");
+    const linkDir = join(workspace, ".github", "pullfrog");
+    mkdirSync(linkDir, { recursive: true });
+    symlinkSync(target, join(linkDir, "triage.md"));
+
+    process.env.GITHUB_WORKSPACE = workspace;
+    process.env.INPUT_PROMPT_FILE = ".github/pullfrog/triage.md";
+
+    expect(resolvePromptInput()).toBe("shared prompt\n");
+  });
+
+  it("throws when prompt_file is empty", () => {
+    process.env.GITHUB_WORKSPACE = tempDir;
+    const promptPath = join(tempDir, "empty.md");
+    writeFileSync(promptPath, "");
+    process.env.INPUT_PROMPT_FILE = "empty.md";
+
+    expect(() => resolvePromptInput()).toThrow('prompt_file "empty.md" is empty.');
+  });
+
+  it("throws when prompt_file is whitespace-only", () => {
+    process.env.GITHUB_WORKSPACE = tempDir;
+    const promptPath = join(tempDir, "blank.md");
+    writeFileSync(promptPath, "   \n\t\n");
+    process.env.INPUT_PROMPT_FILE = "blank.md";
+
+    expect(() => resolvePromptInput()).toThrow('prompt_file "blank.md" is empty.');
+  });
+
+  it.runIf(process.platform === "win32")(
+    "matches GITHUB_WORKSPACE case-insensitively on Windows",
+    () => {
+      // on Windows the filesystem is case-insensitive but `resolve()` preserves
+      // input case, so without normalization a mixed-case GITHUB_WORKSPACE
+      // would falsely reject paths that genuinely live inside it.
+      process.env.GITHUB_WORKSPACE = tempDir.toUpperCase();
+      const promptPath = join(tempDir, "triage.md");
+      writeFileSync(promptPath, "windows prompt\n");
+      process.env.INPUT_PROMPT_FILE = promptPath;
+
+      expect(resolvePromptInput()).toBe("windows prompt\n");
+    }
+  );
 });
 
 describe("JsonPayload schema", () => {
