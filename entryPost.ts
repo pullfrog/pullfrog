@@ -14,11 +14,11 @@
 // silently goes stale on the first refresh and the next run fails. See
 // wiki/codex-auth.md.
 //
-// Today's only job: detect a Codex auth refresh by diffing the on-disk
-// auth.json against the original refresh token (saved to GH Actions state
-// by action/agents/opencode_v2.ts — see also the legacy v1 file kept as
-// reference at action/agents/opencode.ts), convert OpenCode's auth shape
-// back to Codex CLI shape, and PUT it to /api/runtime/secret.
+// Today's managed-auth job: detect refreshes for any installed managed
+// credential and write the rotated secret back to Pullfrog. Codex is the
+// first provider: diff the on-disk auth.json against the original refresh
+// token, convert OpenCode's auth shape back to Codex CLI shape, and PUT it
+// to /api/runtime/secret.
 //
 // Silent no-op when the main step didn't materialize Codex auth (no state
 // saved). Best-effort: failures are logged but never throw — the workflow
@@ -31,43 +31,95 @@
 import { existsSync, readFileSync } from "node:fs";
 import { detectCodexRefresh } from "./utils/codexRefreshDetect.ts";
 import * as core from "./utils/ghaCore.ts";
+import {
+  MANAGED_AUTH_WRITEBACK_STATE,
+  type ManagedAuthWriteback,
+  parseManagedAuthWritebacks,
+} from "./utils/managedAuthState.ts";
 import { postApiFetch } from "./utils/postApiFetch.ts";
 
 async function main(): Promise<void> {
-  const raw = core.getState("codex_writeback");
-  if (!raw) {
-    core.info("codex post-hook: no writeback state — skipping");
+  const writebacks = readWritebackState();
+  if (writebacks.length === 0) {
+    core.info("managed-auth post-hook: no writeback state — skipping");
     return;
   }
 
-  let state: { apiToken: string; authPath: string; originalRefresh: string };
+  for (const writeback of writebacks) {
+    await handleWriteback(writeback);
+  }
+}
+
+function readWritebackState(): ManagedAuthWriteback[] {
+  const raw = core.getState(MANAGED_AUTH_WRITEBACK_STATE);
+  if (raw) {
+    const writebacks = parseManagedAuthWritebacks(raw);
+    if (!writebacks) {
+      core.warning("managed-auth post-hook: malformed writeback state — skipping");
+      return [];
+    }
+    return writebacks;
+  }
+
+  const legacy = core.getState("codex_writeback");
+  if (!legacy) return [];
+
+  let state: { apiToken?: unknown; authPath?: unknown; originalRefresh?: unknown };
   try {
-    state = JSON.parse(raw) as typeof state;
+    state = JSON.parse(legacy) as typeof state;
   } catch (err) {
-    core.warning(`codex post-hook: malformed writeback state — ${err}`);
-    return;
-  }
-  if (!state.apiToken || !state.authPath || !state.originalRefresh) {
-    core.warning("codex post-hook: incomplete writeback state — skipping");
-    return;
+    core.warning(`codex post-hook: malformed legacy writeback state — ${err}`);
+    return [];
   }
 
-  if (!existsSync(state.authPath)) {
-    core.info(`codex post-hook: ${state.authPath} not found — nothing to write back`);
+  if (
+    typeof state.apiToken !== "string" ||
+    typeof state.authPath !== "string" ||
+    typeof state.originalRefresh !== "string" ||
+    state.apiToken.length === 0 ||
+    state.authPath.length === 0 ||
+    state.originalRefresh.length === 0
+  ) {
+    core.warning("codex post-hook: incomplete legacy writeback state — skipping");
+    return [];
+  }
+
+  return [
+    {
+      kind: "codex",
+      apiToken: state.apiToken,
+      secretName: "CODEX_AUTH_JSON",
+      authPath: state.authPath,
+      originalRefresh: state.originalRefresh,
+    },
+  ];
+}
+
+async function handleWriteback(writeback: ManagedAuthWriteback): Promise<void> {
+  switch (writeback.kind) {
+    case "codex":
+      await handleCodexWriteback(writeback);
+      return;
+  }
+}
+
+async function handleCodexWriteback(writeback: Extract<ManagedAuthWriteback, { kind: "codex" }>) {
+  if (!existsSync(writeback.authPath)) {
+    core.info(`codex post-hook: ${writeback.authPath} not found — nothing to write back`);
     return;
   }
 
   let authFileContent: string;
   try {
-    authFileContent = readFileSync(state.authPath, "utf8");
+    authFileContent = readFileSync(writeback.authPath, "utf8");
   } catch (err) {
-    core.warning(`codex post-hook: cannot read ${state.authPath} — ${err}`);
+    core.warning(`codex post-hook: cannot read ${writeback.authPath} — ${err}`);
     return;
   }
 
   const refreshedCodexJson = detectCodexRefresh({
     authFileContent,
-    originalRefresh: state.originalRefresh,
+    originalRefresh: writeback.originalRefresh,
   });
   if (!refreshedCodexJson) {
     core.info("codex post-hook: refresh chain unchanged — no writeback needed");
@@ -79,10 +131,10 @@ async function main(): Promise<void> {
       path: "/api/runtime/secret",
       method: "PUT",
       headers: {
-        authorization: `Bearer ${state.apiToken}`,
+        authorization: `Bearer ${writeback.apiToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ name: "CODEX_AUTH_JSON", value: refreshedCodexJson }),
+      body: JSON.stringify({ name: writeback.secretName, value: refreshedCodexJson }),
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");

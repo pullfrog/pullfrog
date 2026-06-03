@@ -89,6 +89,7 @@ describe("entryPost.ts stdlib-only invariant (#834)", () => {
     expect(direct).toEqual([
       "./utils/codexRefreshDetect.ts",
       "./utils/ghaCore.ts",
+      "./utils/managedAuthState.ts",
       "./utils/postApiFetch.ts",
       "node:fs",
     ]);

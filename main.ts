@@ -20,7 +20,6 @@ import { validateAgentApiKey } from "./utils/apiKeys.ts";
 import { resolveBody } from "./utils/body.ts";
 import { selectFallbackModelIfNeeded } from "./utils/byokFallback.ts";
 import { log } from "./utils/cli.ts";
-import { installCodexAuth, PULLFROG_DATA_DIR } from "./utils/codexHome.ts";
 import { recordDiffReadFromToolUse } from "./utils/diffCoverage.ts";
 import { onExitSignal } from "./utils/exitHandler.ts";
 import { resolveGit, setGitAuthServer } from "./utils/gitAuth.ts";
@@ -29,6 +28,7 @@ import { createOctokit, writeGitHubUsageSummaryToFile } from "./utils/github.ts"
 import { resolveInstructions } from "./utils/instructions.ts";
 import { persistLearnings, seedLearningsFile } from "./utils/learnings.ts";
 import { describeSetupFailure, executeLifecycleHook } from "./utils/lifecycle.ts";
+import { applyManagedAuthEnv, installManagedAuth } from "./utils/managedAuth.ts";
 import { normalizeEnv, sanitizeSecret } from "./utils/normalizeEnv.ts";
 import {
   captureAuthorizedModels,
@@ -156,11 +156,11 @@ export async function main(): Promise<MainResult> {
     if (count > 0) log.info(`» ${count} db secret(s) loaded`);
   }
 
-  // materialize Codex auth.json (idempotent — opencode agent re-calls inside
-  // run() and writes the same file). this has to land BEFORE
-  // captureAuthorizedModels so OpenCode's model introspection sees the
-  // OAuth-routed openai/* models.
-  installCodexAuth();
+  // materialize managed credentials (Codex today, other model auth shapes
+  // later). this has to land BEFORE captureAuthorizedModels so OpenCode's
+  // model introspection sees OAuth-routed models.
+  const managedAuth = installManagedAuth();
+  applyManagedAuthEnv(process.env, managedAuth.env);
 
   // capture the AUTHORIZED model set after dbSecrets + Codex auth.json are
   // applied. this is the authoritative source for the BYOK fallback
@@ -568,12 +568,13 @@ export async function main(): Promise<MainResult> {
       resolvedModel,
       mcpServerUrl: mcpHttpServer.url,
       tmpdir,
-      // PULLFROG_DATA_DIR (/var/lib/pullfrog) holds codex auth.json + any
-      // future pullfrog-managed on-disk secrets. bash via MCP tmpfs-overlays
-      // it; agent native FS tools deny it via the same secretDenyPaths plumbing
-      // used for vertex creds. see wiki/security.md "Filesystem Sandbox".
+      // managedAuth.secretDenyPaths holds Pullfrog-managed on-disk secrets
+      // (Codex auth.json today, future provider auth files later). bash via
+      // MCP tmpfs-overlays those paths; agent native FS tools deny them via
+      // the same plumbing used for vertex creds. see wiki/security.md
+      // "Filesystem Sandbox".
       secretDenyPaths: [
-        PULLFROG_DATA_DIR,
+        ...managedAuth.secretDenyPaths,
         ...(vertexCredentials ? [vertexCredentials.secretDir] : []),
       ],
       instructions,

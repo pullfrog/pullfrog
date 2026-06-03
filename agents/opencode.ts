@@ -27,7 +27,11 @@ import {
 } from "../utils/activity.ts";
 import { type AgentDiagnostic, formatAgentHangBody } from "../utils/agentHangReport.ts";
 import { formatJsonValue, log } from "../utils/cli.ts";
-import { installCodexAuth } from "../utils/codexHome.ts";
+import { applyManagedAuthEnv, installManagedAuth } from "../utils/managedAuth.ts";
+import {
+  MANAGED_AUTH_WRITEBACK_STATE,
+  stringifyManagedAuthWritebacks,
+} from "../utils/managedAuthState.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { addSkill, installBundledSkills } from "../utils/skills.ts";
 import {
@@ -1186,12 +1190,9 @@ export const opencode = agent({
 
     installBundledSkills({ home: homeEnv.HOME });
 
-    // materialize CODEX_AUTH_JSON (Pullfrog-stored Codex subscription
-    // credential) into the runner's REAL $HOME/.local/share/opencode/auth.json
-    // so OpenCode's CodexAuthPlugin picks it up and routes openai requests
-    // through the ChatGPT subscription instead of needing OPENAI_API_KEY.
-    // see action/utils/codexHome.ts and wiki/codex-auth.md.
-    const codexAuth = installCodexAuth();
+    // materialize managed credentials (Codex today, other model auth shapes
+    // later) into agent-readable locations before OpenCode starts.
+    const managedAuth = installManagedAuth({ apiToken: ctx.apiToken });
 
     // base args shared between initial run and continue runs
     const baseArgs = ["run", "--format", "json", "--print-logs"];
@@ -1230,25 +1231,16 @@ export const opencode = agent({
         process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY,
     };
 
-    if (codexAuth) {
-      // point OpenCode at the real-home XDG dir so it reads auth.json from
-      // where we wrote it (not the tmpdir-redirected default).
-      env.XDG_DATA_HOME = codexAuth.xdgDataHome;
-      // remove OPENAI_API_KEY so OpenCode's provider merge unambiguously
-      // picks the OAuth path. with both set, the merge order in opencode
-      // makes the effective key ambiguous.
-      delete env.OPENAI_API_KEY;
-      // hand the post-hook everything it needs to detect + persist refresh.
-      // post-hook runs in a fresh node process, so we have to ferry apiToken
-      // explicitly — env is preserved across main/post but our run-context
-      // JWT is computed at runtime and not put in env. see action/entryPost.ts.
+    applyManagedAuthEnv(env, managedAuth.env);
+
+    if (managedAuth.writebacks.length > 0) {
+      // hand the post-hook everything it needs to detect + persist refreshes.
+      // post-hook runs in a fresh node process, so we ferry apiToken
+      // explicitly — env is preserved across main/post but our run-context JWT
+      // is computed at runtime and not put in env. see action/entryPost.ts.
       core.saveState(
-        "codex_writeback",
-        JSON.stringify({
-          apiToken: ctx.apiToken,
-          authPath: codexAuth.authPath,
-          originalRefresh: codexAuth.originalRefresh,
-        })
+        MANAGED_AUTH_WRITEBACK_STATE,
+        stringifyManagedAuthWritebacks(managedAuth.writebacks)
       );
     }
 
