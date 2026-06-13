@@ -51,6 +51,10 @@ export interface ModelAlias {
    * resolution — for that use `fallback`. used for internal-only tier targets
    * (e.g. gpt-5.4 as a subagent target without exposing it to users). */
   hidden: boolean;
+  /** custom OpenAI-compatible BYOK provider whose `resolve` prefix has no
+   * models.dev entry (the provider is injected into OPENCODE_CONFIG_CONTENT at
+   * run time). skipped by the models.dev existence/deprecation drift checks. */
+  byok: boolean;
 }
 
 interface ModelDef {
@@ -71,6 +75,8 @@ interface ModelDef {
   subagentModel?: string;
   /** hide from selectable lists. does NOT affect resolution; for that use `fallback`. */
   hidden?: boolean;
+  /** custom OpenAI-compatible BYOK provider with no models.dev entry; skips drift checks. */
+  byok?: boolean;
 }
 
 export interface ProviderConfig {
@@ -282,16 +288,19 @@ export const providers = {
         resolve: "qwen/qwen3-coder-plus",
         openRouterResolve: "openrouter/qwen/qwen3-coder-plus",
         preferred: true,
+        byok: true,
       },
       "qwen-plus": {
         displayName: "Qwen Plus",
         resolve: "qwen/qwen-plus",
         openRouterResolve: "openrouter/qwen/qwen-plus",
+        byok: true,
       },
       "qwen-max": {
         displayName: "Qwen Max",
         resolve: "qwen/qwen-max",
         openRouterResolve: "openrouter/qwen/qwen3-max",
+        byok: true,
       },
     },
   }),
@@ -623,6 +632,7 @@ export const modelAliases: ModelAlias[] = Object.entries(providers).flatMap(
       // directly without re-deriving the provider.
       subagentModel: def.subagentModel ? `${providerKey}/${def.subagentModel}` : undefined,
       hidden: def.hidden ?? false,
+      byok: def.byok ?? false,
     }))
 );
 
