@@ -273,6 +273,28 @@ export const providers = {
       },
     },
   }),
+  qwen: provider({
+    displayName: "Qwen",
+    envVars: ["QWEN_API_KEY", "DASHSCOPE_API_KEY", "LLM_API_KEY"],
+    models: {
+      "qwen-coder": {
+        displayName: "Qwen Coder",
+        resolve: "qwen/qwen3-coder-plus",
+        openRouterResolve: "openrouter/qwen/qwen3-coder-plus",
+        preferred: true,
+      },
+      "qwen-plus": {
+        displayName: "Qwen Plus",
+        resolve: "qwen/qwen-plus",
+        openRouterResolve: "openrouter/qwen/qwen-plus",
+      },
+      "qwen-max": {
+        displayName: "Qwen Max",
+        resolve: "qwen/qwen-max",
+        openRouterResolve: "openrouter/qwen/qwen3-max",
+      },
+    },
+  }),
   opencode: provider({
     displayName: "OpenCode",
     envVars: ["OPENCODE_API_KEY"],
