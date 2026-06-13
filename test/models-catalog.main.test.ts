@@ -56,9 +56,7 @@ describe("models.dev validity", async () => {
     // is validated separately by the Zen served-list test below.
     if (alias.fallback) continue;
 
-    // byok aliases are custom OpenAI-compatible providers (e.g. qwen → DashScope)
-    // whose `resolve` prefix has no models.dev entry; the provider is injected
-    // into OPENCODE_CONFIG_CONTENT at run time, so there's nothing to validate
+    // byok providers (e.g. qwen) have no models.dev entry; nothing to validate
     // upstream. their openRouterResolve, when set, is still checked below.
     if (alias.byok) continue;
 

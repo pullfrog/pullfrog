@@ -51,9 +51,7 @@ export interface ModelAlias {
    * resolution — for that use `fallback`. used for internal-only tier targets
    * (e.g. gpt-5.4 as a subagent target without exposing it to users). */
   hidden: boolean;
-  /** custom OpenAI-compatible BYOK provider whose `resolve` prefix has no
-   * models.dev entry (the provider is injected into OPENCODE_CONFIG_CONTENT at
-   * run time). skipped by the models.dev existence/deprecation drift checks. */
+  /** custom OpenAI-compatible BYOK provider with no models.dev entry — skips drift/CI-secret checks */
   byok: boolean;
 }
 
@@ -75,7 +73,7 @@ interface ModelDef {
   subagentModel?: string;
   /** hide from selectable lists. does NOT affect resolution; for that use `fallback`. */
   hidden?: boolean;
-  /** custom OpenAI-compatible BYOK provider with no models.dev entry; skips drift checks. */
+  /** custom OpenAI-compatible BYOK provider with no models.dev entry; skips drift checks */
   byok?: boolean;
 }
 
@@ -281,9 +279,7 @@ export const providers = {
   }),
   qwen: provider({
     displayName: "Qwen",
-    // checked in precedence order. LLM_API_KEY is a deliberately generic
-    // OpenAI-compatible fallback (last), so a dedicated QWEN_API_KEY /
-    // DASHSCOPE_API_KEY always wins over it.
+    // precedence order; LLM_API_KEY is the generic OpenAI-compatible fallback (last)
     envVars: ["QWEN_API_KEY", "DASHSCOPE_API_KEY", "LLM_API_KEY"],
     models: {
       "qwen-coder": {

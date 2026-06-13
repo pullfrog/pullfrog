@@ -44,11 +44,8 @@ export function geminiHighThinkingOverrides(): Record<string, { options: object 
 }
 
 /**
- * OpenAI-compatible Qwen provider, materialized into the action-owned
- * OPENCODE_CONFIG_CONTENT. The models map is derived from the qwen aliases in
- * models.ts so a `resolve` bump (e.g. via models-bump) flows through without an
- * edit here. Key/baseURL come from QWEN_* → DASHSCOPE_* → LLM_* (LLM_* as a
- * generic OpenAI-compatible fallback), defaulting to the DashScope intl URL.
+ * OpenAI-compatible Qwen provider for OPENCODE_CONFIG_CONTENT. Models derive from
+ * the qwen aliases in models.ts; key/baseURL from QWEN_* → DASHSCOPE_* → LLM_*.
  */
 export function qwenProviderConfig(): Record<string, unknown> {
   const apiKey =
