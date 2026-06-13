@@ -58,11 +58,17 @@ const agnosticTests = getTestNamesFromDir("agnostic");
 const adhocTests = getTestNamesFromDir("adhoc");
 
 // all provider API key names + managed credentials (e.g. Codex auth blob)
-// + GITHUB_TOKEN + model overrides
+// + GITHUB_TOKEN + model overrides. byok-only providers (e.g. qwen) are
+// excluded: Pullfrog holds no managed key for them — the key is user-supplied
+// at run time — so there's nothing to wire into the CI env blocks.
+const isByokOnlyProvider = (p: (typeof providers)[keyof typeof providers]) =>
+  Object.values(p.models).every((m) => m.byok);
 const expectedAgentEnvVars = [
   "GITHUB_TOKEN",
   ...new Set(
-    Object.values(providers).flatMap((p) => [...p.envVars, ...(p.managedCredentials ?? [])])
+    Object.values(providers)
+      .filter((p) => !isByokOnlyProvider(p))
+      .flatMap((p) => [...p.envVars, ...(p.managedCredentials ?? [])])
   ),
   "PULLFROG_MODEL",
 ].sort();

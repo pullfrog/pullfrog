@@ -281,6 +281,9 @@ export const providers = {
   }),
   qwen: provider({
     displayName: "Qwen",
+    // checked in precedence order. LLM_API_KEY is a deliberately generic
+    // OpenAI-compatible fallback (last), so a dedicated QWEN_API_KEY /
+    // DASHSCOPE_API_KEY always wins over it.
     envVars: ["QWEN_API_KEY", "DASHSCOPE_API_KEY", "LLM_API_KEY"],
     models: {
       "qwen-coder": {
