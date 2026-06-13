@@ -190,7 +190,7 @@ jobs:
 
 You can force the agent to return structured JSON output by providing a JSON schema. This allows you to reliably parse and use the agent's response in subsequent workflow steps.
 
-You can define your JSON schema directly or uou can use any validation library that converts to JSON Schema. Here's an example using [Zod](https://zod.dev):
+You can define your JSON schema directly or you can use any validation library that converts to JSON Schema. Here's an example using [Zod](https://zod.dev):
 
 ```yaml
 name: Release Check
