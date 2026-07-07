@@ -1,0 +1,28 @@
+# Copy this file to terraform.tfvars and fill in the values.
+
+aws_region = "us-west-2"
+
+# Option A: Let Terraform create a new VPC (simplest for a fresh setup)
+# create_vpc = true
+
+# Option B: Reuse an existing VPC (uncomment and fill in)
+create_vpc    = false
+aws_vpc_id    = "vpc-xxxxxxx"
+aws_subnet_id = "subnet-xxxxxxx"
+
+# GitHub App credentials
+github_app_id              = "123456"                  # from GitHub App settings
+github_app_key_base64      = "LS0tLS1CRUdJTi..."       # base64-encoded private key (.pem)
+github_app_installation_id = "98765432"                # from GitHub App installations page
+
+# Runner scope
+github_org  = "Weltel-repo"
+github_repo = "weltel-pullfrog"
+
+# Runner configurations (optional)
+instance_type      = "t3.medium"
+runner_volume_size = 30
+
+# Optional: Add SSH key name if you want direct SSH access
+# ssh_key_name     = "my-aws-key"
+# allowed_ssh_cidr = "203.0.113.50/32" # Restrict SSH to your IP
