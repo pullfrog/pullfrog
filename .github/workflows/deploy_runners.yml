@@ -39,8 +39,8 @@ jobs:
       TF_VAR_github_app_id: ${{ secrets.APP_ID }}
       TF_VAR_github_app_key_base64: ${{ secrets.APP_PRIVATE_KEY }}
       TF_VAR_github_app_installation_id: ${{ secrets.APP_INSTALLATION_ID }}
-      TF_VAR_github_org: ${{ secrets.GITHUB_ORG }}
-      TF_VAR_github_repo: ${{ secrets.GITHUB_REPO || 'weltel-pullfrog' }}
+      TF_VAR_github_org: ${{ github.repository_owner }}
+      TF_VAR_github_repo: ${{ github.event.repository.name }}
       TF_VAR_aws_vpc_id: ${{ secrets.AWS_VPC_ID }}
       TF_VAR_aws_subnet_id: ${{ secrets.AWS_SUBNET_ID }}
       TF_VAR_instance_type: ${{ github.event.inputs.instance_type || 't3.medium' }}
