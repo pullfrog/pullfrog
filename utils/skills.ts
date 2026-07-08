@@ -14,7 +14,7 @@ const skillsVersion = getDevDependencyVersion("skills");
  * no codegen. this matters because the preview / oss path runs `cli.ts` from
  * source (see `runCli.ts#runLocalCli`) where esbuild loaders don't apply.
  */
-const BUNDLED_SKILL_NAMES = ["git-archaeology"] as const;
+const BUNDLED_SKILL_NAMES = ["git-archaeology", "caveman"] as const;
 
 /**
  * resolve the on-disk path of a bundled SKILL.md by checking the two locations
