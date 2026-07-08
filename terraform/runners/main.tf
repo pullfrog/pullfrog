@@ -110,7 +110,11 @@ resource "aws_instance" "runner" {
 
               # Pre-pull Pullfrog agent image from ECR (uses instance IAM role)
               if [ "${var.prepull_agent_image}" = "true" ]; then
-                apt-get install -y awscli
+                apt-get install -y unzip
+                curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                unzip awscliv2.zip
+                ./aws/install
+                rm -rf awscliv2.zip aws
                 aws ecr get-login-password --region ${var.aws_region} \
                   | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
                 docker pull ${local.agent_image_uri} || echo "WARN: agent image not yet in ECR — run publish-agent-image workflow first"
