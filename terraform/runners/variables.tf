@@ -46,8 +46,9 @@ variable "github_org" {
 }
 
 variable "github_repo" {
-  description = "Repository name (e.g. 'weltel-pullfrog')"
+  description = "Repository name (e.g. 'weltel-pullfrog'). If left empty, registers the runner at the organization level."
   type        = string
+  default     = ""
 }
 
 variable "instance_type" {

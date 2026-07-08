@@ -141,7 +141,7 @@ resource "aws_instance" "runner" {
               const org = "${var.github_org}";
               const repo = "${var.github_repo}";
 
-              if (!appId || !installationId || !privateKeyBase64 || !org || !repo) {
+              if (!appId || !installationId || !privateKeyBase64 || !org) {
                 console.error("Missing required variables.");
                 process.exit(1);
               }
@@ -189,7 +189,10 @@ resource "aws_instance" "runner" {
                   const { token } = await tokenRes.json();
                   
                   // 2. Get runner registration token
-                  const runnerRes = await fetch(`https://api.github.com/repos/$${org}/$${repo}/actions/runners/registration-token`, {
+                  const url = repo 
+                    ? `https://api.github.com/repos/$${org}/$${repo}/actions/runners/registration-token` 
+                    : `https://api.github.com/orgs/$${org}/actions/runners/registration-token`;
+                  const runnerRes = await fetch(url, {
                     method: 'POST',
                     headers: {
                       'Authorization': `Bearer $${token}`,
@@ -231,7 +234,11 @@ resource "aws_instance" "runner" {
               chown -R ubuntu:ubuntu "$RUNNER_DIR"
 
               # Configure the runner as the ubuntu user
-              sudo -u ubuntu ./config.sh --url "https://github.com/${var.github_org}/${var.github_repo}" --token "$RUNNER_TOKEN" --name "weltel-pullfrog-runner-ec2" --unattended --replace
+              if [ -n "${var.github_repo}" ]; then
+                sudo -u ubuntu ./config.sh --url "https://github.com/${var.github_org}/${var.github_repo}" --token "$RUNNER_TOKEN" --name "weltel-pullfrog-runner-ec2" --unattended --replace
+              else
+                sudo -u ubuntu ./config.sh --url "https://github.com/${var.github_org}" --token "$RUNNER_TOKEN" --name "weltel-pullfrog-runner-ec2" --unattended --replace
+              fi
 
               # Install and start the runner service
               ./svc.sh install ubuntu
