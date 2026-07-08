@@ -17,6 +17,12 @@ on:
         required: false
         default: "t3.medium"
         type: string
+      replace_runner:
+        description: "Force recreate/replace the runner instance?"
+        required: false
+        default: false
+        type: boolean
+
 
 permissions:
   contents: read
@@ -61,11 +67,21 @@ jobs:
 
       - name: Terraform Plan
         if: github.event.inputs.action == 'plan'
-        run: terraform plan
+        run: |
+          if [ "${{ github.event.inputs.replace_runner }}" = "true" ]; then
+            terraform plan -replace=aws_instance.runner
+          else
+            terraform plan
+          fi
 
       - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
-        run: terraform apply -auto-approve
+        run: |
+          if [ "${{ github.event.inputs.replace_runner }}" = "true" ]; then
+            terraform apply -replace=aws_instance.runner -auto-approve
+          else
+            terraform apply -auto-approve
+          fi
 
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
