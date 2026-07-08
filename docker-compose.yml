@@ -1,0 +1,77 @@
+# Pullfrog Docker Compose Stack
+# This stack allows you to build, test, and run the Pullfrog agent locally in a 
+# containerized environment that matches the GitHub Actions ubuntu-24.04 runner.
+
+services:
+  # Base service configuration using YAML anchor
+  pullfrog-base: &pullfrog-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pullfrog-agent:local
+    privileged: true # Required for PID-namespace sandbox (shell.ts)
+    security_opt:
+      - apparmor:unconfined
+    working_dir: /app/action
+    volumes:
+      # Mount codebase for hot-reloading and instant iteration
+      - .:/app/action:cached
+      # Isolate node_modules inside a named volume to avoid conflicts with host OS dependencies
+      - node_modules:/app/action/node_modules
+      # Mount host SSH keys read-only to allow git operations inside the container
+      - ~/.ssh:/tmp/.ssh-host:ro
+    environment:
+      # Map host user UID/GID to allow entrypoint.sh to set correct permissions
+      - HOST_UID=${UID:-1000}
+      - HOST_GID=${GID:-1000}
+      # Passthrough API keys for LLMs
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - GEMINI_API_KEY
+      - XAI_API_KEY
+      - DEEPSEEK_API_KEY
+      - OPENROUTER_API_KEY
+      - MOONSHOT_API_KEY
+      # GitHub actions integration and credentials
+      - GITHUB_TOKEN
+      - GH_TOKEN
+      - GITHUB_REPOSITORY
+      - GITHUB_APP_ID
+      - GITHUB_PRIVATE_KEY
+      - CI=true
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      # Expose host machine IP to the container as host.docker.internal
+      - "host.docker.internal:host-gateway"
+
+
+  # Play service: runs the default playground prompt or ad-hoc runs
+  # Usage: docker compose run --rm play
+  #        docker compose run --rm play --raw "Hello world"
+  play:
+    <<: *pullfrog-base
+    container_name: pullfrog-play
+    command: ["node", "play.ts"]
+
+  # Test service: runs the action test suite
+  # Usage: docker compose run --rm test
+  #        docker compose run --rm test smoke
+  test:
+    <<: *pullfrog-base
+    container_name: pullfrog-test
+    command: ["node", "test/run.ts"]
+
+  # Shell service: drops into an interactive bash shell as testuser
+  # Usage: docker compose run --rm shell
+  shell:
+    <<: *pullfrog-base
+    container_name: pullfrog-shell
+    stdin_open: true
+    tty: true
+    command: ["--shell"]
+
+volumes:
+  node_modules:
+    name: pullfrog-node-modules

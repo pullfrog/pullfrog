@@ -1,0 +1,71 @@
+name: Deploy Persistent EC2 Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform Action to perform"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      instance_type:
+        description: "EC2 instance type for the runner"
+        required: false
+        default: "t3.medium"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action }}
+    runs-on: [self-hosted, linux, x64, spot, weltel]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ./terraform/runners
+    env:
+      TF_VAR_github_app_id: ${{ secrets.APP_ID }}
+      TF_VAR_github_app_key_base64: ${{ secrets.APP_PRIVATE_KEY }}
+      TF_VAR_github_app_installation_id: ${{ secrets.APP_INSTALLATION_ID }}
+      TF_VAR_github_org: ${{ secrets.GITHUB_ORG }}
+      TF_VAR_github_repo: ${{ secrets.GITHUB_REPO || 'weltel-pullfrog' }}
+      TF_VAR_aws_vpc_id: ${{ secrets.AWS_VPC_ID }}
+      TF_VAR_aws_subnet_id: ${{ secrets.AWS_SUBNET_ID }}
+      TF_VAR_instance_type: ${{ github.event.inputs.instance_type || 't3.medium' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.4"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        if: github.event.inputs.action == 'plan'
+        run: terraform plan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
