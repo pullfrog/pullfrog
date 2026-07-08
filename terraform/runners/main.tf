@@ -18,7 +18,7 @@ terraform {
 }
 
 provider "aws" {
-  region  = var.aws_region
+  region = var.aws_region
 }
 
 locals {
@@ -76,12 +76,12 @@ resource "aws_iam_instance_profile" "runner_profile" {
 
 # EC2 Instance
 resource "aws_instance" "runner" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = var.instance_type
-  subnet_id            = local.subnet_id
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  subnet_id              = local.subnet_id
   vpc_security_group_ids = [aws_security_group.runners.id]
-  iam_instance_profile = aws_iam_instance_profile.runner_profile.id
-  key_name             = var.ssh_key_name != "" ? var.ssh_key_name : null
+  iam_instance_profile   = aws_iam_instance_profile.runner_profile.id
+  key_name               = var.ssh_key_name != "" ? var.ssh_key_name : null
 
   root_block_device {
     volume_size           = var.runner_volume_size
@@ -227,7 +227,7 @@ resource "aws_instance" "runner" {
               chown -R ubuntu:ubuntu "$RUNNER_DIR"
 
               # Configure the runner as the ubuntu user
-              sudo -u ubuntu ./config.sh --url "https://github.com/${var.github_org}/${var.github_repo}" --token "$RUNNER_TOKEN" --name "weltel-pullfrog-runner" --unattended --replace
+              sudo -u ubuntu ./config.sh --url "https://github.com/${var.github_org}/${var.github_repo}" --token "$RUNNER_TOKEN" --name "weltel-pullfrog-runner-ec2" --unattended --replace
 
               # Install and start the runner service
               ./svc.sh install ubuntu
@@ -235,7 +235,7 @@ resource "aws_instance" "runner" {
               EOF
 
   tags = {
-    Name    = "weltel-pullfrog-runner"
+    Name    = "weltel-pullfrog-runner-ec2"
     Project = "weltel-pullfrog"
   }
 }

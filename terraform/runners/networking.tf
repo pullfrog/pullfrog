@@ -10,8 +10,8 @@ resource "aws_vpc" "runners" {
   enable_dns_hostnames = true
 
   tags = {
-    Name    = "github-runners-vpc"
-    Project = "weltel"
+    Name    = "weltel-pullfrog-runner-vpc"
+    Project = "weltel-pullfrog"
   }
 }
 
@@ -20,8 +20,8 @@ resource "aws_internet_gateway" "runners" {
   vpc_id = aws_vpc.runners[0].id
 
   tags = {
-    Name    = "github-runners-igw"
-    Project = "weltel"
+    Name    = "weltel-pullfrog-runner-igw"
+    Project = "weltel-pullfrog"
   }
 }
 
@@ -35,8 +35,8 @@ resource "aws_route_table" "runners" {
   }
 
   tags = {
-    Name    = "github-runners-rt"
-    Project = "weltel"
+    Name    = "weltel-pullfrog-runner-rt"
+    Project = "weltel-pullfrog"
   }
 }
 
@@ -49,8 +49,8 @@ resource "aws_subnet" "runners" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name    = "github-runners-subnet"
-    Project = "weltel"
+    Name    = "weltel-pullfrog-runner-subnet"
+    Project = "weltel-pullfrog"
   }
 }
 
@@ -62,7 +62,7 @@ resource "aws_route_table_association" "runners" {
 
 # Security Group
 resource "aws_security_group" "runners" {
-  name        = "github-runners-sg-"
+  name        = "weltel-pullfrog-runner-sg"
   description = "Security group for GitHub Actions self-hosted runners"
   vpc_id      = var.create_vpc ? aws_vpc.runners[0].id : var.aws_vpc_id
 
@@ -76,7 +76,7 @@ resource "aws_security_group" "runners" {
   }
 
   tags = {
-    Name    = "github-runners-sg"
-    Project = "weltel"
+    Name    = "weltel-pullfrog-runner-sg"
+    Project = "weltel-pullfrog"
   }
 }
