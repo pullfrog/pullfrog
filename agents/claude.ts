@@ -193,13 +193,28 @@ function stripProviderPrefix(specifier: string): string {
   return slashIndex > 0 ? specifier.slice(slashIndex + 1) : specifier;
 }
 
-// `high` is the model's tuned default ("equivalent to not setting the parameter"
-// per Anthropic docs). `max` is "absolute maximum capability with no constraints
-// on token spending" — meaningfully slower and burns more thinking budget per
-// turn. We default everyone to `high`; PRs that genuinely need full-send can
-// opt in via a future per-run override rather than paying the wall-time cost on
-// every Opus run.
-function resolveEffort(_model: string | undefined): "high" {
+// Claude Code `--effort` controls thinking budget (token cost + latency).
+// `high` is Anthropic's tuned default; `max` is unconstrained and expensive.
+// Override per run via action input `effort` or env `PULLFROG_EFFORT`
+// (low | medium | high | max). Invalid values fall back to high.
+export type ClaudeEffort = "low" | "medium" | "high" | "max";
+
+const EFFORT_LEVELS = new Set<ClaudeEffort>(["low", "medium", "high", "max"]);
+
+export function resolveEffort(_model?: string | undefined): ClaudeEffort {
+  const raw = (
+    process.env.PULLFROG_EFFORT ||
+    process.env.INPUT_EFFORT ||
+    "high"
+  )
+    .trim()
+    .toLowerCase();
+  if (EFFORT_LEVELS.has(raw as ClaudeEffort)) {
+    return raw as ClaudeEffort;
+  }
+  if (raw) {
+    log.warn(`» unknown effort "${raw}" — using high (valid: low|medium|high|max)`);
+  }
   return "high";
 }
 

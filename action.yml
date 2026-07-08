@@ -15,6 +15,9 @@ inputs:
   model:
     description: "Model to use — a curated slug (e.g. anthropic/claude-opus) or a raw models.dev specifier (e.g. google/gemini-3.1-flash-lite). Overrides repo settings."
     required: false
+  effort:
+    description: "Claude Code thinking effort: low, medium, high, or max. Default high. Also settable via PULLFROG_EFFORT env."
+    required: false
   cwd:
     description: "Working directory for the agent (defaults to GITHUB_WORKSPACE)"
     required: false
