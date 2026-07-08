@@ -13,7 +13,7 @@ jobs:
     # only run in the upstream publish target (forks inherit this file but
     # can't dispatch into pullfrog/app), and skip if pushed by our bot (breaks
     # the loop).
-    if: github.repository == 'pullfrog/pullfrog' && github.actor != 'pullfrog[bot]'
+    if: github.repository == 'Weltel-repo/weltel-pullfrog' && github.actor != 'pullfrog[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -22,11 +22,11 @@ jobs:
         id: token
         uses: ./get-installation-token
         with:
-          repos: pullfrog
+          repos: app
 
       - name: Dispatch "action-repo-updated" event
         run: |
-          gh api repos/pullfrog/app/dispatches \
+          gh api repos/Weltel-repo/app/dispatches \
             -f event_type="action-repo-updated" \
             -f client_payload='{
               "before": "${{ github.event.before }}",

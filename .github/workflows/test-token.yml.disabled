@@ -14,12 +14,12 @@ jobs:
     # only run in the upstream publish target. forks inherit this file but
     # haven't installed the pullfrog github app — running it there 404s our
     # token endpoint and pollutes our error logs (see #693).
-    if: github.repository == 'pullfrog/pullfrog'
+    if: github.repository == 'Weltel-repo/weltel-pullfrog'
     runs-on: ubuntu-latest
     steps:
       - name: Get installation token
         id: token
-        uses: pullfrog/pullfrog/get-installation-token@main
+        uses: Weltel-repo/weltel-pullfrog/get-installation-token@main
 
       - name: Verify token with Node.js
         env:

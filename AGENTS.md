@@ -1,6 +1,6 @@
 # Guidelines for Coding Agents (AGENTS.md)
 
-Welcome! This repository (`pullfrog/pullfrog`) contains the open-source GitHub Action runner and CLI toolchain for Pullfrog. If you are an AI coding agent (such as Claude Code, Antigravity, or OpenCode) working on this codebase, please follow the guidelines in this document.
+Welcome! This repository (`Weltel-repo/weltel-pullfrog`) contains the open-source GitHub Action runner and CLI toolchain for Pullfrog. If you are an AI coding agent (such as Claude Code, Antigravity, or OpenCode) working on this codebase, please follow the guidelines in this document.
 
 ---
 
