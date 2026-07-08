@@ -232,7 +232,15 @@ function runPullfrogCliInner(context: RuntimeContext, cliArgs: string[]): void {
     return;
   }
 
-  if (context.actionRef === "main" && context.actionRepository === "pullfrog/pullfrog") {
+  // Upstream `pullfrog/pullfrog@main` develops against the checked-out tree.
+  // Forks (e.g. Weltel-repo/weltel-pullfrog) must also run the local tree —
+  // otherwise npx pullfrog@^N ignores fork-only changes (Weltel footer branding,
+  // local Fix links, etc.) and reverts to the published SaaS package.
+  // Tagged upstream releases still use the npm package as the distribution path.
+  if (
+    context.actionRepository !== "pullfrog/pullfrog" ||
+    context.actionRef === "main"
+  ) {
     runLocalCli(context, cliArgs);
     return;
   }
