@@ -73,3 +73,21 @@ variable "allowed_ssh_cidr" {
   description = "The CIDR block permitted to SSH into the instance"
   default     = "0.0.0.0/0"
 }
+
+variable "agent_ecr_repository" {
+  description = "ECR repository name for the Pullfrog agent container image"
+  type        = string
+  default     = "pullfrog-agent"
+}
+
+variable "agent_image_tag" {
+  description = "ECR image tag to pre-pull onto the runner at boot"
+  type        = string
+  default     = "latest"
+}
+
+variable "prepull_agent_image" {
+  description = "Pull the agent image from ECR during instance boot"
+  type        = bool
+  default     = true
+}

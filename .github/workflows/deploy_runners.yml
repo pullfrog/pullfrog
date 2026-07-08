@@ -24,7 +24,7 @@ permissions:
 jobs:
   terraform:
     name: Terraform ${{ github.event.inputs.action }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, spot, weltel]
     timeout-minutes: 30
     defaults:
       run:

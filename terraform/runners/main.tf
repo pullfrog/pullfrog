@@ -109,6 +109,14 @@ resource "aws_instance" "runner" {
               # Add ubuntu user to docker group
               usermod -aG docker ubuntu
 
+              # Pre-pull Pullfrog agent image from ECR (uses instance IAM role)
+              if [ "${var.prepull_agent_image}" = "true" ]; then
+                apt-get install -y awscli
+                aws ecr get-login-password --region ${var.aws_region} \
+                  | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
+                docker pull ${local.agent_image_uri} || echo "WARN: agent image not yet in ECR — run publish-agent-image workflow first"
+              fi
+
               # Install Node.js 24 and @nubjs/nub
               curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
               apt-get install -y nodejs
@@ -147,13 +155,13 @@ resource "aws_instance" "runner" {
                 });
 
                 const base64Url = (str) => Buffer.from(str).toString('base64url');
-                const unsignedToken = `${base64Url(header)}.${base64Url(payload)}`;
+                const unsignedToken = `$${base64Url(header)}.$${base64Url(payload)}`;
                 const signer = crypto.createSign('RSA-SHA256');
                 signer.write(unsignedToken);
                 signer.end();
                 const signature = signer.sign(privateKeyPem, 'base64url');
                 
-                return `${unsignedToken}.${signature}`;
+                return `$${unsignedToken}.$${signature}`;
               }
 
               async function run() {
@@ -161,10 +169,10 @@ resource "aws_instance" "runner" {
                   const jwt = signJwt(appId, privateKey);
                   
                   // 1. Get installation access token
-                  const tokenRes = await fetch(`https://api.github.com/app/installations/\${installationId}/access_tokens`, {
+                  const tokenRes = await fetch(`https://api.github.com/app/installations/$${installationId}/access_tokens`, {
                     method: 'POST',
                     headers: {
-                      'Authorization': `Bearer \${jwt}`,
+                      'Authorization': `Bearer $${jwt}`,
                       'Accept': 'application/vnd.github+json',
                       'User-Agent': 'pullfrog-setup'
                     }
@@ -172,20 +180,16 @@ resource "aws_instance" "runner" {
                   
                   if (!tokenRes.ok) {
                     const errText = await tokenRes.text();
-                    throw new Error(`Failed to get access token: \${tokenRes.status} \${errText}`);
+                    throw new Error(`Failed to get access token: $${tokenRes.status} $${errText}`);
                   }
                   
                   const { token } = await tokenRes.json();
                   
                   // 2. Get runner registration token
-                  const url = repo 
-                    ? `https://api.github.com/repos/\${org}/\text/actions/runners/registration-token`
-                    : `https://api.github.com/orgs/\text/actions/runners/registration-token`;
-                    
-                  const runnerRes = await fetch(`https://api.github.com/repos/\${org}/\${repo}/actions/runners/registration-token`, {
+                  const runnerRes = await fetch(`https://api.github.com/repos/$${org}/$${repo}/actions/runners/registration-token`, {
                     method: 'POST',
                     headers: {
-                      'Authorization': `Bearer \${token}`,
+                      'Authorization': `Bearer $${token}`,
                       'Accept': 'application/vnd.github+json',
                       'User-Agent': 'pullfrog-setup'
                     }
@@ -193,7 +197,7 @@ resource "aws_instance" "runner" {
                   
                   if (!runnerRes.ok) {
                     const errText = await runnerRes.text();
-                    throw new Error(`Failed to get runner token: \${runnerRes.status} \${errText}`);
+                    throw new Error(`Failed to get runner token: $${runnerRes.status} $${errText}`);
                   }
                   
                   const { token: runnerToken } = await runnerRes.json();

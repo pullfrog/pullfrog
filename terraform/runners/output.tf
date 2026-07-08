@@ -17,3 +17,8 @@ output "runner_iam_role_arn" {
   description = "IAM role assumed by the runner EC2 instance"
   value       = aws_iam_role.runner_role.arn
 }
+
+output "agent_image_uri" {
+  description = "ECR image URI pre-pulled onto the runner for container jobs"
+  value       = local.agent_image_uri
+}

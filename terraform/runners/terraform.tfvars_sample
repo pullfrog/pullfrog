@@ -23,6 +23,11 @@ github_repo = "weltel-pullfrog"
 instance_type      = "t3.medium"
 runner_volume_size = 30
 
+# Agent container image (optional — requires ECR repo + publish-agent-image workflow)
+agent_ecr_repository = "pullfrog-agent"
+agent_image_tag      = "latest"
+prepull_agent_image  = true
+
 # Optional: Add SSH key name if you want direct SSH access
 # ssh_key_name     = "my-aws-key"
 # allowed_ssh_cidr = "203.0.113.50/32" # Restrict SSH to your IP
