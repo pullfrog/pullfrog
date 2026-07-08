@@ -5,10 +5,14 @@ import {
   providers,
   resolveDisplayAlias,
 } from "../models.ts";
+import {
+  brandAttribution,
+  brandLeadHtml,
+  brandSocialLink,
+  resolveLocalBrand,
+} from "./localBrand.ts";
 
 export const PULLFROG_DIVIDER = "<!-- PULLFROG_DIVIDER_DO_NOT_REMOVE_PLZ -->";
-
-const FROG_LOGO = `<a href="https://pullfrog.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://pullfrog.com/logos/frog-white-full-18px.png"><img src="https://pullfrog.com/logos/frog-green-full-18px.png" width="9px" height="9px" style="vertical-align: middle; " alt="Pullfrog"></picture></a>`;
 
 export interface WorkflowRunFooterInfo {
   owner: string;
@@ -19,7 +23,7 @@ export interface WorkflowRunFooterInfo {
 }
 
 export interface BuildPullfrogFooterParams {
-  /** add "via Pullfrog" link */
+  /** add "via Pullfrog" / local brand link */
   triggeredBy?: boolean;
   /** add "View workflow run" link */
   workflowRun?: WorkflowRunFooterInfo | undefined;
@@ -88,6 +92,7 @@ function formatModelLabel(params: {
   clamped?: { from: string; reason: "card" | "noRouterPath" } | undefined;
   unselectedProxyDefault?: boolean | undefined;
   oss?: boolean | undefined;
+  local: boolean;
 }): string {
   const alias =
     resolveDisplayAlias(params.model) ??
@@ -99,7 +104,7 @@ function formatModelLabel(params: {
   const displayName = alias?.displayName ?? params.model;
   // OSS runs have their model costs covered by the program — surface that
   // (and link to the application) instead of the BYOK `(free)` note.
-  if (params.oss) {
+  if (params.oss && !params.local) {
     return `\`${displayName}\` (free via [Pullfrog for OSS](https://pullfrog.com/for-oss))`;
   }
   const base = alias?.isFree ? `\`${displayName}\` (free)` : `\`${displayName}\``;
@@ -116,7 +121,7 @@ function formatModelLabel(params: {
       ? `${base} (${target} needs a [card on file](https://docs.pullfrog.com/models))`
       : `${base} (${target} needs a [provider key](https://docs.pullfrog.com/models) — no Router support yet)`;
   }
-  if (params.unselectedProxyDefault) {
+  if (params.unselectedProxyDefault && !params.local) {
     return `${base} (default — [pick a model](https://docs.pullfrog.com/models) for stronger reviews)`;
   }
   return base;
@@ -124,15 +129,18 @@ function formatModelLabel(params: {
 
 /**
  * build a pullfrog footer with configurable parts
- * always includes: frog logo at start and X link at end
- * order: action links (customParts) > workflow run > model > attribution > reference links
+ * always includes: brand lead-in; SaaS ends with X link, local omits unless PULLFROG_SOCIAL_URL
+ * order: action links (customParts) > workflow run > model > attribution > social
  */
 export function buildPullfrogFooter(params: BuildPullfrogFooterParams): string {
+  const brand = resolveLocalBrand();
   const parts: string[] = [];
 
   if (params.shaPinned) {
     parts.push(
-      "⚠️ this action is pinned to a commit SHA, which [freezes the cleanup step](https://docs.pullfrog.com/versioning) — switch to `@v0` or keep the SHA fresh with Dependabot"
+      brand.local
+        ? "⚠️ this action is pinned to a commit SHA — keep it fresh so post-run cleanup stays current"
+        : "⚠️ this action is pinned to a commit SHA, which [freezes the cleanup step](https://docs.pullfrog.com/versioning) — switch to `@v0` or keep the SHA fresh with Dependabot"
     );
   }
 
@@ -149,7 +157,7 @@ export function buildPullfrogFooter(params: BuildPullfrogFooterParams): string {
   }
 
   if (params.triggeredBy) {
-    parts.push("via [Pullfrog](https://pullfrog.com)");
+    parts.push(brandAttribution(brand));
   }
 
   if (params.model) {
@@ -160,13 +168,16 @@ export function buildPullfrogFooter(params: BuildPullfrogFooterParams): string {
         clamped: params.clamped,
         unselectedProxyDefault: params.unselectedProxyDefault,
         oss: params.oss,
+        local: brand.local,
       })}`
     );
   }
 
-  const allParts = [...parts, "[𝕏](https://x.com/pullfrogai)"];
+  const social = brandSocialLink(brand);
+  const allParts = social ? [...parts, social] : parts;
+  const lead = brandLeadHtml(brand);
 
-  return `\n\n${PULLFROG_DIVIDER}\n<sup>${FROG_LOGO}&nbsp;&nbsp;｜ ${allParts.join(" ｜ ")}</sup>`;
+  return `\n\n${PULLFROG_DIVIDER}\n<sup>${lead}&nbsp;&nbsp;｜ ${allParts.join(" ｜ ")}</sup>`;
 }
 
 /**

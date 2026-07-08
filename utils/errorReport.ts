@@ -3,6 +3,7 @@ import { getApiUrl } from "./apiUrl.ts";
 import { buildPullfrogFooter } from "./buildPullfrogFooter.ts";
 import { log } from "./cli.ts";
 import { createOctokit, parseRepoContext } from "./github.ts";
+import { buildLocalRerunPart, isLocalPullfrog } from "./localBrand.ts";
 import { updateProgressComment } from "./progressComment.ts";
 import { getGitHubInstallationToken, getMcpTokenRefresh } from "./token.ts";
 
@@ -32,10 +33,20 @@ export async function reportErrorToComment(ctx: ReportErrorParams): Promise<void
 
   const customParts: string[] = [];
   if (runId) {
-    const apiUrl = getApiUrl();
-    customParts.push(
-      `[Rerun failed job ➔](${apiUrl}/trigger/${repoContext.owner}/${repoContext.name}/${runId}?action=rerun)`
-    );
+    if (isLocalPullfrog()) {
+      customParts.push(
+        buildLocalRerunPart({
+          owner: repoContext.owner,
+          repo: repoContext.name,
+          runId,
+        })
+      );
+    } else {
+      const apiUrl = getApiUrl();
+      customParts.push(
+        `[Rerun failed job ➔](${apiUrl}/trigger/${repoContext.owner}/${repoContext.name}/${runId}?action=rerun)`
+      );
+    }
   }
 
   const footer = buildPullfrogFooter({

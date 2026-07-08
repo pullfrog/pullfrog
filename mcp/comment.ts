@@ -4,6 +4,10 @@ import { getApiUrl } from "../utils/apiUrl.ts";
 import { buildPullfrogFooter, stripExistingFooter } from "../utils/buildPullfrogFooter.ts";
 import { log } from "../utils/cli.ts";
 import { fixDoubleEscapedString } from "../utils/fixDoubleEscapedString.ts";
+import {
+  buildLocalImplementPlanPart,
+  isLocalPullfrog,
+} from "../utils/localBrand.ts";
 import { patchWorkflowRunFields } from "../utils/patchWorkflowRunFields.ts";
 import {
   createLeapingProgressComment,
@@ -12,6 +16,7 @@ import {
 } from "../utils/progressComment.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
+
 
 // re-export for backward compat with anything importing the leaping helpers from mcp/comment
 export {
@@ -47,9 +52,17 @@ function buildCommentFooter(ctx: ToolContext, customParts?: string[]): string {
 }
 
 function buildImplementPlanLink(ctx: ToolContext, issueNumber: number, commentId: number): string {
+  if (isLocalPullfrog()) {
+    return buildLocalImplementPlanPart({
+      owner: ctx.repo.owner,
+      repo: ctx.repo.name,
+      issueNumber,
+    });
+  }
   const apiUrl = getApiUrl();
   return `[Implement plan ➔](${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${issueNumber}?action=implement&comment_id=${commentId})`;
 }
+
 
 export function addFooter(ctx: ToolContext, body: string): string {
   if (/<br\s*\/?>[ \t]*\n(?!\s*\n)/i.test(body)) {

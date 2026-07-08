@@ -5,6 +5,8 @@ import { type CommentableLines, primaryRepoState } from "../toolState.ts";
 import { getApiUrl } from "../utils/apiUrl.ts";
 import { buildPullfrogFooter } from "../utils/buildPullfrogFooter.ts";
 import { log } from "../utils/cli.ts";
+import { buildLocalFixParts, isLocalPullfrog } from "../utils/localBrand.ts";
+
 import {
   countLinesInRanges,
   getDiffCoverageBreakdown,
@@ -1094,18 +1096,32 @@ export async function createAndSubmitWithFooter(
     // comments), so dispatching a fix run would be a UX trap.
     const customParts: string[] = [];
     if (!opts.approved) {
-      const apiUrl = getApiUrl();
-      if (opts.hasComments) {
-        const fixAllUrl = `${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${params.pull_number}?action=fix&review_id=${pending.data.id}`;
-        const fixApprovedUrl = `${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${params.pull_number}?action=fix-approved&review_id=${pending.data.id}`;
-        customParts.push(`[Fix all ➔](${fixAllUrl})`, `[Fix 👍s ➔](${fixApprovedUrl})`);
+      if (isLocalPullfrog()) {
+        // Weltel local: no pullfrog.com /trigger backend — use @mention + Actions links
+        customParts.push(
+          ...buildLocalFixParts({
+            owner: ctx.repo.owner,
+            repo: ctx.repo.name,
+            pullNumber: params.pull_number,
+            reviewId: pending.data.id,
+            hasComments: opts.hasComments,
+          })
+        );
       } else {
-        const fixUrl = `${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${params.pull_number}?action=fix&review_id=${pending.data.id}`;
-        customParts.push(`[Fix it ➔](${fixUrl})`);
+        const apiUrl = getApiUrl();
+        if (opts.hasComments) {
+          const fixAllUrl = `${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${params.pull_number}?action=fix&review_id=${pending.data.id}`;
+          const fixApprovedUrl = `${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${params.pull_number}?action=fix-approved&review_id=${pending.data.id}`;
+          customParts.push(`[Fix all ➔](${fixAllUrl})`, `[Fix 👍s ➔](${fixApprovedUrl})`);
+        } else {
+          const fixUrl = `${apiUrl}/trigger/${ctx.repo.owner}/${ctx.repo.name}/${params.pull_number}?action=fix&review_id=${pending.data.id}`;
+          customParts.push(`[Fix it ➔](${fixUrl})`);
+        }
       }
     }
 
     const footer = buildPullfrogFooter({
+      triggeredBy: true,
       workflowRun: ctx.runId
         ? { owner: ctx.repo.owner, repo: ctx.repo.name, runId: ctx.runId, jobId: ctx.jobId }
         : undefined,
