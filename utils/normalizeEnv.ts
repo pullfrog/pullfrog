@@ -64,8 +64,9 @@ export function normalizeEnv(): void {
       const key = keys[0];
       if (key !== upperKey) {
         // single key, just needs uppercasing
-        process.env[upperKey] = process.env[key];
+        const value = process.env[key];
         delete process.env[key];
+        process.env[upperKey] = value;
       }
       continue;
     }

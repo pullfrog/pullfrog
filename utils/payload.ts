@@ -5,6 +5,7 @@ import { type } from "arktype";
 import type { AuthorPermission, PayloadEvent } from "../external.ts";
 import packageJson from "../package.json" with { type: "json" };
 import { log } from "./cli.ts";
+import { deriveEventFromGithubActions } from "./githubEvent.ts";
 import type { RepoSettings } from "./runContext.ts";
 import { validateCompatibility } from "./versioning.ts";
 
@@ -170,9 +171,29 @@ export function resolvePayload(
 
   const inputs = resolveNonPromptInputs();
 
-  // resolve event - use type guard for jsonPayload.event, fallback to unknown trigger
+  // resolve event: SaaS JSON payload event wins; otherwise derive from the GHA
+  // webhook (GITHUB_EVENT_PATH). local plain-text prompts have no ~pullfrog
+  // event object — without this derivation, push_branch sees trigger:unknown
+  // and blocks pr-N pushes even when the workflow was clearly on that PR
+  // (issue_comment @pullfrog, check_suite, etc.).
   const rawEvent = jsonPayload?.event;
-  const event: PayloadEvent = isPayloadEvent(rawEvent) ? rawEvent : { trigger: "unknown" };
+  let event: PayloadEvent;
+  if (isPayloadEvent(rawEvent)) {
+    event = rawEvent;
+  } else {
+    const derived = deriveEventFromGithubActions();
+    if (derived) {
+      log.info(
+        `» derived run event from GITHUB_EVENT (${process.env.GITHUB_EVENT_NAME}): ` +
+          `trigger=${derived.trigger}` +
+          (derived.issue_number != null ? ` issue_number=${derived.issue_number}` : "") +
+          (derived.is_pr ? " is_pr=true" : "")
+      );
+      event = derived;
+    } else {
+      event = { trigger: "unknown" };
+    }
+  }
 
   const model = jsonPayload?.model ?? inputs.model ?? repoSettings.model ?? undefined;
 

@@ -54,7 +54,9 @@ describe("normalizeEnv: process.env state contract", () => {
     process.env.anthropic_api_key = "sk-ant-lowercase\n";
     normalizeEnv();
     expect(process.env.ANTHROPIC_API_KEY).toBe("sk-ant-lowercase");
-    expect(process.env.anthropic_api_key).toBeUndefined();
+    if (process.platform !== "win32") {
+      expect(process.env.anthropic_api_key).toBeUndefined();
+    }
   });
 
   it("preserves whitespace-only values rather than silently zeroing them", () => {
