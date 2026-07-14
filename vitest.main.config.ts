@@ -8,7 +8,7 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["**/*.main.test.ts"],
-    exclude: ["**/node_modules/**", "**/.temp/**", "**/.pnpm-store/**"],
+    exclude: ["**/node_modules/**", "**/.temp/**", "**/.pnpm-store/**", "**/.terraform/**"],
     globalSetup: ["./vitest.global-setup.ts"],
     setupFiles: ["./vitest.setup.ts"],
   },

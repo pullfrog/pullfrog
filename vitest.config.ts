@@ -8,6 +8,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/.temp/**",
       "**/.pnpm-store/**",
+      "**/.terraform/**",
       // *.main.test.ts files run only on main (e.g. catalog drift against
       // models.dev + OpenRouter). run them via `pnpm test:catalog`, which
       // points at vitest.main.config.ts.
