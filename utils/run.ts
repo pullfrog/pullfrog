@@ -78,14 +78,19 @@ export async function handleAgentResult(ctx: HandleAgentResultParams): Promise<M
         // the write itself is failing (auth/permissions) — surface THAT, not
         // the generic "no progress" message, so the real cause isn't masked.
         const error = `failed to deliver agent result: ${getErrorMessage(writeError)}`;
-        await reportErrorToComment({ toolState, error, title: "Error" }).catch(() => {});
+        await reportErrorToComment({
+          toolState,
+          error,
+          title: "Error",
+          createIfMissing: true,
+        }).catch(() => {});
         return { success: false, error, output: ctx.result.output || "" };
       }
     }
 
     const error = ctx.result.error || "agent completed without reporting progress";
     try {
-      await reportErrorToComment({ toolState, error, title: "Error" });
+      await reportErrorToComment({ toolState, error, title: "Error", createIfMissing: true });
     } catch {}
     return { success: false, error, output: ctx.result.output || "" };
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ToolState } from "../toolState.ts";
-import { getUnsubmittedReview } from "./postRun.ts";
+import type { AgentRunContext } from "./shared.ts";
+import { collectPostRunIssues, getUnsubmittedReview } from "./postRun.ts";
 
 function makeToolState(overrides: Partial<ToolState> = {}): ToolState {
   return {
@@ -57,10 +58,57 @@ describe("getUnsubmittedReview", () => {
     ).toBeNull();
   });
 
+  it("still requires a review in comment-free review runs", () => {
+    expect(
+      getUnsubmittedReview(
+        makeToolState({ selectedMode: "Review", hadProgressComment: false }),
+        true
+      )
+    ).toBe("Review");
+  });
+
   it("returns the selected mode when the gate should fire", () => {
     expect(getUnsubmittedReview(makeToolState({ selectedMode: "Review" }))).toBe("Review");
     expect(getUnsubmittedReview(makeToolState({ selectedMode: "IncrementalReview" }))).toBe(
       "IncrementalReview"
     );
+  });
+});
+
+describe("collectPostRunIssues", () => {
+  it("does not require output from silent comment-free review runs", async () => {
+    const ctx = {
+      payload: { progressComments: false, event: { is_pr: true, silent: true } },
+      toolState: makeToolState({
+        selectedMode: "IncrementalReview",
+        hadProgressComment: false,
+      }),
+    } as unknown as AgentRunContext;
+
+    const issues = await collectPostRunIssues(ctx);
+
+    expect(issues.unsubmittedReview).toBeUndefined();
+  });
+
+  it("requires output from non-silent comment-free review runs without is_pr", async () => {
+    const ctx = {
+      payload: { progressComments: false, event: { issue_number: 42 } },
+      toolState: makeToolState({ selectedMode: "Review", hadProgressComment: false }),
+    } as unknown as AgentRunContext;
+
+    const issues = await collectPostRunIssues(ctx);
+
+    expect(issues.unsubmittedReview).toBe("Review");
+  });
+
+  it("does not require review output from plain-prompt runs without a target", async () => {
+    const ctx = {
+      payload: { progressComments: false, event: { trigger: "unknown" } },
+      toolState: makeToolState({ selectedMode: "Review", hadProgressComment: false }),
+    } as unknown as AgentRunContext;
+
+    const issues = await collectPostRunIssues(ctx);
+
+    expect(issues.unsubmittedReview).toBeUndefined();
   });
 });

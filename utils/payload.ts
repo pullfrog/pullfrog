@@ -15,6 +15,7 @@ const PushPermissionInput = type.enumerated("disabled", "restricted", "enabled")
 // check-runs (branch protection). off by default — a new required-check
 // surface must not silently turn on.
 const StatusChecksInput = type.enumerated("disabled", "enabled");
+const ProgressCommentsInput = type.enumerated("disabled", "enabled");
 
 // schema for JSON payload passed via prompt (internal dispatch invocation)
 // note: permissions are intentionally NOT included here to prevent injection attacks
@@ -69,6 +70,7 @@ export const Inputs = type({
   "push?": PushPermissionInput.or("undefined"),
   "shell?": ShellPermissionInput.or("undefined"),
   "status_checks?": StatusChecksInput.or("undefined"),
+  "progress_comments?": ProgressCommentsInput.or("undefined"),
   "cwd?": type.string.or("undefined"),
   "output_schema?": type.string.or("undefined"),
 });
@@ -146,6 +148,7 @@ function resolveNonPromptInputs() {
     push: core.getInput("push") || undefined,
     shell: core.getInput("shell") || undefined,
     status_checks: core.getInput("status_checks") || undefined,
+    progress_comments: core.getInput("progress_comments") || undefined,
   });
 }
 
@@ -229,6 +232,13 @@ export function resolvePayload(
     // opt-in commit-status check-runs (branch protection). workflow-level
     // static input, off unless the repo's pullfrog.yml sets status_checks: enabled.
     statusChecks: inputs.status_checks === "enabled",
+
+    // action input overrides the repository setting; enabled by default for
+    // backward compatibility with existing workflows and run-context payloads.
+    progressComments:
+      inputs.progress_comments === undefined
+        ? repoSettings.progressComments
+        : inputs.progress_comments === "enabled",
 
     // set by proxy logic in main.ts when routing through OpenRouter
     proxyModel: undefined as string | undefined,

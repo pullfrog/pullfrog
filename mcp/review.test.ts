@@ -8,8 +8,34 @@ import {
   MAX_DROPPED_COMMENT_LINES,
   type ReviewCommentInput,
   reviewSkipDecision,
+  sealProgressAfterReview,
   validateInlineComments,
 } from "./review.ts";
+import type { ToolContext } from "./server.ts";
+
+describe("sealProgressAfterReview", () => {
+  it("seals comment-free disabled review runs", () => {
+    const ctx = {
+      payload: { progressComments: false },
+      toolState: { progressComment: undefined },
+    } as unknown as ToolContext;
+
+    sealProgressAfterReview(ctx);
+
+    expect(ctx.toolState.progressComment).toBeNull();
+  });
+
+  it("does not change enabled runs without a progress comment", () => {
+    const ctx = {
+      payload: { progressComments: true },
+      toolState: { progressComment: undefined },
+    } as unknown as ToolContext;
+
+    sealProgressAfterReview(ctx);
+
+    expect(ctx.toolState.progressComment).toBeUndefined();
+  });
+});
 
 describe("commentableLinesForFile", () => {
   it("returns empty sets for missing patches (binary or no changes)", () => {

@@ -28,8 +28,10 @@ import {
  * should fire, `null` otherwise — pure read, no side effects, safe to invoke
  * after every agent attempt.
  *
- * the gate is anchored to `hadProgressComment` so silent runs (non-issue
+ * the gate normally follows `hadProgressComment` so silent runs (non-issue
  * events, dispatcher skipped seeding) don't fire a nudge there's no UI for.
+ * `expectsReviewOutput` lets comment-free PR review runs retain the same final
+ * review requirement without storing derived configuration in ToolState.
  *
  * `Review` and `IncrementalReview` have different valid exits:
  *   - Review: only `create_pull_request_review` counts. `report_progress` is
@@ -42,9 +44,12 @@ import {
  * `task`-dispatched `reviewfrog` lens) calls `report_progress` and silences
  * the gate even though the orchestrator never submitted a review.
  */
-export function getUnsubmittedReview(toolState: ToolState): "Review" | "IncrementalReview" | null {
+export function getUnsubmittedReview(
+  toolState: ToolState,
+  expectsReviewOutput = toolState.hadProgressComment
+): "Review" | "IncrementalReview" | null {
   const mode = toolState.selectedMode;
-  if (!toolState.hadProgressComment) return null;
+  if (!expectsReviewOutput) return null;
   if (mode === "Review") return toolState.review ? null : "Review";
   if (mode === "IncrementalReview") {
     return toolState.review || toolState.finalSummaryWritten ? null : "IncrementalReview";
@@ -222,7 +227,12 @@ export async function collectPostRunIssues(
     const stale = await isSummaryUnchanged(summaryFilePath, summarySeed);
     if (stale) issues.summaryStale = { filePath: summaryFilePath };
   }
-  const unsubmittedMode = getUnsubmittedReview(ctx.toolState);
+  const expectsReviewOutput =
+    ctx.toolState.hadProgressComment ||
+    (ctx.payload.progressComments === false &&
+      ctx.payload.event.silent !== true &&
+      ctx.payload.event.issue_number !== undefined);
+  const unsubmittedMode = getUnsubmittedReview(ctx.toolState, expectsReviewOutput);
   if (unsubmittedMode) issues.unsubmittedReview = unsubmittedMode;
   return issues;
 }

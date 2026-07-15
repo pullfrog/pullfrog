@@ -40,6 +40,7 @@ export interface RepoSettings {
   // as the final "may auto-merge" verdict. see autoMergeAfterApprove.
   autoMergeEnabled: boolean;
   signedCommits: boolean;
+  progressComments: boolean;
   modeInstructions: Record<string, string>;
   learnings: string | null;
   learningsHeadings: LearningsHeading[];
@@ -80,6 +81,7 @@ const defaultSettings: RepoSettings = {
   prApproveEnabled: false,
   autoMergeEnabled: false,
   signedCommits: false,
+  progressComments: true,
   modeInstructions: {},
   learnings: null,
   learningsHeadings: [],

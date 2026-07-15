@@ -17,6 +17,9 @@ describe("Inputs schema", () => {
     ["shell", "restricted"],
     ["shell", "disabled"],
     ["shell", undefined],
+    ["progress_comments", "enabled"],
+    ["progress_comments", "disabled"],
+    ["progress_comments", undefined],
     ["timeout", "10m"],
     ["timeout", "1h30m"],
     ["timeout", "30s"],
@@ -26,10 +29,13 @@ describe("Inputs schema", () => {
     expect(() => Inputs.assert(input)).not.toThrow();
   });
 
-  it.each([["push"], ["shell"]] as const)("should reject invalid %s values", (prop) => {
-    const input = { prompt: "test", [prop]: "invalid" as any };
-    expect(() => Inputs.assert(input)).toThrow();
-  });
+  it.each([["push"], ["shell"], ["progress_comments"]] as const)(
+    "should reject invalid %s values",
+    (prop) => {
+      const input = { prompt: "test", [prop]: "invalid" as any };
+      expect(() => Inputs.assert(input)).toThrow();
+    }
+  );
 });
 
 describe("JsonPayload schema", () => {

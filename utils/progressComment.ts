@@ -98,6 +98,13 @@ interface ApiCtx {
   repo: string;
 }
 
+export function isNotFoundError(error: unknown): boolean {
+  return (
+    (typeof error === "object" && error !== null && "status" in error && error.status === 404) ||
+    (error instanceof Error && error.message.includes("Not Found"))
+  );
+}
+
 /**
  * Fetch a progress comment via the appropriate REST endpoint for its type.
  * Returns the common subset of fields callers actually use.
@@ -169,19 +176,25 @@ export async function deleteProgressCommentApi(
   ctx: ApiCtx,
   comment: ProgressComment
 ): Promise<void> {
-  if (comment.type === "review") {
-    await ctx.octokit.rest.pulls.deleteReviewComment({
+  try {
+    if (comment.type === "review") {
+      await ctx.octokit.rest.pulls.deleteReviewComment({
+        owner: ctx.owner,
+        repo: ctx.repo,
+        comment_id: comment.id,
+      });
+      return;
+    }
+    await ctx.octokit.rest.issues.deleteComment({
       owner: ctx.owner,
       repo: ctx.repo,
       comment_id: comment.id,
     });
-    return;
+  } catch (error) {
+    // Deletion is idempotent: an already-removed progress comment is the
+    // desired state, regardless of whether it disappeared locally or remotely.
+    if (!isNotFoundError(error)) throw error;
   }
-  await ctx.octokit.rest.issues.deleteComment({
-    owner: ctx.owner,
-    repo: ctx.repo,
-    comment_id: comment.id,
-  });
 }
 
 /**

@@ -53,6 +53,7 @@ import {
 } from "./utils/packageManager.ts";
 import { aggregateUsage, patchWorkflowRunFields } from "./utils/patchWorkflowRunFields.ts";
 import { resolveOutputSchema, resolvePayload, resolvePromptInput } from "./utils/payload.ts";
+import { deleteProgressCommentApi } from "./utils/progressComment.ts";
 import { runProxyResolution } from "./utils/proxy.ts";
 import { fetchPreviousSnapshot, persistSummary, seedSummaryFile } from "./utils/prSummary.ts";
 import { handleAgentResult } from "./utils/run.ts";
@@ -200,6 +201,9 @@ export async function main(): Promise<MainResult> {
   toolState.model = payload.model;
   toolState.oss = runContext.oss;
   toolState.shaPinned = isActionPinnedToSha();
+  if (payload.event.issue_number) {
+    primaryRepoState(toolState).issueNumber = payload.event.issue_number;
+  }
   if (payload.event.trigger === "pull_request_synchronize") {
     primaryRepoState(toolState).beforeSha = payload.event.before_sha;
   }
@@ -261,6 +265,24 @@ export async function main(): Promise<MainResult> {
   // create octokit with MCP token for GitHub API calls.
   // the refresh handles mid-run token invalidation (#891)
   const octokit = createOctokit(tokenRef.mcpToken, getMcpTokenRefresh());
+
+  if (!payload.progressComments) {
+    const comment = toolState.progressComment;
+    if (comment) {
+      try {
+        await deleteProgressCommentApi(
+          { octokit, owner: runContext.repo.owner, repo: runContext.repo.name },
+          comment
+        );
+        toolState.progressComment = undefined;
+        log.info("» progress comments disabled; removed initial comment");
+      } catch (error) {
+        // Keep the handle so a final review can retry the deletion. Live writes
+        // remain disabled by the payload gate below.
+        log.warning(`» failed to remove initial progress comment: ${error}`);
+      }
+    }
+  }
 
   const runInfo = await resolveRun({ octokit });
   let toolContext: ToolContext | undefined;

@@ -191,6 +191,13 @@ export async function countOutstandingPullfrogThreads(
   return count;
 }
 
+/** Prevent a post-review report from recreating progress chrome suppressed at startup. */
+export function sealProgressAfterReview(ctx: ToolContext): void {
+  if (ctx.payload.progressComments === false && ctx.toolState.progressComment === undefined) {
+    ctx.toolState.progressComment = null;
+  }
+}
+
 /**
  * proactive approve-when-clean for the Fix-all / Fix-👍s flow (`fix_review`
  * trigger). when such a run completes successfully and every Pullfrog-originated
@@ -272,6 +279,7 @@ export async function approveAfterFix(ctx: ToolContext): Promise<void> {
   await deleteProgressComment(ctx).catch((err) => {
     log.debug(`progress comment cleanup after fix auto-approval failed: ${err}`);
   });
+  sealProgressAfterReview(ctx);
 }
 
 export type ReviewCommentInput = NonNullable<
@@ -852,6 +860,7 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
         await deleteProgressComment(ctx).catch((err) => {
           log.debug(`progress comment cleanup after review failed: ${err}`);
         });
+        sealProgressAfterReview(ctx);
 
         // detect commits pushed since checkout and guide the agent to review them
         // inline instead of dispatching a separate workflow run

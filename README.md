@@ -145,6 +145,8 @@ jobs:
 
 You can also use `pullfrog/pullfrog` as a step in your own workflows. The action exposes a `result` output that can be consumed by subsequent steps.
 
+To hide temporary progress comments in review workflows, set `progress_comments: disabled`. Pullfrog removes the initial “Leaping into action...” comment and skips todo updates; final reviews, result comments, and failure reports are unaffected.
+
 ### Example: Auto-generate release notes on new tags
 
 ```yaml

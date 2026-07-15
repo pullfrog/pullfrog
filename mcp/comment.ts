@@ -8,6 +8,7 @@ import { patchWorkflowRunFields } from "../utils/patchWorkflowRunFields.ts";
 import {
   createLeapingProgressComment,
   deleteProgressCommentApi,
+  isNotFoundError,
   updateProgressComment,
 } from "../utils/progressComment.ts";
 import type { ToolContext } from "./server.ts";
@@ -18,10 +19,6 @@ export {
   isLeapingIntoActionCommentBody,
   LEAPING_INTO_ACTION_PREFIX,
 } from "../utils/leapingComment.ts";
-
-function isNotFoundError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("Not Found");
-}
 
 function buildCommentFooter(ctx: ToolContext, customParts?: string[]): string {
   const runId = ctx.runId;
@@ -202,6 +199,10 @@ export async function reportProgress(
   // or skip salvage entirely) and triggers stranded-comment deletion.
   if (!params.liveProgress) {
     ctx.toolState.lastProgressBody = body;
+  }
+
+  if (params.liveProgress && !ctx.payload.progressComments) {
+    return { body, action: "skipped" };
   }
 
   // silent events (e.g., auto-label, pr-summary Task) should never create or update progress comments.
@@ -429,19 +430,12 @@ export function ReportProgressTool(ctx: ToolContext) {
  */
 export async function deleteProgressComment(ctx: ToolContext): Promise<boolean> {
   const existing = ctx.toolState.progressComment;
-  if (!existing) {
-    return false;
-  }
+  if (!existing) return false;
 
-  try {
-    await deleteProgressCommentApi(
-      { octokit: ctx.octokit, owner: ctx.repo.owner, repo: ctx.repo.name },
-      existing
-    );
-  } catch (error) {
-    // ignore 404 - comment already deleted
-    if (!isNotFoundError(error)) throw error;
-  }
+  await deleteProgressCommentApi(
+    { octokit: ctx.octokit, owner: ctx.repo.owner, repo: ctx.repo.name },
+    existing
+  );
 
   // set to null (not undefined) so report_progress skips instead of creating a new comment
   ctx.toolState.progressComment = null;

@@ -27,6 +27,9 @@ inputs:
   status_checks:
     description: "Post `pullfrog` (run completion) and `pullfrog-approval` (review verdict) commit-status checks on PR runs so they can be required by branch protection: disabled (default) or enabled."
     required: false
+  progress_comments:
+    description: "Post temporary progress comments (`Leaping into action...` and todo updates): enabled (default) or disabled. Final reviews, result comments, and failure reports are unaffected."
+    required: false
   output_schema:
     description: "JSON Schema (draft-07) for structured output validation. When provided, the action output becomes required and must conform to this schema."
     required: false
