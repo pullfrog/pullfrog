@@ -1,6 +1,9 @@
 import {
   BEDROCK_MODEL_ID_ENV,
   getModelEnvVars,
+  OPENAI_COMPATIBLE_API_KEY_ENV,
+  OPENAI_COMPATIBLE_BASE_URL_ENV,
+  OPENAI_COMPATIBLE_MODEL_ID_ENV,
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
 } from "../models.ts";
@@ -83,6 +86,22 @@ add the missing secret(s) to your GitHub repository at ${githubSecretsUrl}, then
 for full setup instructions, see https://docs.pullfrog.com/vertex`;
 }
 
+function buildOpenAICompatibleSetupError(params: {
+  owner: string;
+  name: string;
+  missing: string[];
+}): string {
+  const githubSecretsUrl = `https://github.com/${params.owner}/${params.name}/settings/secrets/actions`;
+
+  return `OpenAI-compatible model selected but required configuration is missing: ${params.missing.join(", ")}.
+
+add the missing secret(s) to your GitHub repository at ${githubSecretsUrl}, then reference them in your workflow's \`env:\` block:
+
+  ${OPENAI_COMPATIBLE_API_KEY_ENV}: \${{ secrets.${OPENAI_COMPATIBLE_API_KEY_ENV} }}
+  ${OPENAI_COMPATIBLE_BASE_URL_ENV}: \${{ secrets.${OPENAI_COMPATIBLE_BASE_URL_ENV} }}
+  ${OPENAI_COMPATIBLE_MODEL_ID_ENV}: \${{ secrets.${OPENAI_COMPATIBLE_MODEL_ID_ENV} }}`;
+}
+
 function hasEnvVar(name: string): boolean {
   const value = process.env[name];
   return typeof value === "string" && value.length > 0;
@@ -121,6 +140,28 @@ function validateVertexSetup(params: { owner: string; name: string }): void {
   }
 }
 
+function validateOpenAICompatibleSetup(params: { owner: string; name: string }): void {
+  const requiredEnvVars = [
+    OPENAI_COMPATIBLE_API_KEY_ENV,
+    OPENAI_COMPATIBLE_BASE_URL_ENV,
+    OPENAI_COMPATIBLE_MODEL_ID_ENV,
+  ];
+  const missing = requiredEnvVars.filter((name) => !process.env[name]?.trim());
+
+  if (missing.length > 0) {
+    throw new Error(buildOpenAICompatibleSetupError({ owner: params.owner, name: params.name, missing }));
+  }
+}
+
+function isOpenAICompatibleResolvedModel(model: string): boolean {
+  const openAICompatibleModelId = process.env[OPENAI_COMPATIBLE_MODEL_ID_ENV]?.trim();
+  return (
+    openAICompatibleModelId !== undefined &&
+    openAICompatibleModelId.length > 0 &&
+    model === `openai-compatible/${openAICompatibleModelId}`
+  );
+}
+
 /**
  * Validate that the resolved model can actually be served by the chosen
  * agent. For routing slugs (Bedrock / Vertex) the auth shape is multi-var
@@ -148,6 +189,15 @@ export function validateAgentApiKey(params: {
       validateVertexSetup({ owner: params.owner, name: params.name });
       return;
     }
+    if (alias?.routing === "openai-compatible") {
+      validateOpenAICompatibleSetup({ owner: params.owner, name: params.name });
+      return;
+    }
+
+    if (isOpenAICompatibleResolvedModel(params.model)) {
+      validateOpenAICompatibleSetup({ owner: params.owner, name: params.name });
+      return;
+    }
 
     // raw backend model IDs (post-resolveModel for routing slugs) have no
     // `/`. discriminate by the env-var sentinel, then run the matching
@@ -159,8 +209,10 @@ export function validateAgentApiKey(params: {
         validateVertexSetup({ owner: params.owner, name: params.name });
         return;
       }
-      validateBedrockSetup({ owner: params.owner, name: params.name });
-      return;
+      if (process.env[BEDROCK_MODEL_ID_ENV]?.trim() === params.model) {
+        validateBedrockSetup({ owner: params.owner, name: params.name });
+        return;
+      }
     }
 
     if (params.agent.name === "opencode") {

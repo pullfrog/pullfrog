@@ -101,6 +101,26 @@ jobs:
 
 ```
 
+#### OpenAI-compatible BYOK gateway
+
+To use any OpenAI-compatible bring-your-own-key (BYOK) gateway, add these GitHub Actions secrets to your repository:
+
+- `OPENAI_COMPATIBLE_API_KEY`
+- `OPENAI_COMPATIBLE_BASE_URL` — must be an OpenAI-compatible `/v1` endpoint (for example, `https://gateway.example.com/v1`)
+- `OPENAI_COMPATIBLE_MODEL_ID`
+
+Then select the generic OpenAI-compatible BYOK model and pass the secrets to the action:
+
+```yaml
+env:
+  PULLFROG_MODEL: openai-compatible/byok
+  OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENAI_COMPATIBLE_API_KEY }}
+  OPENAI_COMPATIBLE_BASE_URL: ${{ secrets.OPENAI_COMPATIBLE_BASE_URL }}
+  OPENAI_COMPATIBLE_MODEL_ID: ${{ secrets.OPENAI_COMPATIBLE_MODEL_ID }}
+```
+
+LiteLLM is a supported OpenAI-compatible gateway example, not a special provider.
+
 To gate merges on Pullfrog with branch protection, add `status_checks: enabled` under `with:`. Each PR run then posts a `pullfrog` check (run completion — success when the run finishes, failure on error/timeout) and a `pullfrog-approval` check (whether Pullfrog would approve the PR), both requireable as status checks. See [PR reviews → Required status checks](https://docs.pullfrog.dev/pr-reviews#required-status-checks-branch-protection).
 
 #### 2. Create `triggers.yml`

@@ -18,6 +18,8 @@ const ENV_KEYS_TO_STRIP = [
   /^VERTEX_SERVICE_ACCOUNT_JSON$/,
   /^VERTEX_LOCATION$/,
   /^VERTEX_MODEL_ID$/,
+  /^OPENAI_COMPATIBLE_BASE_URL$/,
+  /^OPENAI_COMPATIBLE_MODEL_ID$/,
 ];
 
 beforeEach(() => {
@@ -207,6 +209,44 @@ describe("validateAgentApiKey — Vertex routing", () => {
       "VERTEX_SERVICE_ACCOUNT_JSON"
     );
   });
+});
+
+describe("validateAgentApiKey — OpenAI-compatible routing", () => {
+  const params = { agent: opencode, authorized: new Set<string>(), owner, name };
+  const setup = () => {
+    process.env.OPENAI_COMPATIBLE_API_KEY = "openai-compatible-test-key";
+    process.env.OPENAI_COMPATIBLE_BASE_URL = "https://gateway.example.com/v1";
+    process.env.OPENAI_COMPATIBLE_MODEL_ID = "azure/gpt-5.6-production";
+  };
+
+  it("passes for the routing slug when all OpenAI-compatible configuration is present", () => {
+    setup();
+    expect(() =>
+      validateAgentApiKey({ ...params, model: "openai-compatible/byok" })
+    ).not.toThrow();
+  });
+
+  it.each(["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL", "OPENAI_COMPATIBLE_MODEL_ID"])(
+    "requires %s for the routing slug",
+    (missing) => {
+      setup();
+      delete process.env[missing];
+      expect(() => validateAgentApiKey({ ...params, model: "openai-compatible/byok" })).toThrow(
+        missing
+      );
+    }
+  );
+
+  it.each(["OPENAI_COMPATIBLE_API_KEY", "OPENAI_COMPATIBLE_BASE_URL"])(
+    "requires %s for the resolved OpenAI-compatible model",
+    (missing) => {
+      setup();
+      delete process.env[missing];
+      expect(() =>
+        validateAgentApiKey({ ...params, model: "openai-compatible/azure/gpt-5.6-production" })
+      ).toThrow(missing);
+    }
+  );
 });
 
 describe("isApiKeyAuthError", () => {

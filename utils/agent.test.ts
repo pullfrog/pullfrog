@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildOpenCodeConfig } from "../agents/opencode_v2.ts";
 import { resolveAgent, resolveModel } from "./agent.ts";
 import { cleanupVertexCredentials, materializeVertexCredentials } from "./vertex.ts";
 
@@ -21,6 +22,8 @@ const STRIPPED = [
   /^VERTEX_SERVICE_ACCOUNT_JSON$/,
   /^VERTEX_LOCATION$/,
   /^VERTEX_MODEL_ID$/,
+  /^OPENAI_COMPATIBLE_BASE_URL$/,
+  /^OPENAI_COMPATIBLE_MODEL_ID$/,
   /^PULLFROG_SECRET_HOME$/,
   /^PULLFROG_MODEL$/,
   /^PULLFROG_AGENT$/,
@@ -162,10 +165,53 @@ describe("resolveModel", () => {
     expect(() => resolveModel({ slug: "vertex/byok" })).toThrow("VERTEX_MODEL_ID");
   });
 
+  it("resolves openai-compatible/byok to the configured model", () => {
+    process.env.OPENAI_COMPATIBLE_MODEL_ID = "azure/gpt-5.6-deployment";
+    expect(resolveModel({ slug: "openai-compatible/byok" })).toBe(
+      "openai-compatible/azure/gpt-5.6-deployment"
+    );
+  });
+
+  it("throws when openai-compatible/byok is selected without OPENAI_COMPATIBLE_MODEL_ID", () => {
+    expect(() => resolveModel({ slug: "openai-compatible/byok" })).toThrow(
+      "OPENAI_COMPATIBLE_MODEL_ID"
+    );
+  });
+
   it("PULLFROG_MODEL=vertex/byok defers to VERTEX_MODEL_ID, not the sentinel", () => {
     process.env.PULLFROG_MODEL = "vertex/byok";
     process.env.VERTEX_MODEL_ID = "gemini-2.5-pro";
     expect(resolveModel({ slug: "openai/gpt" })).toBe("gemini-2.5-pro");
+  });
+});
+
+describe("buildOpenCodeConfig", () => {
+  it("translates an OpenAI-compatible route into OpenCode's provider payload", () => {
+    const modelId = "azure/gpt-5.6-production";
+    const config = buildOpenCodeConfig({
+      mcpServerUrl: "http://127.0.0.1:3000/mcp",
+      model: `openai-compatible/${modelId}`,
+      openaiCompatible: {
+        modelId,
+        baseURL: "https://gateway.example.com/v1",
+        apiKey: "openai-compatible-test-key",
+      },
+    });
+
+    expect(config.provider).toMatchObject({
+      "openai-compatible": {
+        npm: "@ai-sdk/openai-compatible",
+        options: {
+          baseURL: "https://gateway.example.com/v1",
+          apiKey: "openai-compatible-test-key",
+        },
+        models: {
+          [modelId]: { name: modelId },
+        },
+      },
+    });
+    expect(config.model).toBe(`openai-compatible/${modelId}`);
+    expect(config.enabled_providers).toEqual(["openai-compatible"]);
   });
 });
 
