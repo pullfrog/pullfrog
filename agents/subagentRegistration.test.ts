@@ -33,7 +33,7 @@ describe("subagent registration source asserts", () => {
       expect(opencodeSharedSource).toMatch(/overrides\.reviewer/);
     });
     it("v2 runner passes orchestrator model to buildReviewerAgentConfig", () => {
-      expect(opencodeV2Source).toMatch(/buildReviewerAgentConfig\(model\)/);
+      expect(opencodeV2Source).toMatch(/buildReviewerAgentConfig\(params\.model\)/);
     });
   });
 });

@@ -828,6 +828,13 @@ export const OPENAI_COMPATIBLE_API_KEY_ENV = "OPENAI_COMPATIBLE_API_KEY";
 export const OPENAI_COMPATIBLE_BASE_URL_ENV = "OPENAI_COMPATIBLE_BASE_URL";
 export const OPENAI_COMPATIBLE_MODEL_ID_ENV = "OPENAI_COMPATIBLE_MODEL_ID";
 
+/** all three are required — setup validators check against this single list. */
+export const OPENAI_COMPATIBLE_REQUIRED_ENV_VARS = [
+  OPENAI_COMPATIBLE_API_KEY_ENV,
+  OPENAI_COMPATIBLE_BASE_URL_ENV,
+  OPENAI_COMPATIBLE_MODEL_ID_ENV,
+] as const;
+
 /**
  * the Bedrock model ID passed to claude-code or opencode is whatever the
  * user set in `BEDROCK_MODEL_ID` — Pullfrog never resolves or upgrades it.

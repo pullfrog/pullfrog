@@ -5,9 +5,8 @@ import {
   getModelProvider,
   isBedrockAnthropicId,
   isVertexAnthropicId,
-  OPENAI_COMPATIBLE_API_KEY_ENV,
-  OPENAI_COMPATIBLE_BASE_URL_ENV,
   OPENAI_COMPATIBLE_MODEL_ID_ENV,
+  OPENAI_COMPATIBLE_REQUIRED_ENV_VARS,
   resolveCliModel,
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
@@ -36,11 +35,7 @@ function hasVertexAuth(): boolean {
 }
 
 function getMissingOpenAICompatibleEnvVars(): string[] {
-  return [
-    OPENAI_COMPATIBLE_API_KEY_ENV,
-    OPENAI_COMPATIBLE_BASE_URL_ENV,
-    OPENAI_COMPATIBLE_MODEL_ID_ENV,
-  ].filter((name) => !process.env[name]?.trim());
+  return OPENAI_COMPATIBLE_REQUIRED_ENV_VARS.filter((name) => !process.env[name]?.trim());
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   OPENAI_COMPATIBLE_API_KEY_ENV,
   OPENAI_COMPATIBLE_BASE_URL_ENV,
   OPENAI_COMPATIBLE_MODEL_ID_ENV,
+  OPENAI_COMPATIBLE_REQUIRED_ENV_VARS,
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
 } from "../models.ts";
@@ -141,12 +142,7 @@ function validateVertexSetup(params: { owner: string; name: string }): void {
 }
 
 function validateOpenAICompatibleSetup(params: { owner: string; name: string }): void {
-  const requiredEnvVars = [
-    OPENAI_COMPATIBLE_API_KEY_ENV,
-    OPENAI_COMPATIBLE_BASE_URL_ENV,
-    OPENAI_COMPATIBLE_MODEL_ID_ENV,
-  ];
-  const missing = requiredEnvVars.filter((name) => !process.env[name]?.trim());
+  const missing = OPENAI_COMPATIBLE_REQUIRED_ENV_VARS.filter((name) => !process.env[name]?.trim());
 
   if (missing.length > 0) {
     throw new Error(buildOpenAICompatibleSetupError({ owner: params.owner, name: params.name, missing }));
@@ -199,11 +195,12 @@ export function validateAgentApiKey(params: {
       return;
     }
 
-    // raw backend model IDs (post-resolveModel for routing slugs) have no
-    // `/`. discriminate by the env-var sentinel, then run the matching
-    // setup validator — `opencode models` doesn't help here because the
-    // Bedrock/Vertex provider plugins need region/location/model-id wired
-    // through env regardless of CLI-side auth.
+    // raw backend model IDs (post-resolveModel for bedrock/vertex routing
+    // slugs) have no `/` — openai-compatible resolves to a slashed specifier
+    // and is handled above. discriminate by the env-var sentinel, then run
+    // the matching setup validator — `opencode models` doesn't help here
+    // because the Bedrock/Vertex provider plugins need region/location/
+    // model-id wired through env regardless of CLI-side auth.
     if (!params.model.includes("/")) {
       if (process.env[VERTEX_MODEL_ID_ENV]?.trim() === params.model) {
         validateVertexSetup({ owner: params.owner, name: params.name });

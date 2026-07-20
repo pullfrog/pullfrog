@@ -15,7 +15,7 @@
  * throws and `runErrorRenderer.ts` re-surfaces on both run surfaces.
  */
 
-import { resolveOpenRouterModel } from "../models.ts";
+import { resolveDisplayAlias, resolveOpenRouterModel } from "../models.ts";
 import { getApiUrl } from "./apiUrl.ts";
 
 export type ModelAccessReason = "oss" | "byok_no_key" | "router";
@@ -50,11 +50,15 @@ export function decideModelAccess(input: {
 }): ModelAccessDecision {
   if (!input.modelExplicit || !input.model) return { kind: "ok" };
 
-  // raw routing slugs (bedrock/vertex — no provider/model slash) are validated
-  // by their own setup checks, not the opencode `authorized` snapshot.
+  // routing slugs are validated by their own setup checks, not the opencode
+  // `authorized` snapshot — discriminate on the alias' routing flag (their
+  // resolved IDs may or may not contain a slash).
+  const isRoutingSlug = resolveDisplayAlias(input.model)?.routing !== undefined;
   const byokAuthorized =
     !!input.resolvedModel &&
-    (input.authorized.has(input.resolvedModel) || !input.resolvedModel.includes("/"));
+    (input.authorized.has(input.resolvedModel) ||
+      !input.resolvedModel.includes("/") ||
+      isRoutingSlug);
 
   if (input.proxyActive) {
     const target = resolveOpenRouterModel(input.model);
