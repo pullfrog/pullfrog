@@ -13,7 +13,7 @@ env:
 
 jobs:
   pull-on-runner:
-    runs-on: [self-hosted, linux, x64, spot, weltel]
+    runs-on: ubuntu
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

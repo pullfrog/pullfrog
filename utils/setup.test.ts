@@ -103,12 +103,16 @@ describe("removeIncludeIfEntries", () => {
 
     removeIncludeIfEntries(repoDir);
 
-    const remaining = execSync("git config --local --get-regexp ^includeif\\. || true", {
-      cwd: repoDir,
-      encoding: "utf-8",
-      shell: "/bin/bash",
-      env: cleanEnv,
-    });
+    let remaining = "";
+    try {
+      remaining = execSync("git config --local --get-regexp ^includeif\\.", {
+        cwd: repoDir,
+        encoding: "utf-8",
+        env: cleanEnv,
+      });
+    } catch {
+      // git config exits with 1 when no keys match
+    }
     expect(remaining.trim()).toBe("");
   });
 

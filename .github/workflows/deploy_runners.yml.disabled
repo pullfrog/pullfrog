@@ -31,15 +31,13 @@ on:
           - repo
           - org
 
-
-
 permissions:
   contents: read
 
 jobs:
   terraform:
     name: Terraform ${{ github.event.inputs.action }}
-    runs-on: [self-hosted, linux, x64, spot, weltel]
+    runs-on: ubuntu
     timeout-minutes: 30
     defaults:
       run:

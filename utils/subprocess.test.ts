@@ -32,8 +32,8 @@ describe("spawn error path", () => {
     // fires immediately — `close` lands within ms of the SIGTERM, giving us
     // the orphaned-escalator window that the bug would have triggered.
     const result = await spawn({
-      cmd: "sleep",
-      args: ["30"],
+      cmd: process.platform === "win32" ? "node" : "sleep",
+      args: process.platform === "win32" ? ["-e", "setTimeout(() => {}, 30000)"] : ["30"],
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
       activityTimeout: 0,
       timeout: 200,
@@ -150,6 +150,7 @@ describe("spawn error path", () => {
   });
 
   it("reports signal-killed subprocesses as failures, not success", async () => {
+    if (process.platform === "win32") return;
     // regression: before the fix, `child.on("close", (exitCode) => ...)`
     // discarded the signal parameter and `exitCode || 0` coerced the
     // node-delivered null to 0. lifecycle hooks killed by OOM, segfault,

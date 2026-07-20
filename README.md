@@ -92,9 +92,12 @@ jobs:
         env:
           # add API keys for the LLM provider(s) you want to use
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # or Claude Code OAuth: CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # or Antigravity CLI (agy) OAuth: ANTIGRAVITY_TOKEN: ${{ secrets.ANTIGRAVITY_TOKEN }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          # or Grok Build OAuth (base64 of ~/.grok/auth.json): GROK_AUTH_JSON: ${{ secrets.GROK_AUTH_JSON }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}

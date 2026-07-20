@@ -213,7 +213,7 @@ export function resolveEffort(_model?: string | undefined): ClaudeEffort {
     return raw as ClaudeEffort;
   }
   if (raw) {
-    log.warn(`» unknown effort "${raw}" — using high (valid: low|medium|high|max)`);
+    log.warning(`» unknown effort "${raw}" — using high (valid: low|medium|high|max)`);
   }
   return "high";
 }

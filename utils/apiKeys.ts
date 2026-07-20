@@ -170,6 +170,20 @@ export function validateAgentApiKey(params: {
       );
     }
 
+    if (params.agent.name === "antigravity") {
+      if (hasEnvVar("ANTIGRAVITY_TOKEN")) return;
+      throw new Error(
+        buildMissingApiKeyError({ owner: params.owner, name: params.name, model: params.model })
+      );
+    }
+
+    if (params.agent.name === "grok") {
+      if (hasEnvVar("GROK_AUTH_JSON")) return;
+      throw new Error(
+        buildMissingApiKeyError({ owner: params.owner, name: params.name, model: params.model })
+      );
+    }
+
     // claude: single-provider check on the Anthropic auth shapes.
     if (hasEnvVar("ANTHROPIC_API_KEY") || hasEnvVar("CLAUDE_CODE_OAUTH_TOKEN")) return;
     throw new Error(
@@ -180,6 +194,14 @@ export function validateAgentApiKey(params: {
   // no model configured (auto-select path).
   if (params.agent.name === "opencode") {
     if (params.authorized.size > 0) return;
+    throw new Error(buildMissingApiKeyError({ owner: params.owner, name: params.name }));
+  }
+  if (params.agent.name === "antigravity") {
+    if (hasEnvVar("ANTIGRAVITY_TOKEN")) return;
+    throw new Error(buildMissingApiKeyError({ owner: params.owner, name: params.name }));
+  }
+  if (params.agent.name === "grok") {
+    if (hasEnvVar("GROK_AUTH_JSON")) return;
     throw new Error(buildMissingApiKeyError({ owner: params.owner, name: params.name }));
   }
   if (hasEnvVar("ANTHROPIC_API_KEY") || hasEnvVar("CLAUDE_CODE_OAUTH_TOKEN")) return;

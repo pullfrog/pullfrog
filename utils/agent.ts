@@ -9,7 +9,9 @@ import {
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
 } from "../models.ts";
+import { ANTIGRAVITY_TOKEN_ENV } from "./antigravityAuth.ts";
 import { log } from "./cli.ts";
+import { GROK_AUTH_JSON_ENV } from "./grokAuth.ts";
 import { VERTEX_SERVICE_ACCOUNT_JSON_ENV } from "./vertex.ts";
 
 function hasEnvVar(name: string): boolean {
@@ -19,6 +21,14 @@ function hasEnvVar(name: string): boolean {
 
 function hasClaudeCodeAuth(): boolean {
   return hasEnvVar("CLAUDE_CODE_OAUTH_TOKEN") || hasEnvVar("ANTHROPIC_API_KEY");
+}
+
+function hasAntigravityAuth(): boolean {
+  return hasEnvVar(ANTIGRAVITY_TOKEN_ENV);
+}
+
+function hasGrokAuth(): boolean {
+  return hasEnvVar(GROK_AUTH_JSON_ENV);
 }
 
 function hasBedrockAuth(): boolean {
@@ -139,11 +149,19 @@ export function resolveAgent(ctx: { model?: string | undefined }): Agent {
       if (provider === "anthropic" && hasClaudeCodeAuth()) {
         return agents.claude;
       }
+      // 5. Google + Antigravity subscription token → agy CLI
+      if (provider === "google" && hasAntigravityAuth()) {
+        return agents.antigravity;
+      }
+      // 6. xAI + Grok Build OAuth auth.json → grok CLI
+      if (provider === "xai" && hasGrokAuth()) {
+        return agents.grok;
+      }
     } catch {
       // invalid model format — fall through
     }
   }
 
-  // 5. default: OpenCode (universal, supports all providers)
+  // 7. default: OpenCode (universal, supports all providers / API keys)
   return agents.opencode;
 }

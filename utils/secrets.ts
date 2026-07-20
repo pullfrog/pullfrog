@@ -17,6 +17,8 @@ export const SENSITIVE_PATTERNS = [
   /_TOKEN$/i,
   /_PASSWORD$/i,
   /_CREDENTIAL$/i,
+  // OAuth auth.json blobs (CODEX_AUTH_JSON, GROK_AUTH_JSON)
+  /_AUTH_JSON$/i,
 ];
 
 export function isSensitiveEnvName(key: string): boolean {

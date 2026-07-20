@@ -49,6 +49,13 @@ describe("getModelEnvVars", () => {
     const envVars = getModelEnvVars("google/gemini-pro");
     expect(envVars).toContain("GOOGLE_GENERATIVE_AI_API_KEY");
     expect(envVars).toContain("GEMINI_API_KEY");
+    expect(envVars).toContain("ANTIGRAVITY_TOKEN");
+  });
+
+  it("returns GROK_AUTH_JSON for xai models", () => {
+    const envVars = getModelEnvVars("xai/grok");
+    expect(envVars).toContain("XAI_API_KEY");
+    expect(envVars).toContain("GROK_AUTH_JSON");
   });
 
   it("returns empty array for unknown provider", () => {

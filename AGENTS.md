@@ -12,8 +12,10 @@ Here is a high-level overview of the codebase to help you navigate and orient yo
 *   **[cli.ts](file:///C:/Weltel/weltel-pullfrog/cli.ts)**: The command-line interface entrypoint for local execution and debugging. It delegates subcommand routing to files under the `commands/` directory.
 *   **[modes.ts](file:///C:/Weltel/weltel-pullfrog/modes.ts)**: Defines the structured execution modes (such as `Build`, `Plan`, `Fix`, `Review`, `PlanEdit`, etc.) and the detailed prompts/checklists delivered to agents.
 *   **[agents/](file:///C:/Weltel/weltel-pullfrog/agents/index.ts)**: Contains the core agent integration code:
-    *   **[claude.ts](file:///C:/Weltel/weltel-pullfrog/agents/claude.ts)**: Setup and integration for Claude-based agents.
-    *   **[opencode.ts](file:///C:/Weltel/weltel-pullfrog/agents/opencode.ts)**: Setup and integration for OpenCode-based agents.
+    *   **[claude.ts](file:///C:/Weltel/weltel-pullfrog/agents/claude.ts)**: Setup and integration for Claude Code (`claude` CLI).
+    *   **[opencode.ts](file:///C:/Weltel/weltel-pullfrog/agents/opencode.ts)** / **[opencode_v2.ts](file:///C:/Weltel/weltel-pullfrog/agents/opencode_v2.ts)**: Setup and integration for OpenCode-based agents (v2 is active).
+    *   **[antigravity.ts](file:///C:/Weltel/weltel-pullfrog/agents/antigravity.ts)**: Google Antigravity CLI (`agy`) harness; auth via `ANTIGRAVITY_TOKEN`.
+    *   **[grok.ts](file:///C:/Weltel/weltel-pullfrog/agents/grok.ts)**: xAI Grok Build CLI (`grok`) harness; auth via `GROK_AUTH_JSON`.
     *   **[reviewer.ts](file:///C:/Weltel/weltel-pullfrog/agents/reviewer.ts)**: Standard review logic.
 *   **[mcp/](file:///C:/Weltel/weltel-pullfrog/mcp/server.ts)**: Handles the Model Context Protocol (MCP) server integration, including custom tools for reporting progress, dependency management, and commenting on GitHub resources.
 *   **[utils/](file:///C:/Weltel/weltel-pullfrog/utils/cli.ts)**: Houses utilities for CLI formatting, secret sanitization, Git authentication servers, Node package manager detection, and other common helpers.

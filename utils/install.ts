@@ -17,6 +17,12 @@ export interface InstallFromNpmTarballParams {
 export interface InstallFromCurlParams {
   installUrl: string;
   executableName: string;
+  /**
+   * Optional relative paths under the install HOME (PULLFROG_TEMP_DIR) to probe
+   * for the binary after the install script runs. Defaults to
+   * `.local/bin/<executableName>`. Grok Build may land under `.grok/bin/grok`.
+   */
+  executableRelPaths?: string[];
 }
 
 export interface InstallFromDirectTarballParams {
@@ -430,11 +436,17 @@ export async function installFromCurl(params: InstallFromCurlParams): Promise<st
   const tempDir = process.env.PULLFROG_TEMP_DIR;
   if (!tempDir) throw new Error("PULLFROG_TEMP_DIR is not set");
 
-  const cliPath = join(tempDir, ".local", "bin", params.executableName);
+  const candidateRels =
+    params.executableRelPaths && params.executableRelPaths.length > 0
+      ? params.executableRelPaths
+      : [join(".local", "bin", params.executableName)];
+  const candidatePaths = candidateRels.map((rel) => join(tempDir, rel));
 
-  if (existsSync(cliPath)) {
-    log.debug(`» using cached binary at ${cliPath}`);
-    return cliPath;
+  for (const cached of candidatePaths) {
+    if (existsSync(cached)) {
+      log.debug(`» using cached binary at ${cached}`);
+      return cached;
+    }
   }
 
   log.info(`» installing ${params.executableName}...`);
@@ -480,8 +492,17 @@ export async function installFromCurl(params: InstallFromCurlParams): Promise<st
     );
   }
 
-  if (!existsSync(cliPath)) {
-    throw new Error(`Executable not found at ${cliPath}`);
+  let cliPath: string | undefined;
+  for (const candidate of candidatePaths) {
+    if (existsSync(candidate)) {
+      cliPath = candidate;
+      break;
+    }
+  }
+  if (!cliPath) {
+    throw new Error(
+      `Executable not found after install. Probed: ${candidatePaths.join(", ")}`
+    );
   }
 
   // Ensure binary is executable

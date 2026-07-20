@@ -604,27 +604,73 @@ async function handleSecret(ctx: {
     p.log.info(`could not verify GitHub secrets (app lacks permission)`);
   }
 
-  const hasOAuthOption = ctx.provider.envVars.includes("CLAUDE_CODE_OAUTH_TOKEN");
-  let envVar = ctx.provider.envVars[0];
+  // subscription-OAuth env vars offered alongside API keys for providers that
+  // ship a first-class CLI harness (Claude Code, Antigravity, Grok Build).
+  type CredChoice = {
+    oauthEnv: string;
+    oauthLabel: string;
+    oauthHint: string;
+    apiLabel: string;
+    apiHint: string;
+  };
+  const oauthChoices: CredChoice[] = [];
+  if (ctx.provider.envVars.includes("CLAUDE_CODE_OAUTH_TOKEN")) {
+    oauthChoices.push({
+      oauthEnv: "CLAUDE_CODE_OAUTH_TOKEN",
+      oauthLabel: "Claude Code OAuth token",
+      oauthHint: `run ${pc.cyan("claude setup-token")} — works with Pro/Max subscriptions`,
+      apiLabel: "Anthropic API key",
+      apiHint: "from console.anthropic.com",
+    });
+  }
+  if (ctx.provider.envVars.includes("ANTIGRAVITY_TOKEN")) {
+    oauthChoices.push({
+      oauthEnv: "ANTIGRAVITY_TOKEN",
+      oauthLabel: "Antigravity OAuth token",
+      oauthHint: "local agy login cache — Google AI Pro/Ultra subscription",
+      apiLabel: "Gemini API key",
+      apiHint: "from aistudio.google.com / Google AI Studio",
+    });
+  }
+  if (ctx.provider.envVars.includes("GROK_AUTH_JSON")) {
+    oauthChoices.push({
+      oauthEnv: "GROK_AUTH_JSON",
+      oauthLabel: "Grok Build auth.json (base64)",
+      oauthHint: "cat ~/.grok/auth.json | base64 — SuperGrok / X Premium+",
+      apiLabel: "xAI API key",
+      apiHint: "from console.x.ai",
+    });
+  }
 
-  if (hasOAuthOption) {
+  let envVar = ctx.provider.envVars[0];
+  // prefer the first non-OAuth key as the default API option when listing
+  const apiEnvDefault =
+    ctx.provider.envVars.find(
+      (v) =>
+        v !== "CLAUDE_CODE_OAUTH_TOKEN" && v !== "ANTIGRAVITY_TOKEN" && v !== "GROK_AUTH_JSON"
+    ) ?? ctx.provider.envVars[0];
+
+  if (oauthChoices.length > 0) {
+    // when a provider has exactly one OAuth shape, offer oauth vs api.
+    // (providers currently ship at most one subscription credential.)
+    const choice = oauthChoices[0];
     const authMethod = await p.select({
       message: "which credential do you want to use?",
       options: [
         {
           value: "oauth",
-          label: "Claude Code OAuth token",
-          hint: `run ${pc.cyan("claude setup-token")} — works with Pro/Max subscriptions`,
+          label: choice.oauthLabel,
+          hint: choice.oauthHint,
         },
         {
           value: "api",
-          label: "Anthropic API key",
-          hint: "from console.anthropic.com",
+          label: choice.apiLabel,
+          hint: choice.apiHint,
         },
       ],
     });
     handleCancel(authMethod);
-    if (authMethod === "oauth") envVar = "CLAUDE_CODE_OAUTH_TOKEN";
+    envVar = authMethod === "oauth" ? choice.oauthEnv : apiEnvDefault;
   }
 
   const method = await p.select<StorageMethod>({
@@ -645,7 +691,11 @@ async function handleSecret(ctx: {
   handleCancel(method);
 
   const pasteLabel =
-    envVar === "CLAUDE_CODE_OAUTH_TOKEN" ? "OAuth token" : `${ctx.provider.name} API key`;
+    envVar === "CLAUDE_CODE_OAUTH_TOKEN" || envVar === "ANTIGRAVITY_TOKEN"
+      ? "OAuth token"
+      : envVar === "GROK_AUTH_JSON"
+        ? "base64 auth.json"
+        : `${ctx.provider.name} API key`;
   const apiKey = await p.password({
     message: `paste your ${pasteLabel} ${pc.dim("(Enter to skip)")}`,
     mask: "*",

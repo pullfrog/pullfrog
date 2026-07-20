@@ -194,7 +194,10 @@ export const providers = {
   }),
   google: provider({
     displayName: "Google",
-    envVars: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"],
+    // ANTIGRAVITY_TOKEN: Google AI Pro/Ultra OAuth session for the Antigravity
+    // (`agy`) harness. when set with a google/* model, resolveAgent prefers
+    // the antigravity harness over OpenCode + API key.
+    envVars: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "ANTIGRAVITY_TOKEN"],
     models: {
       "gemini-pro": {
         displayName: "Gemini Pro",
@@ -216,7 +219,10 @@ export const providers = {
   }),
   xai: provider({
     displayName: "xAI",
-    envVars: ["XAI_API_KEY"],
+    // GROK_AUTH_JSON: base64 (or raw JSON) of ~/.grok/auth.json from a local
+    // Grok Build OAuth login. when set with an xai/* model, resolveAgent
+    // prefers the grok harness over OpenCode + XAI_API_KEY.
+    envVars: ["XAI_API_KEY", "GROK_AUTH_JSON"],
     models: {
       grok: {
         displayName: "Grok",

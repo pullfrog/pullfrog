@@ -8,16 +8,22 @@
 export const pullfrogMcpName = "pullfrog";
 
 /** @see {@link file://./agents/shared.ts} Agent interface that uses this type */
-export type AgentId = "claude" | "opencode";
+export type AgentId = "claude" | "opencode" | "antigravity" | "grok";
 
 /**
  * format a tool name the way each agent's MCP client presents it to the model.
- * claude code: mcp__pullfrog__select_mode
+ * claude code / antigravity / grok build: mcp__pullfrog__select_mode
  * opencode:    pullfrog_select_mode
+ *
+ * antigravity and grok default to the Claude-style MCP tool naming used by
+ * Claude-compatible CLIs; adjust if either CLI is observed to use a different
+ * presentation.
  */
 export function formatMcpToolRef(agentId: AgentId, toolName: string): string {
   switch (agentId) {
     case "claude":
+    case "antigravity":
+    case "grok":
       return `mcp__${pullfrogMcpName}__${toolName}`;
     case "opencode":
       return `${pullfrogMcpName}_${toolName}`;

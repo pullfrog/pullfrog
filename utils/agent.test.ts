@@ -10,6 +10,8 @@ const savedEnv = { ...process.env };
 const STRIPPED = [
   /_API_KEY$/,
   /^CLAUDE_CODE_OAUTH_TOKEN$/,
+  /^ANTIGRAVITY_TOKEN$/,
+  /^GROK_AUTH_JSON$/,
   /^AWS_BEARER_TOKEN_BEDROCK$/,
   /^AWS_ACCESS_KEY_ID$/,
   /^AWS_SECRET_ACCESS_KEY$/,
@@ -107,6 +109,39 @@ describe("resolveAgent", () => {
       expect(resolveAgent({ model: "gemini-2.5-pro" }).name).toBe("opencode");
     });
   });
+
+  describe("antigravity routing", () => {
+    it("routes google/* to antigravity when ANTIGRAVITY_TOKEN is set", () => {
+      process.env.ANTIGRAVITY_TOKEN = "agy-token";
+      expect(resolveAgent({ model: "google/gemini-3.1-pro-preview" }).name).toBe("antigravity");
+    });
+
+    it("falls back to opencode for google/* without ANTIGRAVITY_TOKEN", () => {
+      expect(resolveAgent({ model: "google/gemini-3.1-pro-preview" }).name).toBe("opencode");
+    });
+
+    it("PULLFROG_AGENT=opencode wins over antigravity auto-routing", () => {
+      process.env.PULLFROG_AGENT = "opencode";
+      process.env.ANTIGRAVITY_TOKEN = "agy-token";
+      expect(resolveAgent({ model: "google/gemini-3.1-pro-preview" }).name).toBe("opencode");
+    });
+  });
+
+  describe("grok routing", () => {
+    it("routes xai/* to grok when GROK_AUTH_JSON is set", () => {
+      process.env.GROK_AUTH_JSON = '{"tokens":{}}';
+      expect(resolveAgent({ model: "xai/grok-4.3" }).name).toBe("grok");
+    });
+
+    it("falls back to opencode for xai/* without GROK_AUTH_JSON", () => {
+      expect(resolveAgent({ model: "xai/grok-4.3" }).name).toBe("opencode");
+    });
+
+    it("PULLFROG_AGENT=grok forces the grok harness", () => {
+      process.env.PULLFROG_AGENT = "grok";
+      expect(resolveAgent({ model: "openai/gpt-5.5" }).name).toBe("grok");
+    });
+  });
 });
 
 describe("resolveModel", () => {
@@ -189,7 +224,9 @@ describe("materializeVertexCredentials", () => {
       expect(readFileSync(credentials.credentialsPath, "utf8")).toBe(
         process.env.VERTEX_SERVICE_ACCOUNT_JSON
       );
-      expect(statSync(credentials.credentialsPath).mode & 0o777).toBe(0o600);
+      if (process.platform !== "win32") {
+        expect(statSync(credentials.credentialsPath).mode & 0o777).toBe(0o600);
+      }
       cleanupVertexCredentials(credentials);
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -6,6 +6,8 @@ const savedEnv = { ...process.env };
 const ENV_KEYS_TO_STRIP = [
   /_API_KEY$/,
   /^CLAUDE_CODE_OAUTH_TOKEN$/,
+  /^ANTIGRAVITY_TOKEN$/,
+  /^GROK_AUTH_JSON$/,
   /^CODEX_AUTH_JSON$/,
   /^AWS_BEARER_TOKEN_BEDROCK$/,
   /^AWS_ACCESS_KEY_ID$/,
@@ -32,6 +34,8 @@ afterEach(() => {
 
 const opencode = { name: "opencode" };
 const claude = { name: "claude" };
+const antigravity = { name: "antigravity" };
+const grok = { name: "grok" };
 const owner = "test-owner";
 const name = "test-repo";
 
@@ -117,6 +121,60 @@ describe("validateAgentApiKey — claude (static Anthropic check)", () => {
       validateAgentApiKey({
         agent: claude,
         model: "anthropic/claude-opus-4-7",
+        authorized: new Set(),
+        owner,
+        name,
+      })
+    ).toThrow("no API key found");
+  });
+});
+
+describe("validateAgentApiKey — antigravity", () => {
+  it("passes when ANTIGRAVITY_TOKEN is set", () => {
+    process.env.ANTIGRAVITY_TOKEN = "agy-token";
+    expect(() =>
+      validateAgentApiKey({
+        agent: antigravity,
+        model: "google/gemini-3.1-pro-preview",
+        authorized: new Set(),
+        owner,
+        name,
+      })
+    ).not.toThrow();
+  });
+
+  it("throws when ANTIGRAVITY_TOKEN is missing", () => {
+    expect(() =>
+      validateAgentApiKey({
+        agent: antigravity,
+        model: "google/gemini-3.1-pro-preview",
+        authorized: new Set(),
+        owner,
+        name,
+      })
+    ).toThrow("no API key found");
+  });
+});
+
+describe("validateAgentApiKey — grok", () => {
+  it("passes when GROK_AUTH_JSON is set", () => {
+    process.env.GROK_AUTH_JSON = '{"tokens":{}}';
+    expect(() =>
+      validateAgentApiKey({
+        agent: grok,
+        model: "xai/grok-4.3",
+        authorized: new Set(),
+        owner,
+        name,
+      })
+    ).not.toThrow();
+  });
+
+  it("throws when GROK_AUTH_JSON is missing", () => {
+    expect(() =>
+      validateAgentApiKey({
+        agent: grok,
+        model: "xai/grok-4.3",
         authorized: new Set(),
         owner,
         name,
