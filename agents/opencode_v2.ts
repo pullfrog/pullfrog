@@ -143,8 +143,8 @@ export function buildOpenCodeConfig(params: {
       "openai-compatible": {
         npm: "@ai-sdk/openai-compatible",
         options: {
-          baseURL: params.openaiCompatible.baseURL,
-          apiKey: params.openaiCompatible.apiKey,
+          baseURL: params.openaiCompatible.baseURL?.trim(),
+          apiKey: params.openaiCompatible.apiKey?.trim(),
         },
         models: {
           [openAICompatibleModelId]: { name: openAICompatibleModelId },

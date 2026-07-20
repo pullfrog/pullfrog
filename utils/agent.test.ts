@@ -213,6 +213,28 @@ describe("buildOpenCodeConfig", () => {
     expect(config.model).toBe(`openai-compatible/${modelId}`);
     expect(config.enabled_providers).toEqual(["openai-compatible"]);
   });
+
+  it("trims baseURL and apiKey to avoid trailing-newline secret breakage", () => {
+    const modelId = "azure/gpt-5.6-production";
+    const config = buildOpenCodeConfig({
+      mcpServerUrl: "http://127.0.0.1:3000/mcp",
+      model: `openai-compatible/${modelId}`,
+      openaiCompatible: {
+        modelId,
+        baseURL: "https://gateway.example.com/v1\n",
+        apiKey: "openai-compatible-test-key\n",
+      },
+    });
+
+    expect(config.provider).toMatchObject({
+      "openai-compatible": {
+        options: {
+          baseURL: "https://gateway.example.com/v1",
+          apiKey: "openai-compatible-test-key",
+        },
+      },
+    });
+  });
 });
 
 describe("materializeVertexCredentials", () => {
