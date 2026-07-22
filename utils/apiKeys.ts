@@ -164,6 +164,8 @@ export function validateAgentApiKey(params: {
     }
 
     if (params.agent.name === "opencode") {
+      const envVars = getModelEnvVars(params.model);
+      if (envVars.includes("QWEN_API_KEY") && envVars.some((name) => hasEnvVar(name))) return;
       if (params.authorized.has(params.model)) return;
       throw new Error(
         buildMissingApiKeyError({ owner: params.owner, name: params.name, model: params.model })

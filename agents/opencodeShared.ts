@@ -44,6 +44,31 @@ export function geminiHighThinkingOverrides(): Record<string, { options: object 
 }
 
 /**
+ * OpenAI-compatible Qwen provider for OPENCODE_CONFIG_CONTENT. Models derive from
+ * the qwen aliases in models.ts; key/baseURL from QWEN_* → DASHSCOPE_* → LLM_*.
+ */
+export function qwenProviderConfig(): Record<string, unknown> {
+  const apiKey =
+    process.env.QWEN_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? process.env.LLM_API_KEY;
+  const baseURL =
+    process.env.QWEN_BASE_URL ??
+    process.env.DASHSCOPE_BASE_URL ??
+    process.env.LLM_BASE_URL ??
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+  const models = Object.fromEntries(
+    modelAliases
+      .filter((a) => a.provider === "qwen")
+      .map((a) => [a.resolve.replace(/^qwen\//, ""), { name: a.displayName }])
+  );
+  return {
+    npm: "@ai-sdk/openai-compatible",
+    name: "Qwen",
+    options: { baseURL, ...(apiKey ? { apiKey } : {}) },
+    models,
+  };
+}
+
+/**
  * Read-only `reviewfrog` subagent for lens-based review. Non-mutative +
  * non-recursive — enforced by the system prompt in reviewer.ts.
  *

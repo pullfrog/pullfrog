@@ -56,6 +56,10 @@ describe("models.dev validity", async () => {
     // is validated separately by the Zen served-list test below.
     if (alias.fallback) continue;
 
+    // byok providers (e.g. qwen) have no models.dev entry; nothing to validate
+    // upstream. their openRouterResolve, when set, is still checked below.
+    if (alias.byok) continue;
+
     const parsed = parseResolve(alias.resolve);
 
     it(`${alias.resolve} exists on models.dev`, () => {

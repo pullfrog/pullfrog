@@ -51,6 +51,14 @@ describe("getModelEnvVars", () => {
     expect(envVars).toContain("GEMINI_API_KEY");
   });
 
+  it("returns correct env vars for qwen", () => {
+    expect(getModelEnvVars("qwen/qwen-coder")).toEqual([
+      "QWEN_API_KEY",
+      "DASHSCOPE_API_KEY",
+      "LLM_API_KEY",
+    ]);
+  });
+
   it("returns empty array for unknown provider", () => {
     expect(getModelEnvVars("unknown/model")).toEqual([]);
   });
@@ -77,6 +85,11 @@ describe("resolveModelSlug", () => {
   it("resolves openai alias", () => {
     const resolved = resolveModelSlug("openai/gpt");
     expect(resolved).toBe("openai/gpt-5.6-sol");
+  });
+
+  it("resolves qwen alias", () => {
+    const resolved = resolveModelSlug("qwen/qwen-coder");
+    expect(resolved).toBe("qwen/qwen3-coder-plus");
   });
 
   it("returns the raw resolve for deprecated aliases (does not walk fallback)", () => {

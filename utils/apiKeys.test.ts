@@ -60,6 +60,19 @@ describe("validateAgentApiKey — opencode", () => {
     ).toThrow("no API key found");
   });
 
+  it("passes for qwen when a compatible key is set", () => {
+    process.env.QWEN_API_KEY = "qwen-test";
+    expect(() =>
+      validateAgentApiKey({
+        agent: opencode,
+        model: "qwen/qwen3-coder-plus",
+        authorized: new Set(),
+        owner,
+        name,
+      })
+    ).not.toThrow();
+  });
+
   it("passes the auto-select path when the authorized set is non-empty", () => {
     expect(() =>
       validateAgentApiKey({

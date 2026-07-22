@@ -58,6 +58,8 @@ export interface ModelAlias {
    * resolution — for that use `fallback`. used to keep a redundant alias out of
    * pickers (e.g. the free `minimax-m2.5-free` duplicate). */
   hidden: boolean;
+  /** custom OpenAI-compatible BYOK provider with no models.dev entry — skips drift/CI-secret checks */
+  byok: boolean;
 }
 
 interface ModelDef {
@@ -82,6 +84,8 @@ interface ModelDef {
   subagentModel?: string;
   /** hide from selectable lists. does NOT affect resolution; for that use `fallback`. */
   hidden?: boolean;
+  /** custom OpenAI-compatible BYOK provider with no models.dev entry; skips drift checks */
+  byok?: boolean;
 }
 
 export interface ProviderConfig {
@@ -298,6 +302,32 @@ export const providers = {
         resolve: "moonshotai/kimi-k2.7-code",
         openRouterResolve: "openrouter/moonshotai/kimi-k2.7-code",
         preferred: true,
+      },
+    },
+  }),
+  qwen: provider({
+    displayName: "Qwen",
+    // precedence order; LLM_API_KEY is the generic OpenAI-compatible fallback (last)
+    envVars: ["QWEN_API_KEY", "DASHSCOPE_API_KEY", "LLM_API_KEY"],
+    models: {
+      "qwen-coder": {
+        displayName: "Qwen Coder",
+        resolve: "qwen/qwen3-coder-plus",
+        openRouterResolve: "openrouter/qwen/qwen3-coder-plus",
+        preferred: true,
+        byok: true,
+      },
+      "qwen-plus": {
+        displayName: "Qwen Plus",
+        resolve: "qwen/qwen-plus",
+        openRouterResolve: "openrouter/qwen/qwen-plus",
+        byok: true,
+      },
+      "qwen-max": {
+        displayName: "Qwen Max",
+        resolve: "qwen/qwen-max",
+        openRouterResolve: "openrouter/qwen/qwen3-max",
+        byok: true,
       },
     },
   }),
@@ -657,6 +687,7 @@ export const modelAliases: ModelAlias[] = Object.entries(providers).flatMap(
       // directly without re-deriving the provider.
       subagentModel: def.subagentModel ? `${providerKey}/${def.subagentModel}` : undefined,
       hidden: def.hidden ?? false,
+      byok: def.byok ?? false,
     }))
 );
 

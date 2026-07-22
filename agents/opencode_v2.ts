@@ -79,6 +79,7 @@ import {
   autoSelectModel,
   buildReviewerAgentConfig,
   geminiHighThinkingOverrides,
+  qwenProviderConfig,
   installOpencodeCli,
   type OpenCodeConfig,
 } from "./opencodeShared.ts";
@@ -125,7 +126,10 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): s
     })(),
     // gemini-3 thinking pinned to high for review depth; gpt and anthropic
     // effort set elsewhere (gpt: upstream default, anthropic: --effort flag in claude.ts).
-    provider: { google: { models: geminiHighThinkingOverrides() } },
+    provider: {
+      google: { models: geminiHighThinkingOverrides() },
+      qwen: qwenProviderConfig(),
+    },
   };
 
   if (model) {
