@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { getModelEnvVars, modelAliases, resolveCliModel, resolveDisplayAlias } from "../models.ts";
+import {
+  getModelEnvVars,
+  OPENAI_COMPATIBLE_API_KEY_ENV,
+  OPENAI_COMPATIBLE_BASE_URL_ENV,
+  OPENAI_COMPATIBLE_MODEL_ID_ENV,
+  modelAliases,
+  providers,
+  resolveCliModel,
+  resolveDisplayAlias,
+} from "../models.ts";
 
 // ── pure alias-registry invariants ──────────────────────────────────────────────
 //
@@ -12,6 +21,25 @@ import { getModelEnvVars, modelAliases, resolveCliModel, resolveDisplayAlias } f
 // add a model here ONLY when it genuinely doesn't exist on both models.dev and OpenRouter.
 // the models-bump cron flags entries that become fillable (see rule 9 in models-bump.yml).
 const BYOK_ONLY_MODELS = new Set<string>([]);
+
+describe("OpenAI-compatible registry", () => {
+  it("declares the required environment variables and dynamic routing alias", () => {
+    expect(providers["openai-compatible"].envVars).toEqual([
+      OPENAI_COMPATIBLE_API_KEY_ENV,
+      OPENAI_COMPATIBLE_BASE_URL_ENV,
+      OPENAI_COMPATIBLE_MODEL_ID_ENV,
+    ]);
+    expect(getModelEnvVars("openai-compatible/byok")).toEqual(
+      providers["openai-compatible"].envVars
+    );
+    expect(modelAliases.find((alias) => alias.slug === "openai-compatible/byok")).toMatchObject({
+      provider: "openai-compatible",
+      resolve: "openai-compatible",
+      routing: "openai-compatible",
+    });
+    expect(modelAliases.find((alias) => alias.slug === "litellm/byok")).toBeUndefined();
+  });
+});
 
 describe("openRouterResolve completeness", () => {
   for (const alias of modelAliases) {

@@ -58,7 +58,12 @@ import {
 } from "@opencode-ai/sdk/v2";
 import { Agent, fetch as undiciFetch } from "undici";
 import { pullfrogMcpName } from "../external.ts";
-import { BEDROCK_MODEL_ID_ENV } from "../models.ts";
+import {
+  BEDROCK_MODEL_ID_ENV,
+  OPENAI_COMPATIBLE_API_KEY_ENV,
+  OPENAI_COMPATIBLE_BASE_URL_ENV,
+  OPENAI_COMPATIBLE_MODEL_ID_ENV,
+} from "../models.ts";
 import type { ToolState } from "../toolState.ts";
 import { AGENT_ACTIVITY_TIMEOUT_MS, markActivity } from "../utils/activity.ts";
 import type { AgentDiagnostic } from "../utils/agentHangReport.ts";
@@ -99,7 +104,15 @@ const installCli = () => installOpencodeCli({ binPath: "bin/opencode.exe" });
 
 // ── config ─────────────────────────────────────────────────────────────────────
 
-function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): string {
+export function buildOpenCodeConfig(params: {
+  mcpServerUrl: string;
+  model: string | undefined;
+  openaiCompatible: {
+    modelId: string | undefined;
+    baseURL: string | undefined;
+    apiKey: string | undefined;
+  };
+}): OpenCodeConfig {
   const config: OpenCodeConfig = {
     permission: {
       bash: "deny",
@@ -116,14 +129,9 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): s
       // deleting live git locks (the corruption in #860/#864 — the dangerous
       // `rm` guidance is gone, but the spurious aborts shouldn't happen either).
       // server-side cap is 600s (`checkout_pr` `timeoutMs`).
-      [pullfrogMcpName]: { type: "remote", url: ctx.mcpServerUrl, timeout: 300_000 },
+      [pullfrogMcpName]: { type: "remote", url: params.mcpServerUrl, timeout: 300_000 },
     },
-    agent: (() => {
-      const cfg = buildReviewerAgentConfig(model);
-      const reviewerModel = (cfg[REVIEWER_AGENT_NAME] as { model?: string })?.model ?? "(inherit)";
-      log.info(`» subagent models: reviewfrog=${reviewerModel}`);
-      return cfg;
-    })(),
+    agent: buildReviewerAgentConfig(params.model),
     // gemini-3 thinking pinned to high for review depth; gpt and anthropic
     // effort set elsewhere (gpt: upstream default, anthropic: --effort flag in claude.ts).
     // openrouter: pin Kimi K2 away from Enforcer-less providers (siliconflow /
@@ -135,14 +143,47 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): s
     },
   };
 
-  if (model) {
-    config.model = model;
-    const slashIndex = model.indexOf("/");
+  const openAICompatibleModelId = params.openaiCompatible.modelId?.trim();
+  if (openAICompatibleModelId && params.model === `openai-compatible/${openAICompatibleModelId}`) {
+    config.provider = {
+      ...config.provider,
+      "openai-compatible": {
+        npm: "@ai-sdk/openai-compatible",
+        options: {
+          baseURL: params.openaiCompatible.baseURL?.trim(),
+          apiKey: params.openaiCompatible.apiKey?.trim(),
+        },
+        models: {
+          [openAICompatibleModelId]: { name: openAICompatibleModelId },
+        },
+      },
+    };
+  }
+
+  if (params.model) {
+    config.model = params.model;
+    const slashIndex = params.model.indexOf("/");
     if (slashIndex > 0) {
-      config.enabled_providers = [model.slice(0, slashIndex).toLowerCase()];
+      config.enabled_providers = [params.model.slice(0, slashIndex).toLowerCase()];
     }
   }
 
+  return config;
+}
+
+function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): string {
+  const config = buildOpenCodeConfig({
+    mcpServerUrl: ctx.mcpServerUrl,
+    model,
+    openaiCompatible: {
+      modelId: process.env[OPENAI_COMPATIBLE_MODEL_ID_ENV],
+      baseURL: process.env[OPENAI_COMPATIBLE_BASE_URL_ENV],
+      apiKey: process.env[OPENAI_COMPATIBLE_API_KEY_ENV],
+    },
+  });
+  const reviewerModel =
+    (config.agent?.[REVIEWER_AGENT_NAME] as { model?: string } | undefined)?.model ?? "(inherit)";
+  log.info(`» subagent models: reviewfrog=${reviewerModel}`);
   return JSON.stringify(config);
 }
 

@@ -5,6 +5,8 @@ import {
   getModelProvider,
   isBedrockAnthropicId,
   isVertexAnthropicId,
+  OPENAI_COMPATIBLE_MODEL_ID_ENV,
+  OPENAI_COMPATIBLE_REQUIRED_ENV_VARS,
   resolveCliModel,
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
@@ -30,6 +32,10 @@ function hasBedrockAuth(): boolean {
 
 function hasVertexAuth(): boolean {
   return hasEnvVar(VERTEX_SERVICE_ACCOUNT_JSON_ENV);
+}
+
+function getMissingOpenAICompatibleEnvVars(): string[] {
+  return OPENAI_COMPATIBLE_REQUIRED_ENV_VARS.filter((name) => !process.env[name]?.trim());
 }
 
 /**
@@ -63,6 +69,17 @@ function resolveSlug(slug: string): string | undefined {
       );
     }
     return vertexId;
+  }
+  if (alias?.routing === "openai-compatible") {
+    const openAICompatibleModelId = process.env[OPENAI_COMPATIBLE_MODEL_ID_ENV]?.trim();
+    if (!openAICompatibleModelId) {
+      const missing = getMissingOpenAICompatibleEnvVars();
+      throw new Error(
+        `OpenAI-compatible model selected but required configuration is missing: ${missing.join(", ")}. ` +
+          "set the missing environment variables before running Pullfrog."
+      );
+    }
+    return `openai-compatible/${openAICompatibleModelId}`;
   }
   return resolveCliModel(slug);
 }

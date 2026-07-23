@@ -21,9 +21,11 @@
  * contracts. so the single `bedrock/byok` and `vertex/byok` entries are
  * routing slugs, not model aliases: the harness reads the backend-specific
  * env var and routes to claude-code for Anthropic IDs or opencode for
- * everything else.
+ * everything else. `"openai-compatible"` means the actual model ID comes
+ * from `OPENAI_COMPATIBLE_MODEL_ID` and is served through the configured
+ * OpenAI-compatible endpoint.
  */
-export type ModelRouting = "bedrock" | "vertex";
+export type ModelRouting = "bedrock" | "vertex" | "openai-compatible";
 
 export interface ModelAlias {
   /** stable alias stored in DB, e.g. "anthropic/claude-opus" */
@@ -478,6 +480,21 @@ export const providers = {
       },
     },
   }),
+  "openai-compatible": provider({
+    displayName: "OpenAI-compatible",
+    envVars: [
+      "OPENAI_COMPATIBLE_API_KEY",
+      "OPENAI_COMPATIBLE_BASE_URL",
+      "OPENAI_COMPATIBLE_MODEL_ID",
+    ],
+    models: {
+      byok: {
+        displayName: "OpenAI-compatible",
+        resolve: "openai-compatible",
+        routing: "openai-compatible",
+      },
+    },
+  }),
   openrouter: provider({
     displayName: "OpenRouter",
     envVars: ["OPENROUTER_API_KEY"],
@@ -826,6 +843,18 @@ export const BEDROCK_MODEL_ID_ENV = "BEDROCK_MODEL_ID";
 
 /** env var that supplies the Vertex AI model ID for the `vertex/byok` slug. */
 export const VERTEX_MODEL_ID_ENV = "VERTEX_MODEL_ID";
+
+/** env vars required to serve the `openai-compatible/byok` routing slug. */
+export const OPENAI_COMPATIBLE_API_KEY_ENV = "OPENAI_COMPATIBLE_API_KEY";
+export const OPENAI_COMPATIBLE_BASE_URL_ENV = "OPENAI_COMPATIBLE_BASE_URL";
+export const OPENAI_COMPATIBLE_MODEL_ID_ENV = "OPENAI_COMPATIBLE_MODEL_ID";
+
+/** all three are required — setup validators check against this single list. */
+export const OPENAI_COMPATIBLE_REQUIRED_ENV_VARS = [
+  OPENAI_COMPATIBLE_API_KEY_ENV,
+  OPENAI_COMPATIBLE_BASE_URL_ENV,
+  OPENAI_COMPATIBLE_MODEL_ID_ENV,
+] as const;
 
 /**
  * the Bedrock model ID passed to claude-code or opencode is whatever the
