@@ -83,6 +83,47 @@ add the missing secret(s) to your GitHub repository at ${githubSecretsUrl}, then
 for full setup instructions, see https://docs.pullfrog.com/vertex`;
 }
 
+/** models.dev exposes two Azure providers, differing only in env-var prefix.
+ * `azure` fronts `<resource>.openai.azure.com`; `azure-cognitive-services`
+ * fronts an AI Services / Foundry resource. */
+const AZURE_PROVIDERS: Record<string, { resourceName: string; apiKey: string }> = {
+  azure: { resourceName: "AZURE_RESOURCE_NAME", apiKey: "AZURE_API_KEY" },
+  "azure-cognitive-services": {
+    resourceName: "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
+    apiKey: "AZURE_COGNITIVE_SERVICES_API_KEY",
+  },
+};
+
+function buildAzureSetupError(params: {
+  owner: string;
+  name: string;
+  model: string;
+  deployment: string;
+  missing: string[];
+  envVars: { resourceName: string; apiKey: string };
+}): string {
+  const githubSecretsUrl = `https://github.com/${params.owner}/${params.name}/settings/secrets/actions`;
+
+  if (params.missing.length > 0) {
+    return `Azure model selected but required configuration is missing: ${params.missing.join(", ")}.
+
+add the missing secret(s) to your GitHub repository at ${githubSecretsUrl}, then reference them in your workflow's \`env:\` block:
+
+  ${params.envVars.resourceName}: my-resource
+  ${params.envVars.apiKey}: \${{ secrets.${params.envVars.apiKey} }}
+
+\`${params.envVars.resourceName}\` is the resource name alone, not a URL — for \`https://my-resource.openai.azure.com\` it is \`my-resource\`.`;
+  }
+
+  return `Azure is configured (${params.envVars.resourceName} + ${params.envVars.apiKey} are both set) but OpenCode can't serve \`${params.model}\`.
+
+the most likely cause is a deployment name mismatch. the Azure provider addresses a *deployment*, not a model, and uses the model id as the deployment name — so your deployment must be named exactly \`${params.deployment}\`.
+
+check Azure AI Foundry → Deployments and either rename the deployment to \`${params.deployment}\`, or select the model whose id matches the name you already have.
+
+if the name does match, confirm \`${params.envVars.resourceName}\` points at the resource hosting that deployment.`;
+}
+
 function hasEnvVar(name: string): boolean {
   const value = process.env[name];
   return typeof value === "string" && value.length > 0;
@@ -119,6 +160,44 @@ function validateVertexSetup(params: { owner: string; name: string }): void {
   if (missing.length > 0) {
     throw new Error(buildVertexSetupError({ owner: params.owner, name: params.name, missing }));
   }
+}
+
+/**
+ * Azure arrives as a raw models.dev specifier (`azure/<model-id>`) rather than
+ * a curated slug, so there's no `routing` discriminant to branch on — the
+ * provider prefix is the only signal. Like Bedrock/Vertex the auth shape is
+ * multi-var, and unlike them there's a second failure mode that looks
+ * identical from `opencode models`: the provider addresses a *deployment* and
+ * uses the model id as the deployment name, so a differently-named deployment
+ * is indistinguishable from a missing key unless we say so explicitly.
+ *
+ * Only called once the caller has established the model is unauthorized, so
+ * this always throws for an Azure provider. Non-Azure providers return so the
+ * generic missing-key error still applies.
+ */
+function validateAzureSetup(params: {
+  owner: string;
+  name: string;
+  model: string;
+  provider: string;
+}): void {
+  const envVars = AZURE_PROVIDERS[params.provider];
+  if (!envVars) return;
+
+  const missing: string[] = [];
+  if (!hasEnvVar(envVars.apiKey)) missing.push(envVars.apiKey);
+  if (!hasEnvVar(envVars.resourceName)) missing.push(envVars.resourceName);
+
+  throw new Error(
+    buildAzureSetupError({
+      owner: params.owner,
+      name: params.name,
+      model: params.model,
+      deployment: params.model.slice(params.model.indexOf("/") + 1),
+      missing,
+      envVars,
+    })
+  );
 }
 
 /**
@@ -165,6 +244,16 @@ export function validateAgentApiKey(params: {
 
     if (params.agent.name === "opencode") {
       if (params.authorized.has(params.model)) return;
+      // azure carries no curated alias, so it never reaches the `routing`
+      // branches above. its config gaps and its deployment-name mismatch both
+      // surface here as "unauthorized", which the generic copy misdiagnoses as
+      // a missing key. no-ops for every other provider.
+      validateAzureSetup({
+        owner: params.owner,
+        name: params.name,
+        model: params.model,
+        provider: params.model.slice(0, params.model.indexOf("/")).toLowerCase(),
+      });
       throw new Error(
         buildMissingApiKeyError({ owner: params.owner, name: params.name, model: params.model })
       );

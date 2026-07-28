@@ -18,6 +18,8 @@ const ENV_KEYS_TO_STRIP = [
   /^VERTEX_SERVICE_ACCOUNT_JSON$/,
   /^VERTEX_LOCATION$/,
   /^VERTEX_MODEL_ID$/,
+  /^AZURE_RESOURCE_NAME$/,
+  /^AZURE_COGNITIVE_SERVICES_RESOURCE_NAME$/,
 ];
 
 beforeEach(() => {
@@ -206,6 +208,65 @@ describe("validateAgentApiKey — Vertex routing", () => {
     expect(() => validateAgentApiKey({ ...params, model: "gemini-2.5-pro" })).toThrow(
       "VERTEX_SERVICE_ACCOUNT_JSON"
     );
+  });
+});
+
+describe("validateAgentApiKey — Azure", () => {
+  const params = { agent: opencode, owner, name };
+  const model = "azure/gpt-5.6-sol";
+
+  it("passes when the model is in the authorized set", () => {
+    process.env.AZURE_RESOURCE_NAME = "my-resource";
+    process.env.AZURE_API_KEY = "azure-key";
+    expect(() =>
+      validateAgentApiKey({ ...params, model, authorized: new Set([model]) })
+    ).not.toThrow();
+  });
+
+  it("names the missing resource name rather than claiming no key was found", () => {
+    process.env.AZURE_API_KEY = "azure-key";
+    expect(() => validateAgentApiKey({ ...params, model, authorized: new Set() })).toThrow(
+      "AZURE_RESOURCE_NAME"
+    );
+  });
+
+  it("names the missing api key", () => {
+    process.env.AZURE_RESOURCE_NAME = "my-resource";
+    expect(() => validateAgentApiKey({ ...params, model, authorized: new Set() })).toThrow(
+      "AZURE_API_KEY"
+    );
+  });
+
+  it("blames the deployment name when both vars are set but the model is unauthorized", () => {
+    // the case the generic copy gets wrong: credentials are fine, the Azure
+    // deployment is just named something other than the model id.
+    process.env.AZURE_RESOURCE_NAME = "my-resource";
+    process.env.AZURE_API_KEY = "azure-key";
+    let raised: Error | undefined;
+    try {
+      validateAgentApiKey({ ...params, model, authorized: new Set() });
+    } catch (error) {
+      raised = error as Error;
+    }
+    expect(raised?.message).toContain("deployment name mismatch");
+    expect(raised?.message).toContain("gpt-5.6-sol");
+    expect(raised?.message).not.toContain("no API key found");
+  });
+
+  it("uses the cognitive-services env var names for that provider", () => {
+    expect(() =>
+      validateAgentApiKey({
+        ...params,
+        model: "azure-cognitive-services/gpt-5.6-sol",
+        authorized: new Set(),
+      })
+    ).toThrow("AZURE_COGNITIVE_SERVICES_RESOURCE_NAME");
+  });
+
+  it("leaves non-Azure providers on the generic missing-key error", () => {
+    expect(() =>
+      validateAgentApiKey({ ...params, model: "openai/gpt-5.6-sol", authorized: new Set() })
+    ).toThrow("no API key found");
   });
 });
 
