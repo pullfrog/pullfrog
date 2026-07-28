@@ -1,15 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as core from "@actions/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeEnv, sanitizeSecret } from "./normalizeEnv.ts";
+import { isSensitiveEnvName } from "./secrets.ts";
 
 /**
  * These tests pin the load-bearing invariants of secret sanitisation:
  *   - sensitive values are trimmed before downstream code reads them
  *   - whitespace-only values are NOT silently zeroed (leave env unchanged)
  *   - case normalisation still happens
+ *   - masking is applied to everything except an explicit config allowlist
  *
- * Masking (`core.setSecret`) is delegated to `@actions/core` and trusted to
- * work as documented — we don't spy on stdout to re-test the toolkit.
+ * We don't re-test what `core.setSecret` does with a value (that's the
+ * toolkit's job), but we do assert *whether* we call it: the decision of what
+ * counts as maskable is ours, and getting it wrong either leaks a credential
+ * or blanks out unrelated log text.
  */
+vi.mock("@actions/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@actions/core")>()),
+  setSecret: vi.fn(),
+}));
 
 describe("normalizeEnv: process.env state contract", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -99,5 +108,73 @@ describe("sanitizeSecret return value", () => {
     expect(sanitizeSecret("CODEX_AUTH_JSON", '{\n  "refresh": "x"\n}')).toBe(
       '{\n  "refresh": "x"\n}'
     );
+  });
+});
+
+describe("sanitizeSecret masking policy", () => {
+  const setSecret = vi.mocked(core.setSecret);
+
+  beforeEach(() => {
+    setSecret.mockClear();
+  });
+
+  it("masks credential-shaped keys", () => {
+    sanitizeSecret("ANTHROPIC_API_KEY", "sk-ant-secret");
+    expect(setSecret).toHaveBeenCalledWith("sk-ant-secret");
+  });
+
+  it("masks unrecognised keys — the allowlist fails closed", () => {
+    sanitizeSecret("SOME_FUTURE_PROVIDER_CREDS", "hunter2");
+    expect(setSecret).toHaveBeenCalledWith("hunter2");
+  });
+
+  it("masks VERTEX_SERVICE_ACCOUNT_JSON even though it matches no sensitive suffix", () => {
+    // regression guard for the tempting "just gate on isSensitiveEnvName"
+    // refactor: this key is a real credential protected *only* by
+    // mask-by-default, so narrowing the gate would silently unmask it.
+    expect(isSensitiveEnvName("VERTEX_SERVICE_ACCOUNT_JSON")).toBe(false);
+    sanitizeSecret("VERTEX_SERVICE_ACCOUNT_JSON", '{"private_key":"pk"}');
+    expect(setSecret).toHaveBeenCalledWith('{"private_key":"pk"}');
+  });
+
+  it("does not mask non-secret config values", () => {
+    // masking is by value: setSecret("global") would rewrite every unrelated
+    // occurrence of "global" in the run log to ***.
+    sanitizeSecret("VERTEX_LOCATION", "global");
+    expect(setSecret).not.toHaveBeenCalled();
+  });
+
+  it("still trims non-secret config values", () => {
+    // a trailing newline on a model id breaks the exact-match authorization
+    // lookup, so trimming has to happen whether or not we mask.
+    expect(sanitizeSecret("PULLFROG_MODEL", "azure/gpt-5.6-sol\n")).toBe("azure/gpt-5.6-sol");
+    expect(setSecret).not.toHaveBeenCalled();
+  });
+
+  it("matches config names case-insensitively", () => {
+    sanitizeSecret("aws_region", "us-east-1");
+    expect(setSecret).not.toHaveBeenCalled();
+  });
+
+  it("does not mask the Azure config values", () => {
+    // the console flow stores all five Azure values in the account-secret
+    // channel, and these carry the worst mask-by-value collateral: "128000"
+    // and "true" appear all over an ordinary run log.
+    sanitizeSecret("AZURE_RESOURCE_NAME", "my-resource");
+    sanitizeSecret("AZURE_DEPLOYMENT", "prod-reasoning");
+    sanitizeSecret("AZURE_CONTEXT", "400000");
+    sanitizeSecret("AZURE_MAX_OUTPUT", "128000");
+    sanitizeSecret("AZURE_USE_CHAT_COMPLETIONS", "true");
+    expect(setSecret).not.toHaveBeenCalled();
+  });
+
+  it("masks OPENAI_COMPATIBLE_BASE_URL even though its siblings are config", () => {
+    // gateway URLs can carry account ids or embedded credentials in the path,
+    // so the base URL stays off the allowlist while model/context/max-output
+    // are unmasked.
+    sanitizeSecret("OPENAI_COMPATIBLE_MODEL", "my-model");
+    expect(setSecret).not.toHaveBeenCalled();
+    sanitizeSecret("OPENAI_COMPATIBLE_BASE_URL", "https://gw.example.com/v1");
+    expect(setSecret).toHaveBeenCalledWith("https://gw.example.com/v1");
   });
 });
