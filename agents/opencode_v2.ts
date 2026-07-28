@@ -77,6 +77,7 @@ import {
 } from "./opencodePlugin.ts";
 import {
   autoSelectModel,
+  azureBaseUrlOverrides,
   buildReviewerAgentConfig,
   deepseekHighEffortOverrides,
   geminiHighThinkingOverrides,
@@ -136,6 +137,8 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): s
       openrouter: {
         models: { ...deepseekHighEffortOverrides(), ...kimiOpenRouterProviderOverrides() },
       },
+      // no-op unless AZURE_BASE_URL / AZURE_COGNITIVE_SERVICES_BASE_URL is set
+      ...azureBaseUrlOverrides(),
     },
   };
 

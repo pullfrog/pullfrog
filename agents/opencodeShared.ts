@@ -99,6 +99,46 @@ export function deepseekHighEffortOverrides(): Record<
   return orModel ? { [orModel]: { options: { reasoning: { effort: "high" } } } } : {};
 }
 
+/** env var carrying an explicit endpoint override, per models.dev Azure provider. */
+const AZURE_BASE_URL_ENV: Record<string, string> = {
+  azure: "AZURE_BASE_URL",
+  "azure-cognitive-services": "AZURE_COGNITIVE_SERVICES_BASE_URL",
+};
+
+/**
+ * Build the `provider.<azure-provider>.options.baseURL` entries that point the
+ * Azure providers at an explicit endpoint.
+ *
+ * Without this, `@ai-sdk/azure` derives its URL from a resource name as
+ * `https://<AZURE_RESOURCE_NAME>.openai.azure.com/openai`, which can't express
+ * an AI Foundry / AI Services host, an API Management front door, or an AI
+ * gateway. Supplying `baseURL` makes `resourceName` unnecessary — the SDK
+ * ignores it once a base URL is set.
+ *
+ * Wiring: config `provider.<id>.options` is merged over OpenCode's own provider
+ * options (`mergeDeep` in opencode `provider/provider.ts`), and `getSDK` reads
+ * `options.baseURL` (via `loadBaseURL`) straight into the `createAzure` factory.
+ * The provider still has to be *enabled*, which OpenCode does when any of the
+ * provider's models.dev env vars is present — `AZURE_API_KEY` alone is enough,
+ * so a custom endpoint doesn't need a dummy resource name.
+ *
+ * The value should carry the `/openai` suffix, matching both the SDK's own
+ * resource-name default and OpenCode's `azure-cognitive-services` loader:
+ *   https://my-resource.openai.azure.com/openai
+ *
+ * Returns `{}` when unset, so spreading it into `provider` is a no-op.
+ */
+export function azureBaseUrlOverrides(): Record<string, { options: { baseURL: string } }> {
+  const overrides: Record<string, { options: { baseURL: string } }> = {};
+  for (const [providerID, envVar] of Object.entries(AZURE_BASE_URL_ENV)) {
+    const baseURL = process.env[envVar]?.trim();
+    if (!baseURL) continue;
+    overrides[providerID] = { options: { baseURL } };
+    log.info(`» ${providerID} endpoint overridden via ${envVar}: ${baseURL}`);
+  }
+  return overrides;
+}
+
 /**
  * Read-only `reviewfrog` subagent for lens-based review. Non-mutative +
  * non-recursive — enforced by the system prompt in reviewer.ts.
