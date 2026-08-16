@@ -50,9 +50,6 @@ importers:
       '@types/object-hash':
         specifier: ^3.0.6
         version: 3.0.6
-      '@types/semver':
-        specifier: ^7.7.1
-        version: 7.8.0
       '@types/turndown':
         specifier: ^5.0.5
         version: 5.0.6
@@ -104,9 +101,6 @@ importers:
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
-      semver:
-        specifier: ^7.7.3
-        version: 7.8.5
       skills:
         specifier: 1.4.9
         version: 1.4.9
@@ -122,9 +116,12 @@ importers:
       undici:
         specifier: ^7.22.0
         version: 7.29.0
+      verkit:
+        specifier: 0.4.0
+        version: 0.4.0
       vitest:
         specifier: ^4.0.17
-        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(yaml@2.9.0))
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0))
       yaml:
         specifier: ^2.8.2
         version: 2.9.0
@@ -401,7 +398,6 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
-      zod: {}
 
   '@modelcontextprotocol/server@2.0.0':
     resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
@@ -607,9 +603,6 @@ packages:
 
   '@types/object-hash@3.0.6':
     resolution: {integrity: sha512-fOBV8C1FIu2ELinoILQ+ApxcUKz4ngq+IWUYrxSGjXzzjUALijilampwkMgEtJ+h2njAW3pi853QpzNVCHB73w==}
-
-  '@types/semver@7.8.0':
-    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
 
   '@types/turndown@5.0.6':
     resolution: {integrity: sha512-ru00MoyeeouE5BX4gRL+6m/BsDfbRayOskWqUvh7CLGW+UXxHQItqALa38kKnOiZPqJrtzJUgAC2+F0rL1S4Pg==}
@@ -1453,11 +1446,6 @@ packages:
   safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
 
-  semver@7.8.5:
-    resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   send@1.2.1:
     resolution: {integrity: sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==}
     engines: {node: '>= 18'}
@@ -1646,6 +1634,10 @@ packages:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
 
+  verkit@0.4.0:
+    resolution: {integrity: sha512-sXMwN6DMHeouPfCxkxWkKAmxphWKEenHYY5H1nIBzU3PmDsmJp6kBXJdshjVdpMZuWCmL9SH7KFRx29AylpP6g==}
+    engines: {node: '>=18.12.0'}
+
   vite@8.2.1:
     resolution: {integrity: sha512-EU/eS7BH3XROHh2YnBefjM6DBKA6ZeMZEYQbj7NLWg5wHYlhB8B/Mayd5XsgWq+NFYccDOTemRpdETWR6Ka/lw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1729,7 +1721,6 @@ packages:
         optional: true
       jsdom:
         optional: true
-      vite: {}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -2163,8 +2154,6 @@ snapshots:
 
   '@types/object-hash@3.0.6': {}
 
-  '@types/semver@7.8.0': {}
-
   '@types/turndown@5.0.6': {}
 
   '@vitest/expect@4.1.10':
@@ -2176,12 +2165,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.10(vite@8.2.1(@types/node@24.13.3)(yaml@2.9.0))':
+  '@vitest/mocker@4.1.10(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      vite: 8.2.1(@types/node@24.13.3)(yaml@2.9.0)
+    optionalDependencies:
+      vite: 8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -2226,7 +2216,7 @@ snapshots:
   agent-browser@0.25.4: {}
 
   ajv-formats@3.0.1(ajv@8.20.0):
-    dependencies:
+    optionalDependencies:
       ajv: 8.20.0
 
   ajv@8.20.0:
@@ -2271,6 +2261,7 @@ snapshots:
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
+      - debug
       - supports-color
 
   before-after-hook@4.0.0: {}
@@ -2535,19 +2526,20 @@ snapshots:
       strict-event-emitter-types: 2.0.0
       undici: 7.29.0
       uri-templates: 0.2.0
-      xsschema: 0.4.4(arktype@2.2.0)(zod@4.4.3)(zod-to-json-schema@3.25.2(zod@4.4.3))
+      xsschema: 0.4.4(arktype@2.2.0)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
       yargs: 18.1.0
       zod: 4.4.3
       zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
       - '@valibot/to-json-schema'
+      - arktype
       - effect
       - supports-color
       - sury
 
   fdir@6.5.0(picomatch@4.0.5):
-    dependencies:
+    optionalDependencies:
       picomatch: 4.0.5
 
   figures@6.1.0:
@@ -2575,7 +2567,7 @@ snapshots:
       - supports-color
 
   follow-redirects@1.16.0(debug@4.4.3):
-    dependencies:
+    optionalDependencies:
       debug: 4.4.3
 
   form-data@4.0.6:
@@ -3014,8 +3006,6 @@ snapshots:
 
   safer-buffer@2.1.2: {}
 
-  semver@7.8.5: {}
-
   send@1.2.1:
     dependencies:
       debug: 4.4.3
@@ -3203,23 +3193,25 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite@8.2.1(@types/node@24.13.3)(yaml@2.9.0):
+  verkit@0.4.0: {}
+
+  vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0):
     dependencies:
-      '@types/node': 24.13.3
       lightningcss: 1.33.0
       picomatch: 4.0.5
       postcss: 8.5.26
       rolldown: 1.2.4
       tinyglobby: 0.2.17
-      yaml: 2.9.0
     optionalDependencies:
-      fsevents: 2.3.3
-
-  vitest@4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(yaml@2.9.0)):
-    dependencies:
       '@types/node': 24.13.3
+      esbuild: 0.25.12
+      fsevents: 2.3.3
+      yaml: 2.9.0
+
+  vitest@4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0)):
+    dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.2.1(@types/node@24.13.3)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.10(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -3236,8 +3228,10 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.2.1(@types/node@24.13.3)(yaml@2.9.0)
+      vite: 8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(yaml@2.9.0)
       why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
 
@@ -3258,8 +3252,8 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  xsschema@0.4.4(arktype@2.2.0)(zod@4.4.3)(zod-to-json-schema@3.25.2(zod@4.4.3)):
-    dependencies:
+  xsschema@0.4.4(arktype@2.2.0)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3):
+    optionalDependencies:
       arktype: 2.2.0
       zod: 4.4.3
       zod-to-json-schema: 3.25.2(zod@4.4.3)
