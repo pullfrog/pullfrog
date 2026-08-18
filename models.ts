@@ -853,8 +853,10 @@ export function getModelProvider(slug: string): string {
 export function realProvider(specifier: string): string {
   const first = specifier.split("/")[0];
   if (first === "openrouter") {
-    const inner = specifier.split("/")[1];
-    return inner ?? first;
+    const inner = specifier.split("/")[1] ?? first;
+    // the `~` is an OpenRouter rolling-pointer sigil (openrouter/~deepseek/...),
+    // not part of the provider identity — strip it before the registry lookup.
+    return inner.startsWith("~") ? inner.slice(1) : inner;
   }
   return first;
 }
