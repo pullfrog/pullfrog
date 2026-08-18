@@ -104,10 +104,12 @@ describe("buildCordisPatch", () => {
 
   it("disables every native tool surface", () => {
     const yaml = buildCordisPatch({ ...base, providerId: "deepseek-official", modelId: "deepseek-v4-flash", apiKeyEnv: "DEEPSEEK_API_KEY", effortRung: undefined });
-    for (const id of ["tool-bash", "tool-pwsh", "tool-fs", "tool-fs-search", "tool-str-replace-editor", "tool-web", "web-search-deepseek", "tool-skill", "skill-filesystem", "tool-subagent", "tool-subagent-fork", "tool-subagent-control", "tool-subagent-report", "tool-workflow", "tool-ralph"]) {
+    for (const id of ["tool-bash", "tool-pwsh", "tool-jobs", "tool-fs", "tool-fs-search", "tool-str-replace-editor", "tool-web", "web-search-deepseek", "tool-skill", "skill-filesystem", "tool-subagent", "tool-subagent-fork", "tool-subagent-control", "tool-subagent-list-agents", "tool-subagent-report", "tool-workflow", "tool-ralph"]) {
       expect(yaml).toContain(`- id: ${id}\n  disabled: true`);
     }
     expect(yaml).not.toContain("id: tool-goal");
+    // the old package-name id must not be used (matches nothing, fail-open)
+    expect(yaml).not.toContain("tool-subagent-control/list-agents");
   });
 
   it("omits the effort key when no rung maps", () => {

@@ -126,3 +126,54 @@ describe("agent registry", () => {
     expect(agents.dsh.name).toBe("dsh");
   });
 });
+
+describe("resolveAgent — openrouter tilde rolling pointer", () => {
+  afterEach(() => {
+    delete process.env.DEEPSEEK_API_KEY;
+  });
+
+  it("routes openrouter/~deepseek rolling-pointer models to dsh on proxy runs", () => {
+    process.env.DEEPSEEK_API_KEY = "sk-test";
+    const agent = resolveAgent({
+      proxyModel: "openrouter/~deepseek/deepseek-v4-flash-latest",
+      dshEnabled: true,
+    });
+    expect(agent.name).toBe("dsh");
+  });
+
+  it("keeps non-deepseek proxy runs on opencode even through the tilde unwrap", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    // claude-code does not speak OpenRouter, and the tilde unwrap routes by the
+    // INNER provider's capability — openrouter/~anthropic/... is not deepseek,
+    // so it stays on opencode exactly as other proxy models do.
+    const agent = resolveAgent({
+      proxyModel: "openrouter/~anthropic/claude-opus-latest",
+      dshEnabled: true,
+    });
+    expect(agent.name).toBe("opencode");
+  });
+});
+
+describe("assertAgentModelCompatible — openrouter route consistency", () => {
+  it("allows claude pick for openrouter-served anthropic models (tilde and non-tilde)", () => {
+    expect(() => assertAgentModelCompatible("claude", "openrouter/anthropic/claude-opus-5")).not.toThrow();
+    expect(() =>
+      assertAgentModelCompatible("claude", "openrouter/~anthropic/claude-opus-latest")
+    ).not.toThrow();
+  });
+
+  it("allows dsh pick for openrouter-served deepseek models including the tilde rolling pointer", () => {
+    expect(() =>
+      assertAgentModelCompatible("dsh", "openrouter/~deepseek/deepseek-v4-flash-latest")
+    ).not.toThrow();
+    expect(() =>
+      assertAgentModelCompatible("dsh", "openrouter/deepseek/deepseek-v4-pro-0813")
+    ).not.toThrow();
+  });
+
+  it("still rejects dsh for openrouter-served anthropic models", () => {
+    expect(() =>
+      assertAgentModelCompatible("dsh", "openrouter/~anthropic/claude-opus-latest")
+    ).toThrow();
+  });
+});
