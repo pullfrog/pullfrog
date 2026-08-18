@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detect } from "package-manager-detector";
 import { agents } from "./agents/index.ts";
+import { DSH_ACTIVITY_TIMEOUT_MS } from "./agents/dsh.ts";
 import { subagentDeniedToolNames } from "./agents/subagentToolGates.ts";
 import { findDanglingPromptToolRefs } from "./external.ts";
 import { reportProgress } from "./mcp/comment.ts";
@@ -456,6 +457,8 @@ export async function main(): Promise<MainResult> {
       model: resolvedModel,
       proxyModel: payload.proxyModel,
       codexAgent: runContext.repoSettings.codexAgent,
+      agent: runContext.repoSettings.agent,
+      dshEnabled: runContext.repoSettings.dshEnabled,
     });
 
     // agent-agnostic best-effort for the model that ran: proxy spec for
@@ -761,7 +764,10 @@ export async function main(): Promise<MainResult> {
 
     // run agent, optionally with timeout enforcement
     activityTimeout = createProcessOutputActivityTimeout({
-      timeoutMs: AGENT_ACTIVITY_TIMEOUT_MS,
+      // dsh headless emits no stdout and deepseek reasoning turns run silently
+      // for minutes — the shared 15min budget would kill legitimate runs. the
+      // harness's own session-JSONL watchdog uses the same 30min budget.
+      timeoutMs: agent.name === "dsh" ? DSH_ACTIVITY_TIMEOUT_MS : AGENT_ACTIVITY_TIMEOUT_MS,
       checkIntervalMs: DEFAULT_ACTIVITY_CHECK_INTERVAL_MS,
     });
     activityTimeout.promise.catch(() => {}); // prevent unhandled rejection if agent wins race
