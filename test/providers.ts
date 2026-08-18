@@ -25,7 +25,7 @@ export type ProviderEntry = {
   /** flagship slug for `providers-live` full-harness smoke. */
   flagship: string;
   /** harness used by the runtime for this provider's models. */
-  agent: "claude" | "opencode";
+  agent: "claude" | "opencode" | "dsh";
   /** repo-relative globs that invalidate this provider's matrix entries. */
   coverage: string[];
 };
@@ -64,8 +64,8 @@ export const providers: ProviderEntry[] = [
   {
     name: "deepseek",
     flagship: "deepseek/deepseek-pro",
-    agent: "opencode",
-    coverage: SHARED_OPENCODE_COVERAGE,
+    agent: "dsh",
+    coverage: ["action/models.ts", "action/agents/dsh.ts"],
   },
   {
     name: "moonshotai",
