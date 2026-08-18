@@ -111,6 +111,13 @@ interface ModelDef {
 
 export interface ProviderConfig {
   displayName: string;
+  /** whether this provider's models can be driven by the DeepSeek Harness
+   * (dsh) harness. the single source of truth for the "auto" selection rule
+   * and the explicit-agent compatibility gate in utils/agent.ts: a model
+   * whose provider is not marked here can never run on dsh. today only
+   * deepseek is marked; the OpenRouter route is resolved separately by
+   * isDshCompatibleModel unwrapping the openrouter/ prefix. */
+  dshCapable?: boolean;
   envVars: readonly string[];
   /** credentials authored only via `pullfrog auth <provider>` — never
    * user-facing in `init`, never documented as a manual GHA secret. counted
@@ -319,6 +326,7 @@ export const providers = {
   }),
   deepseek: provider({
     displayName: "DeepSeek",
+    dshCapable: true,
     envVars: ["DEEPSEEK_API_KEY"],
     models: {
       // same fork trap as `deepseek-flash` below, and Pro fell into it on
@@ -835,6 +843,38 @@ export function parseModel(slug: string): { provider: string; model: string } {
 
 export function getModelProvider(slug: string): string {
   return parseModel(slug).provider;
+}
+
+/** the provider that actually serves a model specifier, unwrapping an outer
+ * OpenRouter prefix. openrouter/deepseek/deepseek-v4-pro-0813 is served by
+ * DeepSeek; openrouter/anthropic/... by Anthropic. needed because the
+ * OpenRouter route must be routed by the INNER provider's capability, not by
+ * the transport vendor. */
+export function realProvider(specifier: string): string {
+  const first = specifier.split("/")[0];
+  if (first === "openrouter") {
+    const inner = specifier.split("/")[1];
+    return inner ?? first;
+  }
+  return first;
+}
+
+/** whether the DeepSeek Harness (dsh) can drive this resolved model specifier
+ * on this run's route. v1: a model whose real provider (openrouter/ unwrapped)
+ * is marked dshCapable in the provider registry. every other provider is out
+ * of scope — dsh is configured for deepseek only (direct + OpenRouter). */
+export function isDshCompatibleModel(specifier: string): boolean {
+  const providerId = realProvider(specifier);
+  return (providers as Record<string, ProviderConfig>)[providerId]?.dshCapable === true;
+}
+
+/** the dsh provider id to configure for a resolved model specifier. direct
+ * deepseek models run on the native deepseek-official provider; OpenRouter-
+ * served deepseek models run on a custom OpenAI-compatible provider whose id
+ * is openrouter. undefined when the specifier is not dsh-compatible. */
+export function dshProviderForModel(specifier: string): string | undefined {
+  if (!isDshCompatibleModel(specifier)) return undefined;
+  return specifier.split("/")[0] === "openrouter" ? "openrouter" : "deepseek-official";
 }
 
 export function getProviderDisplayName(slug: string): string | undefined {
