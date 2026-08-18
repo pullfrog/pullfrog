@@ -10,6 +10,7 @@ import {
   isVertexAnthropicId,
   OPENAI_COMPATIBLE_MODEL_ENV,
   OPENAI_COMPATIBLE_PROVIDER,
+  realProvider,
   resolveCliModel,
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
@@ -60,7 +61,7 @@ function hasDeepSeekAuth(): boolean {
 function compatibleAgentsFor(model: string): string[] {
   const out = ["opencode"]; // opencode is universal
   try {
-    const provider = getModelProvider(model);
+    const provider = realProvider(model);
     if (provider === "anthropic" || isBedrockAnthropicId(model) || isVertexAnthropicId(model)) {
       out.push("claude");
     } else if (provider === "openai") {
@@ -88,7 +89,9 @@ export function assertAgentModelCompatible(
   if (agentName === "opencode") return; // universal
   let allowed = false;
   try {
-    const provider = getModelProvider(model);
+    // the gate must judge the provider that actually serves the model — the
+    // same unwrapping the routing uses (raw prefixes lie on Router runs).
+    const provider = realProvider(model);
     if (agentName === "claude") {
       allowed = provider === "anthropic" || isBedrockAnthropicId(model) || isVertexAnthropicId(model);
     } else if (agentName === "codex") {
