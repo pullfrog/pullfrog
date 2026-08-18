@@ -113,11 +113,14 @@ const DISABLED_PLUGIN_IDS = [
   // skills (all fs-backed)
   "tool-skill",
   "skill-filesystem",
+  // background jobs (their producers — tool-bash/tool-pwsh — are already
+  // off, but deny the tool itself so nothing can ever surface from it)
+  "tool-jobs",
   // ungated fan-out
   "tool-subagent",
   "tool-subagent-fork",
   "tool-subagent-control",
-  "tool-subagent-control/list-agents",
+  "tool-subagent-list-agents",
   "tool-subagent-report",
   "tool-workflow",
   "tool-ralph",
@@ -383,14 +386,19 @@ async function runDshOnce(params: {
   // event — llm chunks, tool calls — resets the clock. markActivity() keeps
   // main.ts's outer process-output watchdog on the same clock.
   let lastMtime = latestSessionMtime(params.sessionsRoot);
+  // idle is tracked on ONE monotonic clock. mixing in the filesystem's epoch
+  // mtimeMs made idleMs ~ -1.8e12 whenever a session file existed, so the
+  // kill never fired.
+  let lastProgressAt = start;
   const watchdog = setInterval(() => {
     const mtime = latestSessionMtime(params.sessionsRoot);
     if (mtime > lastMtime) {
       lastMtime = mtime;
+      lastProgressAt = performance.now();
       markActivity();
       return;
     }
-    const idleMs = performance.now() - (mtime > 0 ? mtime : start);
+    const idleMs = performance.now() - lastProgressAt;
     if (idleMs > DSH_ACTIVITY_TIMEOUT_MS) {
       innerKilled = true;
       log.warning(
@@ -414,6 +422,22 @@ async function runDshOnce(params: {
       success: false,
       output: stdout,
       error: `dsh run killed for inactivity after ${DSH_ACTIVITY_TIMEOUT_MS / 60000}min`,
+      usage,
+    };
+  }
+
+  // fail CLOSED on a disabled plugin id the patch failed to match: the cordis
+  // include loader warns and skips non-matching patch entries, so a typo or an
+  // id renamed upstream would otherwise leave a native tool enabled with no
+  // error. (the dsh process still exits 0 — the warning is not fatal.)
+  const disabledUnapplied = DISABLED_PLUGIN_IDS.filter((id) =>
+    stderr.includes(`entry "${id}" not found`)
+  );
+  if (disabledUnapplied.length > 0) {
+    return {
+      success: false,
+      output: stdout,
+      error: `dsh refused to start: disable overlay matched no plugin for: ${disabledUnapplied.join(", ")}. fix DISABLED_PLUGIN_IDS to match the mounted profile ids.`,
       usage,
     };
   }
@@ -448,49 +472,59 @@ export const dsh = agent({
   install,
   run: async (ctx: AgentRunContext): Promise<AgentResult> => {
     const cliPath = await install();
-    const home = mkdtempSync(join(tmpdir(), "pullfrog-dsh-"));
-    const sessionsRoot = join(home, SESSIONS_SUBDIR);
-    mkdirSync(sessionsRoot, { recursive: true });
-    try {
-      const modelSpec = ctx.payload.proxyModel ?? ctx.resolvedModel;
-      const dshModel = resolveDshModel(modelSpec);
-      const effort = resolveRunEffort(ctx);
-      const patchPath = join(home, "cordis.patch.yml");
-      writeFileSync(
-        patchPath,
-        buildCordisPatch({
-          dshHome: home,
-          mcpServerUrl: ctx.mcpServerUrl,
-          providerId: dshModel.providerId,
-          modelId: dshModel.modelId,
-          apiKeyEnv: dshModel.apiKeyEnv,
-          effortRung: mapEffortRung(effort.rung),
-        })
-      );
-      log.info(
-        `» dsh harness: provider=${dshModel.providerId} model=${dshModel.modelId} effort=${effort.rung ?? "default"}`
-      );
-      const env: NodeJS.ProcessEnv = {
-        ...process.env,
-        DSH_HOME: home,
-        DSH_PERMISSION_MODE: "workspace-write",
-        PWD: process.cwd(),
-      };
-      const runOnce = (prompt: string): Promise<AgentResult> =>
-        runDshOnce({ ctx, prompt, cliPath, home, patchPath, env, sessionsRoot });
+    const modelSpec = ctx.payload.proxyModel ?? ctx.resolvedModel;
+    const dshModel = resolveDshModel(modelSpec);
+    const effort = resolveRunEffort(ctx);
+    const effortRung = mapEffortRung(effort.rung);
+    log.info(
+      `» dsh harness: provider=${dshModel.providerId} model=${dshModel.modelId} effort=${effort.rung ?? "default"}`
+    );
 
-      const initial = await runOnce(ctx.instructions.full);
-      return await runPostRunRetryLoop({
-        ctx,
-        initialResult: initial,
-        initialUsage: initial.usage,
-        reflectionPrompt: buildReflectionPrompt(ctx.toolState),
-        // headless can always be respawned with a continuation prompt.
-        canResume: () => true,
-        resume: async (c) => runOnce(c.prompt),
-      });
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
+    // each attempt gets a FRESH DSH_HOME. headless has no --resume, so every
+    // post-run retry respawns a new process, and dsh persists the boot patch
+    // into $DSH_HOME/profiles/<profile>/cordis.patch.yml — a second --patch on
+    // the same home would double-apply the mcp-client insert and fail the boot
+    // with "duplicate loader entry id". a fresh home per attempt also keeps
+    // usage parsing disjoint, so mergeAgentUsage() sums real per-attempt usage
+    // instead of counting earlier attempts again.
+    const runOnce = async (prompt: string): Promise<AgentResult> => {
+      const home = mkdtempSync(join(tmpdir(), "pullfrog-dsh-"));
+      const sessionsRoot = join(home, SESSIONS_SUBDIR);
+      mkdirSync(sessionsRoot, { recursive: true });
+      try {
+        const patchPath = join(home, "cordis.patch.yml");
+        writeFileSync(
+          patchPath,
+          buildCordisPatch({
+            dshHome: home,
+            mcpServerUrl: ctx.mcpServerUrl,
+            providerId: dshModel.providerId,
+            modelId: dshModel.modelId,
+            apiKeyEnv: dshModel.apiKeyEnv,
+            effortRung,
+          })
+        );
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
+          DSH_HOME: home,
+          DSH_PERMISSION_MODE: "workspace-write",
+          PWD: process.cwd(),
+        };
+        return await runDshOnce({ ctx, prompt, cliPath, home, patchPath, env, sessionsRoot });
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    };
+
+    const initial = await runOnce(ctx.instructions.full);
+    return await runPostRunRetryLoop({
+      ctx,
+      initialResult: initial,
+      initialUsage: initial.usage,
+      reflectionPrompt: buildReflectionPrompt(ctx.toolState),
+      // headless can always be respawned with a continuation prompt.
+      canResume: () => true,
+      resume: async (c) => runOnce(c.prompt),
+    });
   },
 });
