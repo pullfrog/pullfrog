@@ -141,6 +141,23 @@ jobs:
 </details>
 -->
 
+## Agents
+
+Pullfrog routes each run to the agent harness that best fits the model you configured:
+
+- **DeepSeek models** (V4 Flash / Pro, direct API or OpenRouter) run on the **DeepSeek Harness** (`dsh`) — a plugin-based agent runtime with goal tracking, plan mode, and session persistence.
+- **Anthropic models** run on Claude Code; **OpenAI models** on Codex (opt-in) or OpenCode; everything else (Gemini, Grok, Kimi, …) runs on OpenCode.
+
+Three knobs control the choice, in priority order:
+
+1. **`PULLFROG_AGENT`** env var — forces a specific harness (`claude`, `codex`, `opencode`, `dsh`) for that run. Operator-level escape hatch; no compatibility validation (your responsibility).
+2. **Repo agent setting** (console) — `auto` (default, model-based routing above), or an explicit harness. Explicit choices are validated against the run's model: an incompatible pair fails before the agent starts (e.g. `claude` with a DeepSeek model).
+3. **`auto`** — model-based routing. DeepSeek → DeepSeek Harness; Anthropic → Claude Code; OpenAI → OpenCode (Codex with the opt-in); all other providers → OpenCode.
+
+To keep using OpenCode for DeepSeek models, set `PULLFROG_AGENT: opencode` in your workflow's `env:` block, or pick `opencode` in the console agent setting once available.
+
+> The DeepSeek Harness runs with all of its native tools disabled (bash, filesystem, subagents, web) — file and shell operations go through Pullfrog's sandboxed MCP tools, the same security model as the other harnesses.
+
 ## Standalone Usage
 
 You can also use `pullfrog/pullfrog` as a step in your own workflows. The action exposes a `result` output that can be consumed by subsequent steps.

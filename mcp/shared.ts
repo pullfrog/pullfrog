@@ -2,6 +2,7 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { encode as toonEncode } from "@toon-format/toon";
 import type { FastMCP, Tool } from "fastmcp";
 import { formatJsonValue, log } from "../utils/cli.ts";
+import { markActivity } from "../utils/activity.ts";
 import { isGeminiRouted, sanitizeToolForGemini } from "./geminiSanitizer.ts";
 import type { ToolContext } from "./server.ts";
 
@@ -66,6 +67,10 @@ export const execute = <T, R extends Record<string, any> | string>(
   toolName?: string
 ) => {
   const _fn = async (params: T): Promise<ToolResult> => {
+    // every MCP tool call is agent activity. the dsh harness has no event
+    // stream to watch (headless emits nothing until exit), so its activity
+    // clock is fed from here + its session-JSONL watcher.
+    markActivity();
     try {
       const result = await fn(params);
       return handleToolSuccess(result);

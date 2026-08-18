@@ -89,6 +89,20 @@ export function computeModes(agentId: AgentId, signedCommits = false): Mode[] {
   const finalizeStep = signedCommits
     ? `confirm a clean working tree (\`git status\`) — your \`${t("commit_changes")}\` calls already landed the work on the remote`
     : `confirm a clean working tree, then push via \`${t("push_branch")}\``;
+  // the dsh harness ships with every native tool disabled (see agents/dsh.ts):
+  // all file I/O and shell go through the pullfrog MCP tools. the mode
+  // guidance must say so or the agent burns turns looking for tools that
+  // aren't registered.
+  const buildStep =
+    agentId === "dsh"
+      ? `4. **build**: implement changes via the pullfrog MCP tools — this harness has NO native file or shell tools, so every file read/write and every command runs through \`${t("shell")}\` (and \`${t("git")}\` for git plumbing):
+   - follow the plan (if you ran a plan phase)
+   - plan your approach before writing code: identify which files need to change, key design decisions, and edge cases. for non-trivial changes, consider whether there's a more elegant approach.
+   - run relevant tests/lints before committing`
+      : `4. **build**: implement changes using your native file and shell tools:
+   - follow the plan (if you ran a plan phase)
+   - plan your approach before writing code: identify which files need to change, key design decisions, and edge cases. for non-trivial changes, consider whether there's a more elegant approach.
+   - run relevant tests/lints before committing`;
   return [
     {
       name: "Build",
@@ -104,10 +118,7 @@ export function computeModes(agentId: AgentId, signedCommits = false): Mode[] {
    - **PR event, modifying the existing PR**: call \`${t("checkout_pr")}\`
    - **new branch**: use \`${t("git")}\` to create a branch (\`git checkout -b pullfrog/branch-name\`)
 
-4. **build**: implement changes using your native file and shell tools:
-   - follow the plan (if you ran a plan phase)
-   - plan your approach before writing code: identify which files need to change, key design decisions, and edge cases. for non-trivial changes, consider whether there's a more elegant approach.
-   - run relevant tests/lints before committing
+${buildStep}
 
 5. **self-review**: unless the diff has no behavioral surface at all — docs, comments, whitespace, import reordering, lockfile or generated-code regeneration, a mechanical rename, a trusted dep patch bump — dispatch the \`${REVIEWER_AGENT_NAME}\` subagent to review it with fresh eyes against YOUR TASK. Line count is not the signal: a one-line change to auth, money, SQL, a comparison operator, a redirect, or a config default earns a pass. When in doubt, run it — a false-positive dispatch costs cents, a missed bug costs much more.
 
@@ -144,7 +155,7 @@ For simple, well-defined tasks, skip the plan phase and go straight to build.`,
    - understand the feedback
    - **verify the finding yourself** against the actual code before deciding whether to apply — every comment (human or agent) is a hypothesis, not a directive. agent reviewers especially are fallible.
    - you are searching for a solution that is **complete, minimal, and elegant** — you may need to think hard to find it. do not over-engineer, do not be over-defensive, **do not write AI slop**. reviewers bias toward *recommending additions*, and that bias has a recognizable slop texture: defensive checks for impossible cases, extra abstractions used once, comments restating obvious code, tests asserting tautologies, "just-in-case" guards, error handlers for cases the type system already rules out. reject those. evaluate whether applying the finding would leave the code more **sound, correct, AND elegant**; two-out-of-three is a signal to look harder for a fix that gets all three. if a request would add bloat — ceremony without commensurate correctness benefit — push back in your reply rather than mechanically applying it.
-   - if the request stands, make the code change using your native tools; otherwise reply explaining why
+   - if the request stands, make the code change via the pullfrog MCP tools (\`${t("shell")}\` etc. — this harness has no native tools); otherwise reply explaining why
    - record what was done (or why nothing was done)
 
 5. Quality check:

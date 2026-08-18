@@ -10,13 +10,14 @@ import type { EffortPosition } from "./effort.ts";
 export const pullfrogMcpName = "pullfrog";
 
 /** @see {@link file://./agents/shared.ts} Agent interface that uses this type */
-export type AgentId = "claude" | "codex" | "opencode";
+export type AgentId = "claude" | "codex" | "opencode" | "dsh";
 
 /**
  * format a tool name the way each agent's MCP client presents it to the model.
  * claude code: mcp__pullfrog__select_mode
  * codex:       pullfrog__select_mode
  * opencode:    pullfrog_select_mode
+ * dsh:         mcp__pullfrog__select_mode (DeepSeek Harness mcp-client namespace)
  */
 export function formatMcpToolRef(agentId: AgentId, toolName: string): string {
   switch (agentId) {
@@ -26,6 +27,10 @@ export function formatMcpToolRef(agentId: AgentId, toolName: string): string {
       return `${pullfrogMcpName}__${toolName}`;
     case "opencode":
       return `${pullfrogMcpName}_${toolName}`;
+    case "dsh":
+      // DeepSeek Harness's mcp-client bridge exposes MCP tools as
+      // mcp__<serverName>__<rawName> (see @deepseek-ai/dsh-mcp-client).
+      return `mcp__${pullfrogMcpName}__${toolName}`;
     default:
       return agentId satisfies never;
   }

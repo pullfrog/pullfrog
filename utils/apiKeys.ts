@@ -356,6 +356,9 @@ function hasSingleProviderAuth(agentName: string): boolean {
   if (agentName === "codex") {
     return hasEnvVar("OPENAI_API_KEY") || hasEnvVar("CODEX_AUTH_JSON");
   }
+  if (agentName === "dsh") {
+    return hasEnvVar("DEEPSEEK_API_KEY");
+  }
   return (
     hasEnvVar("ANTHROPIC_API_KEY") ||
     hasEnvVar("ANTHROPIC_AUTH_TOKEN") ||

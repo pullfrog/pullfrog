@@ -46,6 +46,18 @@ export interface RepoSettings {
   // the `isCodexAgentEnabled()` kill switch — so the runtime treats it as the
   // final "may route to codex" verdict. see resolveAgent + wiki/codex-agent.md.
   codexAgent: boolean;
+  // explicit user choice of agent harness. null = "auto" — the model-based
+  // routing in utils/agent.ts decides (deepseek models route to dsh; everything
+  // else as before). when set, the value must be compatible with the run's
+  // resolved model — utils/agent.ts hard-fails before the agent starts
+  // otherwise. server-authoritative: the console radio delivers this; the
+  // server nulls it when the dsh kill switch is off.
+  agent: "auto" | "claude" | "codex" | "opencode" | "dsh" | null;
+  // server-side gate for the dsh harness, ANDed with the `isDshAgentEnabled()`
+  // kill switch — the runtime treats it as the final "may route to dsh"
+  // verdict. gates BOTH the auto route (deepseek -> dsh) and an explicit
+  // agent: "dsh" pick (which hard-fails when disabled).
+  dshEnabled: boolean;
   signedCommits: boolean;
   repoIntelligence: boolean;
   // false suppresses the "Leaping into action..." comment (server-side, before
@@ -125,7 +137,9 @@ const defaultSettings: RepoSettings = {
   shell: "restricted",
   prApproveEnabled: false,
   autoMergeEnabled: false,
+  agent: null,
   codexAgent: false,
+  dshEnabled: false,
   signedCommits: false,
   repoIntelligence: false,
   progressComments: true,

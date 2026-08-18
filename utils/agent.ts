@@ -6,9 +6,11 @@ import {
   BEDROCK_MODEL_ID_ENV,
   getModelProvider,
   isBedrockAnthropicId,
+  isDshCompatibleModel,
   isVertexAnthropicId,
   OPENAI_COMPATIBLE_MODEL_ENV,
   OPENAI_COMPATIBLE_PROVIDER,
+  realProvider,
   resolveCliModel,
   resolveDisplayAlias,
   VERTEX_MODEL_ID_ENV,
@@ -48,6 +50,69 @@ function hasBedrockAuth(): boolean {
 
 function hasVertexAuth(): boolean {
   return hasEnvVar(VERTEX_SERVICE_ACCOUNT_JSON_ENV);
+}
+
+function hasDeepSeekAuth(): boolean {
+  return hasEnvVar("DEEPSEEK_API_KEY");
+}
+
+/** human-readable set of harnesses that can run a given effective model. used
+ * by the explicit-agent compatibility gate's error copy. */
+function compatibleAgentsFor(model: string): string[] {
+  const out = ["opencode"]; // opencode is universal
+  try {
+    const provider = realProvider(model);
+    if (provider === "anthropic" || isBedrockAnthropicId(model) || isVertexAnthropicId(model)) {
+      out.push("claude");
+    } else if (provider === "openai") {
+      out.push("codex");
+    }
+  } catch {
+    // unparseable — opencode only
+  }
+  if (isDshCompatibleModel(model)) out.push("dsh");
+  return out;
+}
+
+/**
+ * hard-fail gate for an explicit user agent choice: the choice must be able
+ * to actually run the resolved model on this run's route. thrown before the
+ * agent starts (and before any spend) with actionable copy naming the
+ * compatible set. when no model is configured the harness auto-selects its
+ * own, so every explicit choice is allowed.
+ */
+export function assertAgentModelCompatible(
+  agentName: "claude" | "codex" | "opencode" | "dsh",
+  model: string | undefined
+): void {
+  if (!model) return;
+  if (agentName === "opencode") return; // universal
+  let allowed = false;
+  try {
+    // the gate must judge the provider that actually serves the model — the
+    // same unwrapping the routing uses (raw prefixes lie on Router runs).
+    const provider = realProvider(model);
+    if (agentName === "claude") {
+      allowed = provider === "anthropic" || isBedrockAnthropicId(model) || isVertexAnthropicId(model);
+    } else if (agentName === "codex") {
+      allowed = provider === "openai";
+    } else if (agentName === "dsh") {
+      allowed = isDshCompatibleModel(model);
+    }
+  } catch {
+    allowed = false;
+  }
+  if (allowed) return;
+  const compatible = compatibleAgentsFor(model).join(" or ");
+  throw new Error(
+    `agent "${agentName}" cannot run model "${model}" — the configured harness only drives ` +
+      (agentName === "dsh"
+        ? "deepseek models"
+        : agentName === "claude"
+          ? "Anthropic models (direct, Bedrock, or Vertex)"
+          : "OpenAI models") +
+      `. pick "${compatible}" (or "auto"), or set PULLFROG_AGENT to force a harness at your own risk.`
+  );
 }
 
 /**
@@ -161,6 +226,15 @@ export function resolveAgent(ctx: {
    * account — routes OpenAI models to opencode exactly as before the harness
    * existed. see wiki/codex-agent.md. */
   codexAgent?: boolean | undefined;
+  /** explicit user choice from RepoSettings.agent (the console radio).
+   * null/undefined/"auto" = model-based routing below. a set value is
+   * compatibility-gated against the resolved model — an incompatible pair
+   * hard-fails before the agent starts. */
+  agent?: "auto" | "claude" | "codex" | "opencode" | "dsh" | null | undefined;
+  /** server-side dsh kill-switch verdict (ANDed server-side with
+   * isDshAgentEnabled()). gates BOTH the auto deepseek -> dsh route and an
+   * explicit agent: "dsh" pick. */
+  dshEnabled?: boolean | undefined;
 }): Agent {
   // 1. explicit env var override (escape hatch). deliberately NOT gated on the
   //    opt-in: an operator who sets PULLFROG_AGENT in their own workflow is
@@ -173,10 +247,32 @@ export function resolveAgent(ctx: {
     log.warning(`» unknown PULLFROG_AGENT="${envAgent}" — falling through to auto-select`);
   }
 
-  // 2. proxy runs are OpenRouter-served; only opencode speaks that provider.
-  if (ctx.proxyModel) return agents.opencode;
+  // the model that decides capability on this run's route: the OpenRouter
+  // specifier on proxy runs, the resolved model otherwise.
+  const effectiveModel = ctx.proxyModel ?? ctx.model;
 
-  // 3. Bedrock routing: when BEDROCK_MODEL_ID is the resolved model, route
+  // 2. explicit user choice (settings.agent). compatibility-gated: the pair
+  //    must be in the harness x model matrix, else hard-fail before any spend.
+  if (ctx.agent && ctx.agent !== "auto") {
+    if (ctx.agent === "dsh" && !ctx.dshEnabled) {
+      throw new Error(
+        `agent "dsh" is not enabled for this repo (DeepSeek Harness kill switch off) — ` +
+          `pick "auto" or another harness, or set PULLFROG_AGENT to force it at your own risk.`
+      );
+    }
+    assertAgentModelCompatible(ctx.agent, effectiveModel);
+    return agents[ctx.agent];
+  }
+
+  // 3. proxy runs are OpenRouter-served. deepseek models route to dsh when
+  //    the harness is enabled (dsh's custom OpenAI-compatible provider speaks
+  //    OpenRouter); everything else stays on opencode.
+  if (ctx.proxyModel) {
+    if (ctx.dshEnabled && isDshCompatibleModel(ctx.proxyModel)) return agents.dsh;
+    return agents.opencode;
+  }
+
+  // 4. Bedrock routing: when BEDROCK_MODEL_ID is the resolved model, route
   //    Anthropic IDs through claude-code (which supports Bedrock natively
   //    once CLAUDE_CODE_USE_BEDROCK=1) and everything else through opencode's
   //    `amazon-bedrock` provider.
@@ -184,26 +280,30 @@ export function resolveAgent(ctx: {
     return isBedrockAnthropicId(ctx.model) ? agents.claude : agents.opencode;
   }
 
-  // 4. Vertex routing: same shape as Bedrock, but Anthropic Vertex IDs are
+  // 5. Vertex routing: same shape as Bedrock, but Anthropic Vertex IDs are
   //    anchored `claude-*` IDs and non-Anthropic models use opencode's
   //    `google-vertex` provider.
   if (ctx.model && hasVertexAuth() && process.env[VERTEX_MODEL_ID_ENV]?.trim() === ctx.model) {
     return isVertexAnthropicId(ctx.model) ? agents.claude : agents.opencode;
   }
 
-  // 5. each vendor's own harness wins for its own models when the matching
-  //    credential is present — claude-code for Anthropic, codex for OpenAI.
+  // 6. each vendor's own harness wins for its own models when the matching
+  //    credential is present — claude-code for Anthropic, codex for OpenAI,
+  //    DeepSeek Harness for deepseek (direct route, when enabled).
   if (ctx.model) {
     try {
       const provider = getModelProvider(ctx.model);
       if (provider === "anthropic" && hasClaudeCodeAuth()) return agents.claude;
       if (provider === "openai" && ctx.codexAgent && hasCodexAuth()) return agents.codex;
+      if (ctx.dshEnabled && isDshCompatibleModel(ctx.model) && hasDeepSeekAuth()) {
+        return agents.dsh;
+      }
     } catch {
       // invalid model format — fall through
     }
   }
 
-  // 6. auto-select with no configured model. an account whose ONLY Anthropic
+  // 7. auto-select with no configured model. an account whose ONLY Anthropic
   //    credential is `ANTHROPIC_AUTH_TOKEN` has to take claude-code: opencode
   //    cannot use that variable, so `autoSelectModel` would rank a catalog it
   //    has no way to authenticate and the run dies on a missing key. a plain
@@ -221,6 +321,6 @@ export function resolveAgent(ctx: {
     if (ctx.codexAgent && hasCodexAuth() && !hasClaudeCodeAuth()) return agents.codex;
   }
 
-  // 7. default: OpenCode (universal, supports all providers)
+  // 8. default: OpenCode (universal, supports all providers)
   return agents.opencode;
 }
