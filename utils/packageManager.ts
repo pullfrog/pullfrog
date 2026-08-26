@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
-import semver from "semver";
+import { isValid, satisfies } from "verkit";
 import { log } from "./cli.ts";
 import { filterEnvForUntrustedCode } from "./secrets.ts";
 import { spawn } from "./subprocess.ts";
@@ -57,7 +57,7 @@ function parsePackageManagerField(value: string): PackageManagerSpec | null {
   return {
     name,
     version,
-    concrete: semver.valid(version) !== null,
+    concrete: isValid(version),
     source: "packageManager",
   };
 }
@@ -74,7 +74,7 @@ function parseDevEnginesField(
   return {
     name: field.name,
     version,
-    concrete: semver.valid(version) !== null,
+    concrete: isValid(version),
     source: "devEngines",
   };
 }
@@ -127,7 +127,7 @@ export async function resolvePackageManagerSpec(cwd: string): Promise<PackageMan
     return devSpec;
   }
 
-  if (pmSpec.concrete && semver.satisfies(pmSpec.version, devSpec.version)) {
+  if (pmSpec.concrete && satisfies(pmSpec.version, devSpec.version)) {
     return pmSpec;
   }
 
