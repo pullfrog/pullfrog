@@ -2,6 +2,7 @@ import { execFileSync, execSync } from "node:child_process";
 import { mkdtempSync, readdirSync, realpathSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as core from "@actions/core";
 import type { ShellPermission } from "../external.ts";
 import { requireRepoState, type ToolState } from "../toolState.ts";
 import { log } from "./cli.ts";
@@ -19,6 +20,11 @@ export interface SetupOptions {
 export function createTempDirectory(): string {
   const sharedTempDir = mkdtempSync(join(tmpdir(), "pullfrog-"));
   process.env.PULLFROG_TEMP_DIR = sharedTempDir;
+  // Hand the path to the `post:` hook so it can delete the directory. The env
+  // var alone is not enough: `post:` runs in a separate node process, so it
+  // never sees a `process.env` mutation made here. `$GITHUB_STATE` survives
+  // that boundary and is explicitly preserved by `wipeRunnerLeakSurface()`.
+  core.saveState("pullfrog_temp_dir", sharedTempDir);
   log.info(`» created temp dir at ${sharedTempDir}`);
   return sharedTempDir;
 }

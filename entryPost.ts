@@ -28,7 +28,7 @@
 // Imports here MUST stay stdlib-only — GHA runs this file directly from the
 // checked-out action repo, which has no node_modules for sha-pinned consumers.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { detectCodexRefresh } from "./utils/codexRefreshDetect.ts";
 import * as core from "./utils/ghaCore.ts";
 import { postApiFetch } from "./utils/postApiFetch.ts";
@@ -101,6 +101,41 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  core.warning(`codex post-hook: unexpected error — ${err}`);
-});
+/**
+ * Delete the shared temp directory created by `createTempDirectory()`.
+ *
+ * `mkdtempSync(join(tmpdir(), "pullfrog-"))` had no counterpart anywhere in
+ * the action, so every run left its checkout behind. On GitHub-hosted runners
+ * that is invisible — the VM is destroyed with the job — but a self-hosted
+ * runner accumulates one clone per run forever. It is worst when `/tmp` is a
+ * tmpfs: the leak is then RAM, not disk. One host reached 58 leaked clones
+ * (12 GB, `/tmp` 100% full) in a single day, which starved the box badly
+ * enough that the kernel OOM-killed unrelated jobs.
+ *
+ * Runs from `post:` rather than a `finally` in the main step so it also fires
+ * on cancellation, timeout, and unhandled errors — the paths that leak most.
+ * Best-effort by design: a failure here must never fail the job.
+ */
+function cleanupTempDir(): void {
+  const dir = core.getState("pullfrog_temp_dir");
+  // Only ever remove a directory we recognise as ours. The leaf is split by
+  // hand rather than with `basename` to keep entryPost's locked import
+  // surface (`node:fs` plus relative siblings) unchanged — see #834.
+  const leaf = dir.split(/[\\/]/).pop() ?? "";
+  if (!dir || !leaf.startsWith("pullfrog-")) return;
+  try {
+    rmSync(dir, { recursive: true, force: true });
+    core.info(`pullfrog post-hook: removed temp dir ${dir}`);
+  } catch (err) {
+    core.warning(`pullfrog post-hook: temp dir cleanup failed — ${err}`);
+  }
+}
+
+// Cleanup runs after `main()` because the Codex write-back reads files that
+// may live inside the temp dir, and on both paths because the leak is the
+// whole point of the hook firing.
+main()
+  .catch((err) => {
+    core.warning(`codex post-hook: unexpected error — ${err}`);
+  })
+  .finally(cleanupTempDir);
