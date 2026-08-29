@@ -131,9 +131,8 @@ function cleanupTempDir(): void {
   }
 }
 
-// Cleanup runs after `main()` because the Codex write-back reads files that
-// may live inside the temp dir, and on both paths because the leak is the
-// whole point of the hook firing.
+// Cleanup runs last so nothing `main()` reads can be pulled out from under it,
+// and on both paths because the leak is the whole point of the hook firing.
 main()
   .catch((err) => {
     core.warning(`codex post-hook: unexpected error — ${err}`);
