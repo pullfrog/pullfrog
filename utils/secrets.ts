@@ -23,6 +23,47 @@ export function isSensitiveEnvName(key: string): boolean {
   return SENSITIVE_PATTERNS.some((p) => p.test(key));
 }
 
+// Config-shaped vars that arrive through the same account-secret channel as real
+// credentials but carry no secret material: model specifiers, regions, project and
+// location identifiers. GitHub Actions masks by *value*, so masking these is
+// actively harmful — a short, common value (VERTEX_LOCATION=global) rewrites every
+// unrelated occurrence of that word in the run log to ***, and a masked model id
+// makes the "which model ran?" lines unreadable exactly when someone is debugging
+// why the wrong model ran.
+//
+// Deliberately an explicit allowlist rather than a suffix rule, so masking stays
+// fail-closed: an unrecognised key is still treated as a secret. In particular
+// VERTEX_SERVICE_ACCOUNT_JSON must NOT be added here — it matches none of
+// SENSITIVE_PATTERNS, so unconditional masking is the only thing protecting it.
+// OPENAI_COMPATIBLE_BASE_URL is also deliberately absent: gateway URLs can carry
+// account ids or embedded credentials in the path, so it stays masked.
+const NON_SECRET_CONFIG_NAMES = new Set([
+  "PULLFROG_MODEL",
+  "PULLFROG_AGENT",
+  "AWS_REGION",
+  "BEDROCK_MODEL_ID",
+  "VERTEX_MODEL_ID",
+  "VERTEX_LOCATION",
+  "GOOGLE_CLOUD_PROJECT",
+  // Azure OpenAI — everything but AZURE_API_KEY is plain config, and the
+  // console flow stores all of it in the account-secret channel. The limits
+  // ("128000") and the Chat Completions flag ("true") are the worst offenders
+  // if masked: those values appear all over an ordinary run log.
+  "AZURE_RESOURCE_NAME",
+  "AZURE_DEPLOYMENT",
+  "AZURE_CONTEXT",
+  "AZURE_MAX_OUTPUT",
+  "AZURE_USE_CHAT_COMPLETIONS",
+  // OpenAI-compatible — same shape, minus the base URL (see above).
+  "OPENAI_COMPATIBLE_MODEL",
+  "OPENAI_COMPATIBLE_CONTEXT",
+  "OPENAI_COMPATIBLE_MAX_OUTPUT",
+]);
+
+export function isNonSecretConfigName(key: string): boolean {
+  return NON_SECRET_CONFIG_NAMES.has(key.toUpperCase());
+}
+
 // --- subprocess env filtering ---
 
 // prefixes whose vars are safe to pass through (runner metadata, workflow context).

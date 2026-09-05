@@ -245,6 +245,9 @@ export async function main(): Promise<MainResult> {
   // sanitizeSecret trims + masks so accidental trailing whitespace doesn't leak
   // through GitHub Actions' line-based log masking. whitespace-only values
   // return null and skip injection so the user sees a clear missing-key error.
+  // this channel also carries non-credential config (model ids, regions,
+  // locations); sanitizeSecret trims those but skips masking, since masking is
+  // by value and would blank out unrelated log text. see isNonSecretConfigName.
   if (runContext.dbSecrets) {
     for (const [key, value] of Object.entries(runContext.dbSecrets)) {
       if (!process.env[key]) {
