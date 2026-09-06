@@ -962,10 +962,6 @@ export const providers = {
         resolve: "openrouter/~anthropic/claude-haiku-latest",
         openRouterResolve: "openrouter/~anthropic/claude-haiku-latest",
       },
-      // pinned to the explicit gpt-5.6 tiers (not the ~openai/gpt-latest rolling
-      // alias): after the Sol/Terra/Luna rename, ~gpt-mini-latest no longer maps
-      // to Luna, so rolling aliases would silently diverge `gpt`/`gpt-mini` from
-      // the chosen tiers across funding paths.
       // GPT-6 flagship — see openai above.
       "gpt-astra": {
         displayName: "GPT Astra",
@@ -974,6 +970,10 @@ export const providers = {
         openRouterResolve: "openrouter/openai/gpt-6-astra",
         subagentModel: "gpt-sol",
       },
+      // pinned to the explicit gpt-5.6 tiers (not the ~openai/gpt-latest rolling
+      // alias): after the Sol/Terra/Luna rename, ~gpt-mini-latest no longer maps
+      // to Luna, so rolling aliases would silently diverge `gpt`/`gpt-mini` from
+      // the chosen tiers across funding paths.
       "gpt-sol": {
         displayName: "GPT Sol",
         resolve: "openrouter/openai/gpt-5.6-sol",
