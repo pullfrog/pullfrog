@@ -20,6 +20,7 @@ const BYOK_ONLY_MODELS = new Set<string>([
   "vercel/claude-opus",
   "vercel/claude-sonnet",
   "vercel/claude-haiku",
+  "vercel/gpt-astra",
   "vercel/gpt-sol",
   "vercel/gpt-terra",
   "vercel/gpt-luna",
