@@ -175,6 +175,16 @@ export const providers = {
     envVars: ["OPENAI_API_KEY"],
     managedCredentials: ["CODEX_AUTH_JSON"],
     models: {
+      // GPT-6's flagship tier (2026-09-04), priced 2.5x Sol. selectable but not
+      // preferred: Sol stays the auto-select target the way opus does beside
+      // fable — an explicit Astra pick spends Astra money. no `none` rung.
+      "gpt-astra": {
+        displayName: "GPT Astra",
+        resolve: "openai/gpt-6-astra",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6-astra",
+        subagentModel: "gpt-sol",
+      },
       // Sol/Terra/Luna are OpenAI's durable capability tiers, so they ARE the
       // brand-tier names the slug convention asks for — the pre-5.6 `gpt` /
       // `gpt-pro` / `gpt-mini` slugs are holdovers from the retired GPT / GPT Pro
@@ -532,6 +542,14 @@ export const providers = {
         displayName: "Claude Haiku",
         resolve: "opencode/claude-haiku-4-5",
         openRouterResolve: "openrouter/anthropic/claude-haiku-4.5",
+      },
+      // GPT-6 flagship — see openai above. on Zen's served list.
+      "gpt-astra": {
+        displayName: "GPT Astra",
+        resolve: "opencode/gpt-6-astra",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6-astra",
+        subagentModel: "gpt-sol",
       },
       "gpt-sol": {
         displayName: "GPT Sol",
@@ -948,6 +966,14 @@ export const providers = {
       // alias): after the Sol/Terra/Luna rename, ~gpt-mini-latest no longer maps
       // to Luna, so rolling aliases would silently diverge `gpt`/`gpt-mini` from
       // the chosen tiers across funding paths.
+      // GPT-6 flagship — see openai above.
+      "gpt-astra": {
+        displayName: "GPT Astra",
+        resolve: "openrouter/openai/gpt-6-astra",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6-astra",
+        subagentModel: "gpt-sol",
+      },
       "gpt-sol": {
         displayName: "GPT Sol",
         resolve: "openrouter/openai/gpt-5.6-sol",
@@ -1118,6 +1144,14 @@ export const providers = {
       "claude-haiku": {
         displayName: "Claude Haiku",
         resolve: "vercel/anthropic/claude-haiku-4.5",
+      },
+      // GPT-6 flagship — see openai above. the gateway publishes a `none` rung
+      // OpenAI's own catalog does not, so this ladder mirrors vercel's, not openai's.
+      "gpt-astra": {
+        displayName: "GPT Astra",
+        resolve: "vercel/openai/gpt-6-astra",
+        effort: ["none", "low", "medium", "high", "xhigh", "max"],
+        subagentModel: "gpt-sol",
       },
       "gpt-sol": {
         displayName: "GPT Sol",

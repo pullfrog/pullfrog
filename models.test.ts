@@ -82,6 +82,13 @@ describe("resolveModelSlug", () => {
     expect(resolved).toBe("openai/gpt-5.6-sol");
   });
 
+  it("resolves gpt-astra on every route that serves GPT-6", () => {
+    expect(resolveModelSlug("openai/gpt-astra")).toBe("openai/gpt-6-astra");
+    expect(resolveModelSlug("opencode/gpt-astra")).toBe("opencode/gpt-6-astra");
+    expect(resolveModelSlug("openrouter/gpt-astra")).toBe("openrouter/openai/gpt-6-astra");
+    expect(resolveModelSlug("vercel/gpt-astra")).toBe("vercel/openai/gpt-6-astra");
+  });
+
   it("returns the raw resolve for deprecated aliases (does not walk fallback)", () => {
     expect(resolveModelSlug("openai/gpt-codex")).toBe("openai/gpt-5.3-codex");
   });
