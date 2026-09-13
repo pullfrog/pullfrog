@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import { log } from "./cli.ts";
-import { isSensitiveEnvName } from "./secrets.ts";
+import { isNonSecretConfigName, isSensitiveEnvName } from "./secrets.ts";
 
 /**
  * Trim surrounding whitespace from a sensitive value and register it as a
@@ -19,6 +19,13 @@ import { isSensitiveEnvName } from "./secrets.ts";
  * callers must leave `process.env` untouched in that case so a misconfigured
  * value surfaces as a clear "missing key" downstream rather than silently
  * mutating to the empty string.
+ *
+ * Keys in the non-secret config allowlist (`isNonSecretConfigName`) are still
+ * trimmed — a trailing newline on a model id breaks exact-match lookups just
+ * as badly as it breaks masking — but are NOT registered as masks. Masking is
+ * by value, so a config value like `global` or `us-east-1` would blank out
+ * unrelated log text. Everything not on that allowlist is masked, so an
+ * unrecognised key still fails closed.
  */
 /** C0 controls + DEL — the bytes an HTTP header value cannot carry. */
 export function hasControlCharacter(value: string): boolean {
@@ -52,9 +59,10 @@ export function sanitizeSecret(key: string, value: string): string | null {
   }
   if (trimmed !== value) {
     log.warning(
-      `» stripped whitespace from ${key} (whitespace in secret values breaks GitHub Actions log masking)`
+      `» stripped whitespace from ${key} (whitespace breaks exact-match lookups and GitHub Actions log masking)`
     );
   }
+  if (isNonSecretConfigName(key)) return trimmed;
   core.setSecret(trimmed);
   return trimmed;
 }
