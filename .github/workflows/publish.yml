@@ -1,11 +1,13 @@
 name: Publish & Release
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "package.json"
+  # dispatch only, and deliberately so. a `workflow_dispatch` needs a GitHub session or token
+  # carrying write access; a stolen git push credential carries neither, so it can no longer start a
+  # release by landing a commit. that is the shape of the 2026-09-21 nubjs/nub compromise, where a
+  # stolen push credential cut a tag and 18 packages published unattended. bumping the version in
+  # package.json is therefore inert until a maintainer runs `gh workflow run publish.yml -R
+  # pullfrog/pullfrog`, and the staged version then still needs their 2FA approval before npm serves
+  # it. the version is still read from package.json, so what ships is unchanged; only the trigger is.
   workflow_dispatch:
 
 permissions:
@@ -22,7 +24,13 @@ jobs:
     # job, reports a stall. this repo is public, so an idle runner costs nothing.
     timeout-minutes: 360
     steps:
-      # `ref: main` rather than the pushed sha, because the tag step below cannot
+      # a step, not a job-level `if:`: a skipped job is silent, and the run would go
+      # green having released nothing while looking like it had.
+      - name: Refuse to release from any ref but main
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::publish.yml runs from main only, got $GITHUB_REF"; exit 1; }
+
+      # `ref: main` rather than `github.sha`, because the tag step below cannot
       # push an arbitrary commit. GitHub refuses a GITHUB_TOKEN ref push whose
       # `.github/workflows/` differs from the tip of every branch, and that token
       # can never hold `workflows` scope. A second `action/**` commit mirroring in
