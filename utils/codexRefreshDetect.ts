@@ -3,7 +3,7 @@
  * does not violate entryPost's stdlib-only import rule. */
 export interface OAuthWriteback {
   /** Pullfrog secret to PUT the rotated chain back into. */
-  secretName: "CODEX_AUTH_JSON" | "GROK_AUTH_JSON";
+  secretName: string;
   /** opencode auth.json provider key this chain lives under. */
   provider: "openai" | "xai";
   authPath: string;

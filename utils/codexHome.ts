@@ -60,6 +60,8 @@ import { parseXaiAuthBody, type XaiAuthBody } from "./xaiOAuth.ts";
 const CODEX_AUTH_ENV = "CODEX_AUTH_JSON";
 const XAI_AUTH_ENV = "GROK_AUTH_JSON";
 
+let selectedCodexSecret = CODEX_AUTH_ENV;
+
 /** sandbox-hidden home for pullfrog-managed on-disk secrets in CI. bash via
  * MCP shell tmpfs-overlays this path; opencode's internal auth module
  * bypasses external_directory and reaches the real file. mirrors the
@@ -91,7 +93,7 @@ type OpenCodeAuthFile = Record<string, OpenCodeOAuthEntry>;
 function isRejectedChain(body: CodexAuthBody): boolean {
   if (!body.refresh_rejected_at) return false;
   log.warning(
-    `» ${CODEX_AUTH_ENV} was rejected by OpenAI at ${body.refresh_rejected_at} and cannot be ` +
+    `» ${selectedCodexSecret} was rejected by OpenAI at ${body.refresh_rejected_at} and cannot be ` +
       `refreshed — re-run \`npx pullfrog auth codex\`. skipping it for this run.`
   );
   return true;
@@ -114,6 +116,7 @@ export interface InstalledCodexAuth {
    * `tokens.id_token` (measured: `missing field 'id_token'`), so dropping it
    * silently disqualifies the account from the codex harness forever. */
   originalIdToken: string | undefined;
+  secretName: string;
 }
 
 /** materialize CODEX_AUTH_JSON from env into a disk path OpenCode reads from.
@@ -130,7 +133,7 @@ export function installCodexAuth(): InstalledCodexAuth | null {
 
   const body = parseCodexAuthBody(raw);
   if (!body) {
-    log.warning(`» ${CODEX_AUTH_ENV} present but malformed; ignoring`);
+    log.warning(`» ${selectedCodexSecret} present but malformed; ignoring`);
     return null;
   }
   if (isRejectedChain(body)) return null;
@@ -171,6 +174,7 @@ export function installCodexAuth(): InstalledCodexAuth | null {
     xdgDataHome,
     originalRefresh: body.tokens.refresh_token,
     originalIdToken: body.tokens.id_token,
+    secretName: selectedCodexSecret,
   };
 }
 
@@ -280,6 +284,7 @@ export interface InstalledCodexHome {
    * in place when it refreshes, so the post-hook diffs it for a rotation. */
   authPath: string;
   originalRefresh: string;
+  secretName: string;
 }
 
 /**
@@ -299,13 +304,13 @@ export function installCodexHome(): InstalledCodexHome | null {
 
   const body = parseCodexAuthBody(raw);
   if (!body) {
-    log.warning(`» ${CODEX_AUTH_ENV} present but malformed; ignoring`);
+    log.warning(`» ${selectedCodexSecret} present but malformed; ignoring`);
     return null;
   }
   if (isRejectedChain(body)) return null;
   if (!body.tokens.id_token) {
     log.warning(
-      `» ${CODEX_AUTH_ENV} carries no id_token — the codex CLI cannot load it. ` +
+      `» ${selectedCodexSecret} carries no id_token — the codex CLI cannot load it. ` +
         `re-run \`npx pullfrog auth codex\` to mint a complete credential.`
     );
     return null;
@@ -319,7 +324,91 @@ export function installCodexHome(): InstalledCodexHome | null {
 
   log.info(`» installed Codex auth at ${authPath}`);
 
-  return { codexHome, authPath, originalRefresh: body.tokens.refresh_token };
+  return {
+    codexHome,
+    authPath,
+    originalRefresh: body.tokens.refresh_token,
+    secretName: selectedCodexSecret,
+  };
+}
+
+const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+
+const CODEX_QUOTA_PREFERENCE = [
+  "available",
+  "credits",
+  "unknown",
+  "exhausted",
+  "unusable",
+] as const;
+
+export type CodexQuota = (typeof CODEX_QUOTA_PREFERENCE)[number];
+
+export interface CodexUsage {
+  rate_limit?: { allowed?: boolean; limit_reached?: boolean } | null;
+  rate_limit_reached_type?: unknown;
+  credits?: { has_credits?: boolean; unlimited?: boolean } | null;
+  spend_control?: { reached?: boolean } | null;
+}
+
+export function codexQuota(usage: CodexUsage): CodexQuota {
+  if (usage.spend_control?.reached) return "exhausted";
+  const reached =
+    usage.rate_limit?.allowed === false ||
+    usage.rate_limit?.limit_reached === true ||
+    Boolean(usage.rate_limit_reached_type);
+  if (!reached) return "available";
+  return usage.credits?.has_credits || usage.credits?.unlimited ? "credits" : "exhausted";
+}
+
+export function pickCodexSlot<T extends { quota: CodexQuota }>(slots: T[]): T {
+  return slots.reduce((best, slot) =>
+    CODEX_QUOTA_PREFERENCE.indexOf(slot.quota) < CODEX_QUOTA_PREFERENCE.indexOf(best.quota)
+      ? slot
+      : best
+  );
+}
+
+async function probeCodexQuota(raw: string, requireIdToken: boolean): Promise<CodexQuota> {
+  const body = parseCodexAuthBody(raw);
+  if (!body || body.refresh_rejected_at) return "unusable";
+  if (requireIdToken && !body.tokens.id_token) return "unusable";
+  try {
+    const response = await fetch(CODEX_USAGE_URL, {
+      headers: {
+        authorization: `Bearer ${body.tokens.access_token}`,
+        ...(body.tokens.account_id ? { "chatgpt-account-id": body.tokens.account_id } : {}),
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return "unknown";
+    return codexQuota((await response.json()) as CodexUsage);
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function selectCodexAuth(params: { requireIdToken: boolean }): Promise<void> {
+  const slots = Object.keys(process.env)
+    .filter((name) => name.startsWith(`${CODEX_AUTH_ENV}_`))
+    .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+  if (slots.length === 0) return;
+
+  const names = process.env[CODEX_AUTH_ENV] ? [CODEX_AUTH_ENV, ...slots] : slots;
+  const probed = await Promise.all(
+    names.map(async (name) => {
+      const raw = process.env[name] ?? "";
+      return { name, raw, quota: await probeCodexQuota(raw, params.requireIdToken) };
+    })
+  );
+  const chosen = pickCodexSlot(probed);
+
+  process.env[CODEX_AUTH_ENV] = chosen.raw;
+  for (const slot of slots) delete process.env[slot];
+  selectedCodexSecret = chosen.name;
+  log.info(
+    `» Codex subscriptions: ${probed.map((slot) => `${slot.name} ${slot.quota}`).join(", ")}; using ${chosen.name}`
+  );
 }
 
 /** pick the XDG_DATA_HOME for codex auth.

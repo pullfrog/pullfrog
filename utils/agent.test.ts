@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolveAgent, resolveModel } from "./agent.ts";
+import { mayRunCodexHarness, resolveAgent, resolveModel } from "./agent.ts";
 import { cleanupVertexCredentials, materializeVertexCredentials } from "./vertex.ts";
 
 const savedEnv = { ...process.env };
@@ -106,6 +106,25 @@ describe("resolveAgent", () => {
       process.env.VERTEX_MODEL_ID = "gemini-2.5-pro";
       expect(resolveAgent({ model: "gemini-2.5-pro" }).name).toBe("opencode");
     });
+  });
+});
+
+describe("mayRunCodexHarness", () => {
+  it("follows the codex opt-in when PULLFROG_AGENT is unset", () => {
+    expect(mayRunCodexHarness({ codexAgent: true })).toBe(true);
+    expect(mayRunCodexHarness({ codexAgent: false })).toBe(false);
+  });
+
+  it("lets an explicit PULLFROG_AGENT override the opt-in", () => {
+    process.env.PULLFROG_AGENT = "opencode";
+    expect(mayRunCodexHarness({ codexAgent: true })).toBe(false);
+    process.env.PULLFROG_AGENT = "codex";
+    expect(mayRunCodexHarness({ codexAgent: false })).toBe(true);
+  });
+
+  it("ignores an unknown PULLFROG_AGENT, as resolveAgent does", () => {
+    process.env.PULLFROG_AGENT = "nonexistent";
+    expect(mayRunCodexHarness({ codexAgent: true })).toBe(true);
   });
 });
 

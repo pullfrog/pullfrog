@@ -894,7 +894,7 @@ export const codex = agent({
           apiToken: ctx.apiToken,
           entries: [
             {
-              secretName: "CODEX_AUTH_JSON",
+              secretName: codexHomeAuth.secretName,
               provider: "openai",
               authPath: codexHomeAuth.authPath,
               originalRefresh: codexHomeAuth.originalRefresh,

@@ -1288,7 +1288,7 @@ export const opencode = agent({
       env.XDG_DATA_HOME = codexAuth.xdgDataHome;
       delete env.OPENAI_API_KEY;
       writebacks.push({
-        secretName: "CODEX_AUTH_JSON",
+        secretName: codexAuth.secretName,
         provider: "openai",
         authPath: codexAuth.authPath,
         originalRefresh: codexAuth.originalRefresh,

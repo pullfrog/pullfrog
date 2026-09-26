@@ -151,6 +151,12 @@ export function resolveModel(ctx: { slug?: string | undefined }): string | undef
   return undefined;
 }
 
+export function mayRunCodexHarness(ctx: { codexAgent: boolean }): boolean {
+  const envAgent = process.env.PULLFROG_AGENT?.trim();
+  if (envAgent && envAgent in agents) return envAgent === "codex";
+  return ctx.codexAgent;
+}
+
 export function resolveAgent(ctx: {
   model?: string | undefined;
   /** set on router / OSS runs, where the model is served by OpenRouter. those
