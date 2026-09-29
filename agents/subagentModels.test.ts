@@ -43,22 +43,22 @@ describe("deriveSubagentModels", () => {
       "Astra uses Sol on the same route (%s)",
       (route) => {
         expect(deriveSubagentModels(`${route}/gpt-6-astra`)).toEqual({
-          reviewer: `${route}/gpt-6-sol`,
+          reviewer: `${route}/gpt-6.1-sol`,
         });
       }
     );
     it("gpt → gpt-terra (direct)", () => {
-      expect(deriveSubagentModels("openai/gpt-6-sol")).toEqual({
+      expect(deriveSubagentModels("openai/gpt-6.1-sol")).toEqual({
         reviewer: "openai/gpt-5.6-terra",
       });
     });
     it("gpt → gpt-terra (opencode-vendored)", () => {
-      expect(deriveSubagentModels("opencode/gpt-6-sol")).toEqual({
+      expect(deriveSubagentModels("opencode/gpt-6.1-sol")).toEqual({
         reviewer: "opencode/gpt-5.6-terra",
       });
     });
     it("gpt → gpt-terra (openrouter)", () => {
-      expect(deriveSubagentModels("openrouter/openai/gpt-6-sol")).toEqual({
+      expect(deriveSubagentModels("openrouter/openai/gpt-6.1-sol")).toEqual({
         reviewer: "openrouter/openai/gpt-5.6-terra",
       });
     });
@@ -66,8 +66,8 @@ describe("deriveSubagentModels", () => {
     // collides with `gpt` and downshifts to Terra like Sol; only the OpenRouter
     // sol-pro route is distinct, and its subagent is the flagship Sol.
     it("gpt-pro → gpt (openrouter sol-pro route)", () => {
-      expect(deriveSubagentModels("openrouter/openai/gpt-6-sol-pro")).toEqual({
-        reviewer: "openrouter/openai/gpt-6-sol",
+      expect(deriveSubagentModels("openrouter/openai/gpt-6.1-sol-pro")).toEqual({
+        reviewer: "openrouter/openai/gpt-6.1-sol",
       });
     });
     it("gpt-terra itself (the subagent target) has no further downshift", () => {

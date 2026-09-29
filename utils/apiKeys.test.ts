@@ -69,7 +69,7 @@ describe("validateAgentApiKey — opencode", () => {
     expect(() =>
       validateAgentApiKey({
         agent: opencode,
-        model: "openrouter/openai/gpt-6-sol",
+        model: "openrouter/openai/gpt-6.1-sol",
         authorized: new Set([
           "openrouter/anthropic/claude-opus-5",
           "openrouter/google/gemma-3-12b",
@@ -84,7 +84,7 @@ describe("validateAgentApiKey — opencode", () => {
     expect(() =>
       validateAgentApiKey({
         agent: opencode,
-        model: "openrouter/openai/gpt-6-sol",
+        model: "openrouter/openai/gpt-6.1-sol",
         authorized: new Set(["openrouter/anthropic/claude-opus-5"]),
         owner,
         name,
@@ -96,7 +96,7 @@ describe("validateAgentApiKey — opencode", () => {
     expect(() =>
       validateAgentApiKey({
         agent: opencode,
-        model: "openrouter/openai/gpt-6-sol",
+        model: "openrouter/openai/gpt-6.1-sol",
         authorized: new Set(),
         owner,
         name,
@@ -142,7 +142,7 @@ describe("validateAgentApiKey — opencode", () => {
       validateAgentApiKey({
         agent: opencode,
         model: undefined,
-        authorized: new Set(["openai/gpt-6-sol"]),
+        authorized: new Set(["openai/gpt-6.1-sol"]),
         owner,
         name,
       })

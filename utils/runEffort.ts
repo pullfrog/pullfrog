@@ -58,7 +58,7 @@ function matchHostedAnthropicAlias(modelId: string): ModelAlias | undefined {
  *
  * both inputs are concrete specifiers rather than slugs, so this is a reverse
  * lookup. aliases sharing a target publish the same ladder (`openai/gpt-sol` and
- * `openai/gpt-sol-pro` both resolve to `openai/gpt-6-sol`), pinned by the catalog
+ * `openai/gpt-sol-pro` both resolve to `openai/gpt-6.1-sol`), pinned by the catalog
  * test; deprecated aliases are skipped because they never run as-is.
  */
 function resolveRunAlias(ctx: {

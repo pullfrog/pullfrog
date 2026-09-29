@@ -324,7 +324,7 @@ function hasEnvVar(name: string): boolean {
  * conservative about managed credentials: Codex eligibility is a separate
  * upstream allow list that `opencode models` doesn't honor, so a
  * `CODEX_AUTH_JSON` run is better left to opencode's own pick than handed
- * `openai/gpt-6-sol`. Don't widen this to share it with the picker.
+ * `openai/gpt-6.1-sol`. Don't widen this to share it with the picker.
  */
 function modelHasRuntimeAuth(model: string): boolean {
   const authVars = [...getOpenCodeEnvVars(model), ...getModelManagedCredentials(model)];
