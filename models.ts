@@ -188,9 +188,9 @@ export const providers = {
       },
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "openai/gpt-6-sol",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-sol",
+        resolve: "openai/gpt-6.1-sol",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6.1-sol",
         preferred: true,
         subagentModel: "gpt-terra",
       },
@@ -200,9 +200,9 @@ export const providers = {
       "gpt-sol-pro": {
         displayName: "GPT Sol Pro",
         description: "Maximum reasoning effort",
-        resolve: "openai/gpt-6-sol",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-sol-pro",
+        resolve: "openai/gpt-6.1-sol",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6.1-sol-pro",
         subagentModel: "gpt-sol",
       },
       // gpt-5.6's balanced mid-tier. selectable on its own and doubles as Sol's
@@ -589,9 +589,9 @@ export const providers = {
       },
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "opencode/gpt-6-sol",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-sol",
+        resolve: "opencode/gpt-6.1-sol",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6.1-sol",
         subagentModel: "gpt-terra",
       },
       "gpt-astra": {
@@ -605,9 +605,9 @@ export const providers = {
       "gpt-sol-pro": {
         displayName: "GPT Sol Pro",
         description: "Maximum reasoning effort",
-        resolve: "opencode/gpt-6-sol",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-sol-pro",
+        resolve: "opencode/gpt-6.1-sol",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6.1-sol-pro",
         subagentModel: "gpt-sol",
       },
       // gpt-5.6 balanced mid-tier — selectable + Sol's subagent. see openai above.
@@ -1100,9 +1100,9 @@ export const providers = {
       // the chosen tiers across funding paths.
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "openrouter/openai/gpt-6-sol",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-sol",
+        resolve: "openrouter/openai/gpt-6.1-sol",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6.1-sol",
         subagentModel: "gpt-terra",
       },
       "gpt-astra": {
@@ -1116,9 +1116,9 @@ export const providers = {
       "gpt-sol-pro": {
         displayName: "GPT Sol Pro",
         description: "Maximum reasoning effort",
-        resolve: "openrouter/openai/gpt-6-sol-pro",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-sol-pro",
+        resolve: "openrouter/openai/gpt-6.1-sol-pro",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/openai/gpt-6.1-sol-pro",
         subagentModel: "gpt-sol",
       },
       // gpt-5.6 balanced mid-tier — selectable + Sol's subagent. see openai above.
@@ -1297,8 +1297,8 @@ export const providers = {
       },
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "vercel/openai/gpt-6-sol",
-        effort: ["none", "low", "medium", "high", "xhigh", "max"],
+        resolve: "vercel/openai/gpt-6.1-sol",
+        effort: ["low", "medium", "high", "xhigh", "max"],
         subagentModel: "gpt-terra",
       },
       "gpt-astra": {

@@ -118,7 +118,7 @@ describe("resolveModel", () => {
   it("PULLFROG_MODEL bypasses bedrock routing entirely", () => {
     process.env.PULLFROG_MODEL = "openai/gpt";
     process.env.BEDROCK_MODEL_ID = "us.anthropic.claude-opus-4-7";
-    expect(resolveModel({ slug: "bedrock/byok" })).toBe("openai/gpt-6-sol");
+    expect(resolveModel({ slug: "bedrock/byok" })).toBe("openai/gpt-6.1-sol");
   });
 
   it("resolves bedrock/byok to BEDROCK_MODEL_ID", () => {
@@ -131,7 +131,7 @@ describe("resolveModel", () => {
   });
 
   it("returns the alias resolve for normal slugs", () => {
-    expect(resolveModel({ slug: "openai/gpt" })).toBe("openai/gpt-6-sol");
+    expect(resolveModel({ slug: "openai/gpt" })).toBe("openai/gpt-6.1-sol");
   });
 
   it("returns undefined for no slug + no PULLFROG_MODEL", () => {
