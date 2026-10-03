@@ -41,7 +41,7 @@ export const RUN_STATUS_CHECK_NAME = "pullfrog";
  * available: it was tried on 2026-08-02 and blocked merges on four customer
  * repos (see above), so the reuse lookup filters instead. See #1196.
  */
-const GITHUB_ACTIONS_APP_SLUG = "github-actions";
+export const GITHUB_ACTIONS_APP_SLUG = "github-actions";
 
 /** the review-verdict check. opt-in, terminal-only, and deliberately separate from the above. */
 export const APPROVAL_CHECK_NAME = "pullfrog-approval";
