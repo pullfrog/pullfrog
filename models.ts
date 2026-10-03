@@ -885,7 +885,10 @@ export const providers = {
       "glm-flash": {
         displayName: "GLM Flash",
         resolve: "opencode-go/glm-5.3-flash",
-        effort: ["low", "high", "max"],
+        // The Go endpoint rejects reasoning_effort ("native reasoning control
+        // reasoning_effort is not allowed"), despite models.dev advertising a ladder.
+        effort: [],
+        openRouterEffort: ["low", "high", "max"],
         openRouterResolve: "openrouter/z-ai/glm-5.3-flash",
       },
       // legacy alias — the slug pinned a version instead of a brand tier and

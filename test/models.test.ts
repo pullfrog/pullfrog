@@ -27,6 +27,14 @@ describe("GPT Astra routing and effort", () => {
   });
 });
 
+describe("OpenCode Go GLM Flash effort", () => {
+  it("omits direct effort while retaining the OpenRouter ladder", () => {
+    const slug = "opencode-go/glm-flash";
+    expect(resolveModelRung({ slug, useOpenRouter: false, position: 0.5 })).toBeUndefined();
+    expect(resolveModelRung({ slug, useOpenRouter: true, position: 0.5 })).toBe("high");
+  });
+});
+
 // ── pure alias-registry invariants ──────────────────────────────────────────────
 //
 // these tests validate our alias data structure without hitting external APIs.
