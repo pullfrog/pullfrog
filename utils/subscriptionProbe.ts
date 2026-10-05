@@ -213,12 +213,25 @@ export async function probeInference(input: {
       ? { status: "exhausted", detail: "refused with 429: insufficient quota", resetAt: undefined }
       : unknown;
   }
+  if (response?.status === 401 || response?.status === 403)
+    return {
+      status: "rejected",
+      detail: `rejected with ${response.status}${await providerReason(response)}`,
+    };
   await response?.body?.cancel();
   if (!response) return unknown;
   if (response.ok) return { status: "usable" };
-  if (response.status === 401 || response.status === 403)
-    return { status: "rejected", detail: `rejected with ${response.status}` };
   if (response.status === 402)
     return { status: "exhausted", detail: "refused with 402", resetAt: undefined };
   return unknown;
+}
+
+/** a key out of credit and a revoked one both answer 403; only the body says which. */
+async function providerReason(response: Response) {
+  const body = z
+    .object({ error: z.union([z.string(), z.object({ message: z.string() })]) })
+    .safeParse(await response.json().catch(() => null));
+  if (!body.success) return "";
+  const error = body.data.error;
+  return `: ${(typeof error === "string" ? error : error.message).slice(0, 300)}`;
 }

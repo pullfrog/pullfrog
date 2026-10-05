@@ -40,8 +40,12 @@ const NUMBER_KEYS = [
   "costUsd",
 ] as const;
 
+/** one-way flags, only ever sent as `true`. Keep in sync with `BOOLEAN_FIELDS` in the server route. */
+const FLAG_KEYS = ["reviewSkipped"] as const;
+
 export type WorkflowRunPatch = Partial<Record<(typeof STRING_KEYS)[number], string>> &
-  Partial<Record<(typeof NUMBER_KEYS)[number], number>>;
+  Partial<Record<(typeof NUMBER_KEYS)[number], number>> &
+  Partial<Record<(typeof FLAG_KEYS)[number], true>>;
 
 /** PATCH workflow-run fields (Pullfrog JWT, not GitHub). */
 export async function patchWorkflowRunFields(
@@ -53,7 +57,7 @@ export async function patchWorkflowRunFields(
   // reservation; the claim happens at setup — strictly before any PATCH — so
   // neither can change later in this run. see #1153.
   if (ctx.toolState.workflowRunUnclaimed) return;
-  const body: Record<string, string | number> = {};
+  const body: Record<string, string | number | boolean> = {};
   for (const key of STRING_KEYS) {
     const value = fields[key];
     if (typeof value === "string" && value.length > 0) {
@@ -65,6 +69,9 @@ export async function patchWorkflowRunFields(
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
       body[key] = value;
     }
+  }
+  for (const key of FLAG_KEYS) {
+    if (fields[key]) body[key] = true;
   }
   if (Object.keys(body).length === 0) return;
   try {

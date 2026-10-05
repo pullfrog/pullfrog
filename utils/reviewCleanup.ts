@@ -2,8 +2,10 @@ import * as yes from "yes";
 import type { WriteablePayload } from "../external.ts";
 import { reportReviewNodeId } from "../mcp/review.ts";
 import type { ToolContext } from "../mcp/server.ts";
+import { primaryRepoState } from "../toolState.ts";
 import { log } from "./cli.ts";
 import { isTransientOctokitError } from "./isTransientNetworkError.ts";
+import { patchWorkflowRunFields } from "./patchWorkflowRunFields.ts";
 
 const RE_REVIEW_PREAMBLE =
   "Incrementally re-review the new commits on this pull request. Use the IncrementalReview mode.";
@@ -22,7 +24,19 @@ const RE_REVIEW_PREAMBLE =
  */
 export async function postReviewCleanup(ctx: ToolContext): Promise<void> {
   const review = ctx.toolState.review;
-  if (!review) return;
+  if (!review) {
+    // a re-review that submitted nothing has no node id to mark it "done", so the push
+    // dedup dropped every commit pushed after its checkout: flag it, then re-review them.
+    const checkoutSha = primaryRepoState(ctx.toolState).checkoutSha;
+    if (ctx.toolState.selectedMode === "IncrementalReview" && checkoutSha) {
+      await patchWorkflowRunFields(ctx, { reviewSkipped: true });
+      await bestEffort(
+        () => dispatchFollowUpReReview(ctx, checkoutSha),
+        "follow-up re-review dispatch"
+      );
+    }
+    return;
+  }
   delete ctx.toolState.review;
 
   // mark review as submitted — unlocks webhook dedup for new pushes

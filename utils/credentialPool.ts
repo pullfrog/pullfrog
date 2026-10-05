@@ -1,6 +1,7 @@
 import * as yes from "yes";
 import { autoSelectModel } from "../agents/opencodeShared.ts";
 import {
+  CLAUDE_CODE_ONLY_CREDENTIALS,
   getModelEnvVars,
   getModelProvider,
   getProviderGatewayUrl,
@@ -159,9 +160,14 @@ export async function selectConfiguredCredential(input: {
   const subscription = subscriptionForModel(model);
   const names = getModelEnvVars(model).filter((name) => name !== subscription);
   if (subscription) names.unshift(subscription);
-  // a subscription this runner cannot install would displace a working API key, then fail as no key
+  // a subscription this runner cannot install would displace a working API key, then fail as no key.
+  // so would a Claude one under PULLFROG_AGENT=opencode, which reads only ANTHROPIC_API_KEY
+  const opencodePinned = process.env.PULLFROG_AGENT?.trim() === "opencode";
+  const presentable = (name: string) =>
+    canInstallSubscription(name) &&
+    !(opencodePinned && CLAUDE_CODE_ONLY_CREDENTIALS.includes(name));
   const candidates = access.candidates.filter(
-    (candidate) => names.includes(candidate.name) && canInstallSubscription(candidate.name)
+    (candidate) => names.includes(candidate.name) && presentable(candidate.name)
   );
   // nothing stored to choose between: the workflow credential runs exactly as it did before pools
   if (!candidates.length) return false;
@@ -170,7 +176,7 @@ export async function selectConfiguredCredential(input: {
   // still leads within each group.
   const options = [
     ...names
-      .filter((name) => workflowCredentials[name] && canInstallSubscription(name))
+      .filter((name) => workflowCredentials[name] && presentable(name))
       .map((name) => ({ name, candidate: undefined })),
     ...candidates.map((candidate) => ({ name: candidate.name, candidate })),
   ].sort((a, b) => Number(b.name === subscription) - Number(a.name === subscription));

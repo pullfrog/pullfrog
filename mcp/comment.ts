@@ -193,6 +193,9 @@ export const ReportProgress = type({
   "target_plan_comment?": type("boolean").describe(
     "for revising an existing plan comment ONLY. set to true only when the PlanEdit checklist from select_mode tells you to (i.e. a prior plan comment was found for this issue). NEVER set on the initial plan post — the initial plan reuses the run's progress comment and is posted by calling report_progress without this flag."
   ),
+  "no_review_needed?": type("boolean").describe(
+    "IncrementalReview only: true when you judged the new commits need no review, never for a blocker."
+  ),
 });
 
 /**
@@ -412,6 +415,9 @@ export function ReportProgressTool(ctx: ToolContext) {
       "Call this at the end of every run with a brief final summary (1-3 sentences) unless the mode guidance instructs otherwise. The current task list is automatically appended in a collapsible section — do not restate individual steps.",
     parameters: ReportProgress,
     execute: execute(async (params) => {
+      if (params.no_review_needed) {
+        ctx.toolState.noReviewNeededSha = primaryRepoState(ctx.toolState).checkoutSha;
+      }
       // a standalone comment already delivered this run's answer to its own
       // target. writing here too leaves two comments restating each other, and
       // flipping finalSummaryWritten would also preserve the progress comment

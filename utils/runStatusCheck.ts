@@ -41,7 +41,7 @@ export const RUN_STATUS_CHECK_NAME = "pullfrog";
  * available: it was tried on 2026-08-02 and blocked merges on four customer
  * repos (see above), so the reuse lookup filters instead. See #1196.
  */
-const GITHUB_ACTIONS_APP_SLUG = "github-actions";
+export const GITHUB_ACTIONS_APP_SLUG = "github-actions";
 
 /** the review-verdict check. opt-in, terminal-only, and deliberately separate from the above. */
 export const APPROVAL_CHECK_NAME = "pullfrog-approval";
@@ -205,6 +205,7 @@ function terminalOutput(params: {
   repo: string;
   detailsUrl: string | undefined;
   reviewUrl: string | undefined;
+  note: string | undefined;
 }): { title: string; summary: string } {
   const base = TERMINAL_OUTPUT[params.conclusion];
   // `details_url` can only carry one destination, so the rest go here — the summary is
@@ -213,7 +214,10 @@ function terminalOutput(params: {
   const review = params.reviewUrl
     ? `\n\n[View the review Pullfrog posted →](${params.reviewUrl})`
     : "";
-  if (params.conclusion === "success") return { title: base.title, summary: base.summary + review };
+  if (params.conclusion === "success") {
+    const note = params.note ? `\n\n${params.note}` : "";
+    return { title: base.title, summary: base.summary + review + note };
+  }
   return {
     title: base.title,
     summary:
@@ -291,6 +295,8 @@ export async function finalizeRunStatusCheck(params: {
   conclusion: RunStatusCheckConclusion;
   detailsUrl: string | undefined;
   reviewUrl?: string | undefined;
+  /** the run's own final report, shown on success when nothing else carries it. */
+  note?: string | undefined;
 }): Promise<void> {
   const updateParams: UpdateCheckRunParams = {
     owner: params.owner,
@@ -304,6 +310,7 @@ export async function finalizeRunStatusCheck(params: {
       repo: params.repo,
       detailsUrl: params.detailsUrl,
       reviewUrl: params.reviewUrl,
+      note: params.note,
     }),
   };
   if (params.detailsUrl) updateParams.details_url = params.detailsUrl;
@@ -325,6 +332,7 @@ export async function createTerminalRunStatusCheck(params: {
   conclusion: RunStatusCheckConclusion;
   detailsUrl: string | undefined;
   reviewUrl?: string | undefined;
+  note?: string | undefined;
 }): Promise<void> {
   const createParams: CreateCheckRunParams = {
     owner: params.owner,
@@ -339,6 +347,7 @@ export async function createTerminalRunStatusCheck(params: {
       repo: params.repo,
       detailsUrl: params.detailsUrl,
       reviewUrl: params.reviewUrl,
+      note: params.note,
     }),
   };
   if (params.detailsUrl) createParams.details_url = params.detailsUrl;

@@ -161,6 +161,9 @@ export interface ToolState {
   // reader most wants from the `Pullfrog` check, so it is surfaced as a link in
   // that check's summary. absent when the run produced no review.
   approval?: { wouldApprove: boolean; sha: string | undefined; url?: string | undefined };
+  // the checkoutSha that report_progress's `no_review_needed` declared needs no review —
+  // IncrementalReview's non-substantive exit, which carries the prior verdict forward.
+  noReviewNeededSha?: string | undefined;
   // dedupe key: parent review comment_id → most-recent reply written this
   // session by reply_to_review_comment. used by duplicateReplyDecision to
   // skip identical-body re-emissions of the same call (PR #610 root cause).
