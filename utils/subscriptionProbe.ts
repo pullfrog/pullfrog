@@ -24,6 +24,14 @@ const codexUsageSchema = z.object({
       secondary_window: codexWindowSchema,
     })
     .optional(),
+  credits: z
+    .object({
+      has_credits: z.boolean().optional(),
+      unlimited: z.boolean().optional(),
+      overage_limit_reached: z.boolean().optional(),
+    })
+    .nullish(),
+  spend_control: z.object({ reached: z.boolean().optional() }).nullish(),
 });
 
 /**
@@ -121,9 +129,17 @@ export async function probeSubscription(input: {
   // billing balance is not the subscription's remaining allowance.
   if (!codex) return unknown;
   const parsed = codexUsageSchema.safeParse(body);
-  const limit = parsed.success ? parsed.data.rate_limit : undefined;
-  if (!limit) return unknown;
+  if (!parsed.success || !parsed.data.rate_limit) return unknown;
+  const limit = parsed.data.rate_limit;
   if (limit.allowed && !limit.limit_reached) return { status: "usable" };
+  // workspace credits keep serving past the plan window until spent or capped
+  const credits = parsed.data.credits;
+  if (
+    (credits?.has_credits || credits?.unlimited) &&
+    !credits.overage_limit_reached &&
+    !parsed.data.spend_control?.reached
+  )
+    return { status: "usable" };
   // the full window decides when the plan works again
   const windows = [limit.primary_window, limit.secondary_window];
   const full = windows.filter((window) => (window?.used_percent ?? 0) >= 100);
