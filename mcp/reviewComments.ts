@@ -491,8 +491,11 @@ export function buildThreadBlocks(
  * Two-arg form on purpose: `yes.op` excludes the second parameter from the
  * cache key, so the octokit client is never hashed into it.
  */
-const fetchAllReviewThreads = yes.op(
-  async (key: { owner: string; name: string; pullNumber: number }, ctx: { octokit: Octokit }) => {
+const fetchAllReviewThreads = yes.query({
+  run: async (
+    key: { owner: string; name: string; pullNumber: number },
+    ctx: { octokit: Octokit }
+  ) => {
     const threads: (ReviewThread | null)[] = [];
     let cursor: string | null = null;
     // bound the walk so a misbehaving cursor can't loop forever; 50 pages =
@@ -512,19 +515,24 @@ const fetchAllReviewThreads = yes.op(
     }
     return threads;
   },
-  { ttl: 60_000, name: "reviewThreads" }
-);
+  ttl: 60_000,
+  name: "reviewThreads",
+});
 
-const fetchPrFiles = yes.op(
-  async (key: { owner: string; name: string; pullNumber: number }, ctx: { octokit: Octokit }) =>
+const fetchPrFiles = yes.query({
+  run: async (
+    key: { owner: string; name: string; pullNumber: number },
+    ctx: { octokit: Octokit }
+  ) =>
     ctx.octokit.paginate(ctx.octokit.rest.pulls.listFiles, {
       owner: key.owner,
       repo: key.name,
       pull_number: key.pullNumber,
       per_page: 100,
     }),
-  { ttl: 60_000, name: "prFiles" }
-);
+  ttl: 60_000,
+  name: "prFiles",
+});
 
 /**
  * Drop the cached thread graph after a mutation that changes resolved state,

@@ -156,18 +156,16 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
   // now. any other enable failure (e.g. a push-restricted branch that also blocks
   // the app) surfaces at warn via the caller's `.catch`.
   try {
-    await yes.op(
-      () =>
+    await yes.mutation({
+      run: () =>
         ctx.octokit.graphql(ENABLE_AUTO_MERGE, {
           pullRequestId: pr.data.node_id,
           headSha,
         }),
-      {
-        name: "enablePullRequestAutoMerge",
-        retries: [500, 2000],
-        rethrow: (error) => !isTransientOctokitError(error),
-      }
-    )();
+      name: "enablePullRequestAutoMerge",
+      retry: (error, attempt) =>
+        isTransientOctokitError(error) ? yes.delay([500, 2000], attempt) : -1,
+    })();
     log.info(`autoMerge: pr=#${pullNumber} @ ${headSha.slice(0, 7)} → native auto-merge enabled`);
     await comment(
       "> ✅ Approved — auto-merge enabled; GitHub will merge once required checks pass."

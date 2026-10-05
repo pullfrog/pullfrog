@@ -201,16 +201,17 @@ function translateIdTokenError(error: unknown): unknown {
  * own retry still re-mints. Mid-run refreshes take the stashed-credentials path
  * (`opts.oidc`) and deliberately bypass this.
  */
-export const mintIdToken = yes.op(
-  async () => {
+export const mintIdToken = yes.query({
+  run: async () => {
     try {
       return await core.getIDToken(OIDC_AUDIENCE);
     } catch (error) {
       throw translateIdTokenError(error);
     }
   },
-  { ttl: 60_000, name: "OIDC ID token" }
-);
+  ttl: 60_000,
+  name: "OIDC ID token",
+});
 
 async function acquireTokenViaOIDC(opts?: AcquireTokenOptions): Promise<string> {
   const oidcToken = opts?.oidc ? await fetchIdTokenFromStash(opts.oidc) : await mintIdToken();
@@ -477,10 +478,11 @@ export function isTransientTokenError(error: unknown): boolean {
 
 export async function acquireNewToken(opts?: AcquireTokenOptions): Promise<string> {
   if (opts?.oidc || isOIDCAvailable()) {
-    return await yes.op(() => acquireTokenViaOIDC(opts), {
+    return await yes.mutation({
+      run: () => acquireTokenViaOIDC(opts),
       name: "token exchange",
-      retries: [1000, 2000],
-      rethrow: (error) => !isTransientTokenError(error),
+      retry: (error, attempt) =>
+        isTransientTokenError(error) ? yes.delay([1000, 2000], attempt) : -1,
     })();
   }
   // running inside GitHub Actions but the OIDC env vars are absent — the

@@ -68,8 +68,8 @@ export async function patchWorkflowRunFields(
   }
   if (Object.keys(body).length === 0) return;
   try {
-    await yes.op(
-      async () => {
+    await yes.mutation({
+      run: async () => {
         const response = await apiFetch({
           path: `/api/workflow-run/${ctx.runId}`,
           method: "PATCH",
@@ -83,14 +83,12 @@ export async function patchWorkflowRunFields(
         if (response.status === 404) ctx.toolState.workflowRunUnclaimed = true;
         if (!response.ok) throw new Error(`PATCH workflow-run: ${response.status}`);
       },
-      {
-        retries: [2000, 4000],
-        name: "patchWorkflowRunFields",
-        // only retry transient network errors; explicit HTTP failures throw
-        // a status-bearing message and should fail fast.
-        rethrow: (error) => !isTransientNetworkError(error),
-      }
-    )();
+      // only retry transient network errors; explicit HTTP failures throw
+      // a status-bearing message and should fail fast.
+      retry: (error, attempt) =>
+        isTransientNetworkError(error) ? yes.delay([2000, 4000], attempt) : -1,
+      name: "patchWorkflowRunFields",
+    })();
   } catch (error) {
     // not necessarily exhausted — an explicit HTTP status bails on the first
     // attempt via the predicate above, so say "failed" rather than implying

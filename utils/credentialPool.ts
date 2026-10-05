@@ -37,8 +37,8 @@ function saveReceipts() {
   saveSecretState("credential_receipts", JSON.stringify(receipts));
 }
 
-const select = yes.op(
-  async (input: { access: CredentialAccess; candidate: CredentialCandidate }) => {
+const select = yes.mutation({
+  run: async (input: { access: CredentialAccess; candidate: CredentialCandidate }) => {
     const response = await apiFetch({
       path: "/api/runtime/credentials",
       method: "POST",
@@ -56,15 +56,14 @@ const select = yes.op(
       });
     return selectedCredentialSchema.parse(await response.json());
   },
-  {
-    retries: [250, 1000],
-    rethrow: (error) =>
-      error instanceof Error &&
-      typeof error.cause === "number" &&
-      error.cause >= 400 &&
-      error.cause < 500,
-  }
-);
+  retry: (error, attempt) =>
+    error instanceof Error &&
+    typeof error.cause === "number" &&
+    error.cause >= 400 &&
+    error.cause < 500
+      ? -1
+      : yes.delay([250, 1000], attempt),
+});
 
 function subscriptionForModel(model: string) {
   if (!model.includes("/")) return null;

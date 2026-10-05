@@ -71,9 +71,10 @@ export async function resolveRunContextData(
   // attempt, no retry.
   let oidcToken: string | undefined;
   try {
-    oidcToken = await yes.op(() => mintIdToken(), {
+    oidcToken = await yes.query({
+      run: () => mintIdToken(),
       name: "OIDC mint",
-      retries: process.env.ACTIONS_ID_TOKEN_REQUEST_URL ? [200, 1000] : [],
+      retry: process.env.ACTIONS_ID_TOKEN_REQUEST_URL ? [200, 1000] : [],
     })();
   } catch {
     // OIDC not available (local dev, non-actions environment, fork PRs)
@@ -85,10 +86,11 @@ export async function resolveRunContextData(
   // sibling fetchRunContext degrades to defaults). retry the transient blip.
   // see #999.
   const [repoResponse, runContext] = await Promise.all([
-    yes.op(() => params.octokit.repos.get({ owner: repoContext.owner, repo: repoContext.name }), {
+    yes.query({
+      run: () => params.octokit.repos.get({ owner: repoContext.owner, repo: repoContext.name }),
       name: "repos.get",
-      retries: [100, 500],
-      rethrow: (error) => !isTransientOctokitError(error),
+      retry: (error, attempt) =>
+        isTransientOctokitError(error) ? yes.delay([100, 500], attempt) : -1,
     })(),
     fetchRunContext({
       token: params.token,

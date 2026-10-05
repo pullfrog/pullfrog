@@ -19,6 +19,7 @@ import pc from "picocolors";
 import * as yes from "yes";
 import {
   isTerminal,
+  type PrTarget,
   pollPrEvents,
   resolveCursor,
   SERVER_POLL_WINDOW_MS,
@@ -129,13 +130,15 @@ export async function runCli(input: { args: string[]; prog: string; showHelp: bo
     throw error;
   }
 
-  const poll = yes.op(pollPrEvents, {
+  // narrowed past `pollPrEvents`'s optional `signal`, which a query cannot key
+  const poll = yes.query({
+    run: (input: PrTarget & { token: string; cursor: string }) => pollPrEvents(input),
     name: "pr-events poll",
-    retries: [1000, 2000, 5000, 10_000, 15_000],
-    rethrow: isTerminal,
+    retry: (error, attempt) =>
+      isTerminal(error) ? -1 : yes.delay([1000, 2000, 5000, 10_000, 15_000], attempt),
   });
 
-  // daemon loop — the loop is the whole command. `yes.op` smooths transient
+  // daemon loop — the loop is the whole command. the query smooths transient
   // network blips within a cycle. a longer outage that exhausts the op's
   // retries must NOT kill the watcher, so we back off and keep going rather
   // than crash; only a terminal auth/access answer exits.

@@ -126,8 +126,8 @@ importers:
         specifier: ^2.8.2
         version: 2.9.1
       yes:
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: 0.2.1
+        version: 0.2.1(typescript@5.9.3)
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -1871,10 +1871,15 @@ packages:
     resolution: {integrity: sha512-9OpKOLeaoNFecEp7P6iYbzze/5CqWoH7N3SMs/6y1XF4nMvFMspEGZzJ6uFi9MmQwXhyzqYoSEKO3tvA3Z/o2w==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
 
-  yes@0.1.0:
-    resolution: {integrity: sha512-YpBxd3Y7b605g+1jQjVYvYON/hhL4D4g3Hw4QcVPj5lk1j/0mBXO93Xb0XFUww2QLRquCq4N6x+KXVl1NGgIyA==}
+  yes@0.2.1:
+    resolution: {integrity: sha512-ZldqBD1TOL1j7XPo7lUSSEXwzptlC/HoGV28bHEP1JUKCCq0a4OM0ZILSc2MUq5cMyoLr5dNrogkSj/yUq9qRA==}
     engines: {node: '>=24'}
     hasBin: true
+    peerDependencies:
+      typescript: '>=5.4'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   yoctocolors@2.2.0:
     resolution: {integrity: sha512-xYqdZFUK/VYazNl/oCDYN+3WloWQwMfZxBoiNt6qNyk+xfOdi598muWE42rNZFp1kNOiqW936q5RhUdnpqElSg==}
@@ -3411,9 +3416,10 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 22.0.0
 
-  yes@0.1.0:
+  yes@0.2.1(typescript@5.9.3):
     dependencies:
       lru-cache: 11.5.3
+      typescript: 5.9.3
 
   yoctocolors@2.2.0: {}
 

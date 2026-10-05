@@ -478,8 +478,8 @@ export async function checkoutPrBranch(
     //   - pull/N/head webhook race (`couldn't find remote ref pull/N/head`) —
     //     handled by the outer retry below (see issue #591)
     log.debug(`» fetching PR #${pr.number} (${localBranch})...`);
-    await yes.op(
-      async () => {
+    await yes.mutation({
+      run: async () => {
         try {
           await $gitFetchWithDeepen(
             ["--no-tags", "origin", `+pull/${pr.number}/head:${localBranch}`],
@@ -498,12 +498,12 @@ export async function checkoutPrBranch(
           throw e;
         }
       },
-      {
-        retries: PULL_REF_RETRY_DELAYS_MS,
-        name: `pull/${pr.number}/head fetch`,
-        rethrow: (e) => !PULL_REF_MISSING_PATTERN.test(e instanceof Error ? e.message : String(e)),
-      }
-    )();
+      retry: (error, attempt) =>
+        PULL_REF_MISSING_PATTERN.test(error instanceof Error ? error.message : String(error))
+          ? yes.delay(PULL_REF_RETRY_DELAYS_MS, attempt)
+          : -1,
+      name: `pull/${pr.number}/head fetch`,
+    })();
 
     // checkout the branch
     $("git", ["checkout", localBranch], { log: false });

@@ -791,8 +791,8 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
         // validation 422s still fail fast.
         let result;
         try {
-          result = await yes.op(
-            () =>
+          result = await yes.mutation({
+            run: () =>
               body
                 ? createAndSubmitWithFooter(ctx, params, {
                     body,
@@ -800,12 +800,12 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
                     hasComments: (params.comments?.length ?? 0) > 0,
                   })
                 : createReviewWithStrandedRecovery(ctx, params),
-            {
-              retries: TRANSIENT_REVIEW_RETRY_DELAYS_MS,
-              rethrow: (err) => !isTransientReviewError(err),
-              name: "review submission",
-            }
-          )();
+            retry: (error, attempt) =>
+              isTransientReviewError(error)
+                ? yes.delay(TRANSIENT_REVIEW_RETRY_DELAYS_MS, attempt)
+                : -1,
+            name: "review submission",
+          })();
         } catch (err: unknown) {
           // the "would approve" verdict was recorded before this POST; a failed
           // submit must roll it back so a transient failure cannot fail-open into

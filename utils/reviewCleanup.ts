@@ -96,8 +96,8 @@ async function dispatchFollowUpReReview(ctx: ToolContext, reviewedSha: string): 
   // the downstream duplicate-cancel can't dedup a retry that fires after GitHub
   // queued the first run — accepted tradeoff: both re-reviews are unbilled, and
   // a rare cosmetic duplicate beats dropping the safety-net re-review.
-  await yes.op(
-    () =>
+  await yes.mutation({
+    run: () =>
       ctx.octokit.rest.actions.createWorkflowDispatch({
         owner: ctx.repo.owner,
         repo: ctx.repo.name,
@@ -105,12 +105,10 @@ async function dispatchFollowUpReReview(ctx: ToolContext, reviewedSha: string): 
         ref: pr.data.base.repo.default_branch,
         inputs: { prompt: JSON.stringify(payload) },
       }),
-    {
-      name: "reReviewDispatch",
-      retries: [500, 2000],
-      rethrow: (error) => !isTransientOctokitError(error),
-    }
-  )();
+    name: "reReviewDispatch",
+    retry: (error, attempt) =>
+      isTransientOctokitError(error) ? yes.delay([500, 2000], attempt) : -1,
+  })();
 }
 
 /**

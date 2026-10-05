@@ -57,8 +57,8 @@ async function mintProxyKey(ctx: {
     // the provider key the grant exists to replace (#1192). retry, then render
     // the "temporarily unavailable" copy instead of the "billing error" label
     // BillingError uses.
-    const response = await yes.op(
-      async () => {
+    const response = await yes.mutation({
+      run: async () => {
         const r = await apiFetch({ path: "/api/proxy-token", method: "POST", headers });
         if (r.status >= 500) {
           const body = (await r.json().catch(() => null)) as { error?: string } | null;
@@ -68,12 +68,10 @@ async function mintProxyKey(ctx: {
         }
         return r;
       },
-      {
-        name: "proxy key mint",
-        retries: [1000, 2000],
-        rethrow: (error) => !(error instanceof TransientError),
-      }
-    )();
+      name: "proxy key mint",
+      retry: (error, attempt) =>
+        error instanceof TransientError ? yes.delay([1000, 2000], attempt) : -1,
+    })();
 
     if (response.status === 402) {
       const body = (await response.json().catch(() => null)) as {
@@ -142,10 +140,11 @@ async function buildProxyTokenHeaders(ctx: {
     // retry transients — core.getIDToken (the previous mint path) retried
     // 5xx internally, and a soft-skip here degrades the run to BYOK
     const creds = ctx.oidcCredentials;
-    const oidcToken = await yes.op(() => fetchIdTokenFromStash(creds), {
+    const oidcToken = await yes.query({
+      run: () => fetchIdTokenFromStash(creds),
       name: "ID token mint",
-      retries: [1000, 2000],
-      rethrow: (error) => !isTransientTokenError(error),
+      retry: (error, attempt) =>
+        isTransientTokenError(error) ? yes.delay([1000, 2000], attempt) : -1,
     })();
     return {
       Authorization: `Bearer ${oidcToken}`,
