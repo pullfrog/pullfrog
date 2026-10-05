@@ -1291,6 +1291,10 @@ export const claude = agent({
     // Claude Code caps this at its detected model window: 200K stays 200K, while 1M uses 500K.
     // Keep operator overrides; revalidate this when the pinned CLI or model windows change.
     env.CLAUDE_CODE_AUTO_COMPACT_WINDOW ||= "500000";
+    // newer models get no task tool by default; these two restore `TodoWrite`, which feeds the
+    // progress comment's task list (TaskCreate/TaskUpdate would need a second parser).
+    env.CLAUDE_CODE_ENABLE_TODO_TOOLS = "1";
+    env.CLAUDE_CODE_ENABLE_TASKS = "0";
     if (isBedrockRoute) {
       env.CLAUDE_CODE_USE_BEDROCK = "1";
     }
