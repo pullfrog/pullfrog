@@ -577,7 +577,7 @@ export function ShellTool(ctx: ToolContext) {
   return tool({
     name: "shell",
     timeoutMs: 120_000,
-    description: `Execute shell commands securely. Environment is filtered to remove API keys and secrets.
+    description: `Execute shell commands securely.${ctx.payload.shell === "restricted" ? " Environment is filtered to remove API keys and secrets." : ""}
 
 Example: \`shell({ command: "pnpm test", description: "run the test suite" })\`.
 

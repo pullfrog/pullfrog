@@ -194,8 +194,9 @@ function buildCommonTools(ctx: ToolContext, outputSchema?: JsonSchema): Pullfrog
     tools.push(SetOutputTool(ctx, outputSchema));
   }
 
-  // MCP shell with filtered env (no secrets leaked to child processes)
-  if (ctx.payload.shell === "restricted") {
+  // sandboxed in CI, env filtered unless shell is "enabled". claude code and opencode deny their
+  // native shells, so this is their only one
+  if (ctx.payload.shell !== "disabled") {
     tools.push(ShellTool(ctx));
     tools.push(KillBackgroundTool(ctx));
   }

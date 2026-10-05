@@ -342,7 +342,7 @@ export async function main(): Promise<MainResult> {
   // tests they had decided to run and could not (#1093). resolving it to
   // `disabled` up front makes the tool set and the prompt agree with reality,
   // and gives the operator one line they can act on.
-  if (payload.shell === "restricted" && getSandboxMethod() === "none") {
+  if (payload.shell !== "disabled" && process.env.CI === "true" && getSandboxMethod() === "none") {
     payload.shell = "disabled";
     log.warning(
       "» shell commands are disabled for this run: this runner provides no PID-namespace isolation " +
