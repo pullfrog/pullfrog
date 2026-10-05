@@ -198,11 +198,11 @@ export function formatBillingErrorSummary(error: BillingError, owner: string): s
 
   if (error.code === "router_monthly_limit") {
     return [
-      "**Pullfrog Router hit its monthly spend limit.**",
+      "**Pullfrog Router is out of credit, and the monthly spend limit blocks the next auto-reload.**",
       "",
-      "Auto-reloads are paused for the rest of this UTC month. Ask your admin to raise the cap, or wait for it to reset at 00:00 UTC on the 1st.",
+      "Top up by hand, ask your admin to raise the cap, or wait for it to reset at 00:00 UTC on the 1st.",
       "",
-      `[Adjust limit →](${billingConsoleUrl(owner)})`,
+      `[Top up balance →](${billingConsoleUrl(owner)}) · [Adjust limit →](${billingConsoleUrl(owner)})`,
     ].join("\n");
   }
 

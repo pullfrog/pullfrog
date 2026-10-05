@@ -28,7 +28,7 @@ inputs:
     description: "Git push permission: disabled (read-only), restricted (push feature branches only — blocks pushes to the default branch, branch deletion, and tag pushes), or enabled (full push access). Default: enabled"
     required: false
   shell:
-    description: "Shell permission: disabled, restricted (filters secrets from env vars), or enabled. Public repos default to restricted for security; private repos default to enabled."
+    description: "Shell permission: disabled, restricted (filters secrets from env vars), or enabled. Can only make the repository's console setting (restricted by default) stricter."
     required: false
   status_checks:
     description: "DEPRECATED — both checks are now repository settings, editable in the Pullfrog console (Automations → Review PRs). Set them there and drop this input. It keeps working on v0 either way: it can only turn a check on, and silently ignoring it would strip a required check from anyone still relying on it."
