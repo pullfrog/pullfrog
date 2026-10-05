@@ -119,6 +119,7 @@ on:
     tags: ['v*']
 
 permissions:
+  id-token: write
   contents: write
 
 jobs:
