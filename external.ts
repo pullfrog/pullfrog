@@ -134,7 +134,6 @@ export {
   ossFundedModelNames,
   PROVIDER_GATEWAY_URL_ENV,
   parseModel,
-  pickUsesOpenRouter,
   providers,
   ROUTED_PROVIDERS,
   ROUTER_LADDER,
@@ -145,6 +144,7 @@ export {
   resolveModelRung,
   resolveModelSlug,
   resolveOpenRouterModel,
+  resolvePickModel,
   resolveRoutedModel,
   routerProxyOptOut,
 } from "./models.ts";

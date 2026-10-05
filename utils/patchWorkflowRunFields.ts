@@ -49,9 +49,9 @@ export async function patchWorkflowRunFields(
   fields: WorkflowRunPatch
 ): Promise<void> {
   if (ctx.runId === undefined || !ctx.apiToken) return;
-  // a 404 means the reservation was never claimed, and the claim happens at
-  // setup — strictly before any PATCH — so it can never become claimable later
-  // in this run. see #1153.
+  // a 404 means Pullfrog never dispatched the run or never claimed its
+  // reservation; the claim happens at setup — strictly before any PATCH — so
+  // neither can change later in this run. see #1153.
   if (ctx.toolState.workflowRunUnclaimed) return;
   const body: Record<string, string | number> = {};
   for (const key of STRING_KEYS) {
@@ -80,7 +80,13 @@ export async function patchWorkflowRunFields(
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(10_000),
         });
-        if (response.status === 404) ctx.toolState.workflowRunUnclaimed = true;
+        if (response.status === 404) {
+          // routine for a run Pullfrog didn't dispatch (a custom workflow on the user's own
+          // key), so no annotation: the runner can't act on it, and the server logs each one.
+          ctx.toolState.workflowRunUnclaimed = true;
+          log.info(`» Pullfrog has no record of run ${ctx.runId}; skipping run metadata updates`);
+          return;
+        }
         if (!response.ok) throw new Error(`PATCH workflow-run: ${response.status}`);
       },
       // only retry transient network errors; explicit HTTP failures throw
