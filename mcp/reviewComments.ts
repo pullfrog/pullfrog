@@ -542,9 +542,7 @@ const fetchPrFiles = yes.query({
  * nothing and cannot miss.
  */
 function invalidateReviewThreadCache(repo: { owner: string; name: string }): void {
-  fetchAllReviewThreads.invalidate(
-    (cached) => cached.owner === repo.owner && cached.name === repo.name
-  );
+  fetchAllReviewThreads.invalidate({ owner: repo.owner, name: repo.name });
 }
 
 async function getReviewThreads(input: GetReviewDataInput) {
