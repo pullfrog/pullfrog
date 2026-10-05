@@ -156,6 +156,7 @@ export async function main(): Promise<MainResult> {
     octokit: initialOctokit,
     token: jobToken,
     runType: typeof resolvedPromptInput === "string" ? undefined : resolvedPromptInput.type,
+    plainPrompt: typeof resolvedPromptInput === "string",
     routedTier:
       typeof resolvedPromptInput === "string" ? undefined : resolvedPromptInput.routing?.tier,
   });
@@ -378,6 +379,8 @@ export async function main(): Promise<MainResult> {
 
   const runInfo = await resolveRun({ octokit });
   let toolContext: ToolContext | undefined;
+  // this start's own result, reported on the end-of-run PATCH in `finally`
+  let succeeded = false;
   let progressCallbackDisabled = false;
   let todoTracker: ReturnType<typeof createTodoTracker> | undefined;
   let vertexCredentials: VertexCredentials | undefined;
@@ -1020,11 +1023,13 @@ export async function main(): Promise<MainResult> {
     // covers the non-review success paths).
     await finalizeSuccessRun({ toolContext, toolState, result, repo: runContext.repo });
 
-    return await handleAgentResult({
+    const outcome = await handleAgentResult({
       result,
       toolContext,
       silent: payload.event.silent ?? false,
     });
+    succeeded = outcome.success;
+    return outcome;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "unknown error occurred";
     progressCallbackDisabled = true;
@@ -1075,7 +1080,8 @@ export async function main(): Promise<MainResult> {
       }
     }
 
-    // persist aggregated token + cost usage to the WorkflowRun row.
+    // persist this start's aggregated token + cost usage and result; the server
+    // sums a run's starts onto the WorkflowRun row.
     // this is the single shared cleanup path across every agent implementation:
     // each agent harness returns a single AgentUsage from agent.run() that
     // already aggregates its internal retries via mergeAgentUsage, and the
@@ -1093,9 +1099,8 @@ export async function main(): Promise<MainResult> {
       if (toolState.model) patch.model = toolState.model;
       if (toolState.agent) patch.agent = toolState.agent;
       if (toolState.credential) patch.credential = toolState.credential;
-      if (Object.keys(patch).length > 0) {
-        await patchWorkflowRunFields(toolContext, patch);
-      }
+      patch.succeeded = succeeded;
+      await patchWorkflowRunFields(toolContext, patch);
     }
     cleanupVertexCredentials(vertexCredentials);
   }

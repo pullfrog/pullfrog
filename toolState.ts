@@ -270,10 +270,10 @@ export interface ToolState {
   // via `result.error`. see `utils/agentHangReport.ts`.
   agentDiagnostic?: AgentDiagnostic | undefined;
   /**
-   * a `PATCH /api/workflow-run/:id` came back 404 — Pullfrog never dispatched the
-   * run or never claimed its reservation, which is permanent for the life of the
-   * run (the claim happens at setup, strictly before any PATCH). latched so the
-   * remaining calls stop firing: one CI run spent 28 doomed round trips on it.
+   * a `PATCH /api/workflow-run/:id` came back 404 — Pullfrog neither claimed a
+   * reservation for the run nor recorded it as a custom run, which is permanent for
+   * the life of the run (both happen at setup, strictly before any PATCH). latched so
+   * the remaining calls stop firing: one CI run spent 28 doomed round trips on it.
    * see #1153.
    */
   workflowRunUnclaimed?: boolean | undefined;

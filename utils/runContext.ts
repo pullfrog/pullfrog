@@ -1,9 +1,16 @@
+import { randomUUID } from "node:crypto";
 import type { PushPermission, ShellPermission } from "../external.ts";
 import type { RouterTier } from "../models.ts";
 import { apiFetch } from "./apiFetch.ts";
 import type { CommercialRefusal } from "./billingErrors.ts";
 import type { RepoContext } from "./github.ts";
 import type { CredentialAccess } from "./subscriptionCredentials.ts";
+
+/**
+ * One per process, which is one start of the action within its GitHub run. Sent to run-context
+ * first, so a custom run's start is recorded before it reports, and then on each workflow-run PATCH.
+ */
+export const START_KEY = randomUUID();
 
 export interface Mode {
   id: string;
@@ -180,6 +187,9 @@ export async function fetchRunContext(params: {
   /** `payload.type` — lets the server apply this repo's per-trigger model
    * override, which it cannot derive from owner/repo alone. */
   runType?: string | undefined;
+  /** a plain-text prompt, which no Pullfrog dispatch sends — so the server
+   * can record this run without waiting for a reservation to claim it. */
+  plainPrompt: boolean;
   /** `payload.routing.tier` — the model router's tier, which run-context
    * applies to the Router proxy mint the same way it applies `runType`. */
   routedTier?: RouterTier | undefined;
@@ -197,8 +207,9 @@ export async function fetchRunContext(params: {
       headers["X-GitHub-OIDC-Token"] = params.oidcToken;
     }
 
-    const query = new URLSearchParams();
+    const query = new URLSearchParams({ start: START_KEY });
     if (params.runType) query.set("type", params.runType);
+    if (params.plainPrompt) query.set("prompt", "plain");
     if (params.routedTier) query.set("tier", params.routedTier);
     const search = query.toString();
     const response = await apiFetch({

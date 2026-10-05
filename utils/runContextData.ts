@@ -43,6 +43,8 @@ interface ResolveRunContextDataParams {
    * because run-context is fetched first and needs it to pick this trigger's
    * model override. */
   runType?: string | undefined;
+  /** the prompt is plain text, never a Pullfrog dispatch payload. */
+  plainPrompt: boolean;
   /** the model router's tier from the payload, forwarded so run-context applies it to the proxy mint. */
   routedTier?: RouterTier | undefined;
 }
@@ -97,6 +99,7 @@ export async function resolveRunContextData(
       repoContext,
       oidcToken,
       runType: params.runType,
+      plainPrompt: params.plainPrompt,
       routedTier: params.routedTier,
     }),
   ]);

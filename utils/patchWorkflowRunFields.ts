@@ -4,6 +4,7 @@ import type { ToolContext } from "../mcp/server.ts";
 import { apiFetch } from "./apiFetch.ts";
 import { log } from "./cli.ts";
 import { isTransientNetworkError } from "./isTransientNetworkError.ts";
+import { START_KEY } from "./runContext.ts";
 
 /**
  * String-valued PATCH fields (all serialized identically on the wire):
@@ -14,6 +15,9 @@ import { isTransientNetworkError } from "./isTransientNetworkError.ts";
  *    `Repo.model` slug), PATCHed once at end-of-run so per-model cost analytics
  *    don't parse the audit-only `payload`.
  * Keep in sync with `STRING_FIELDS` in `app/api/workflow-run/[runId]/route.ts`.
+ * `succeeded` and the usage fields below are this start's own report: a custom
+ * workflow can start the action several times in one run, and the server keeps
+ * one row per start, keyed by `START_KEY`, and sums them onto the run.
  */
 const STRING_KEYS = [
   "prNodeId",
@@ -45,7 +49,7 @@ const FLAG_KEYS = ["reviewSkipped"] as const;
 
 export type WorkflowRunPatch = Partial<Record<(typeof STRING_KEYS)[number], string>> &
   Partial<Record<(typeof NUMBER_KEYS)[number], number>> &
-  Partial<Record<(typeof FLAG_KEYS)[number], true>>;
+  Partial<Record<(typeof FLAG_KEYS)[number], true>> & { succeeded?: boolean };
 
 /** PATCH workflow-run fields (Pullfrog JWT, not GitHub). */
 export async function patchWorkflowRunFields(
@@ -53,9 +57,9 @@ export async function patchWorkflowRunFields(
   fields: WorkflowRunPatch
 ): Promise<void> {
   if (ctx.runId === undefined || !ctx.apiToken) return;
-  // a 404 means Pullfrog never dispatched the run or never claimed its
-  // reservation; the claim happens at setup — strictly before any PATCH — so
-  // neither can change later in this run. see #1153.
+  // a 404 means Pullfrog neither claimed a reservation for the run nor recorded it
+  // as a custom run; both happen at setup — strictly before any PATCH — so neither
+  // can change later in this run. see #1153.
   if (ctx.toolState.workflowRunUnclaimed) return;
   const body: Record<string, string | number | boolean> = {};
   for (const key of STRING_KEYS) {
@@ -73,7 +77,11 @@ export async function patchWorkflowRunFields(
   for (const key of FLAG_KEYS) {
     if (fields[key]) body[key] = true;
   }
+  if (fields.succeeded !== undefined) body.succeeded = fields.succeeded;
   if (Object.keys(body).length === 0) return;
+  body.startKey = START_KEY;
+  const runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+  if (Number.isInteger(runAttempt) && runAttempt >= 1) body.runAttempt = runAttempt;
   try {
     await yes.mutation({
       run: async () => {
@@ -88,8 +96,8 @@ export async function patchWorkflowRunFields(
           signal: AbortSignal.timeout(10_000),
         });
         if (response.status === 404) {
-          // routine for a run Pullfrog didn't dispatch (a custom workflow on the user's own
-          // key), so no annotation: the runner can't act on it, and the server logs each one.
+          // a run Pullfrog neither dispatched nor could record (see wiki/run-correlation.md), so
+          // no annotation: the runner can't act on it, and the server logs each one.
           ctx.toolState.workflowRunUnclaimed = true;
           log.info(`» Pullfrog has no record of run ${ctx.runId}; skipping run metadata updates`);
           return;
