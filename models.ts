@@ -741,6 +741,15 @@ export const providers = {
         openRouterEffort: [],
         openRouterResolve: "openrouter/qwen/qwen3.8-flash",
       },
+      // Zen lists Mistral Large 4 at half its list price for launch, level with
+      // the routers. hidden until a published `pullfrog` resolves it, as there.
+      "mistral-large": {
+        displayName: "Mistral Large",
+        resolve: "opencode/mistral-large-4",
+        effort: ["none", "high"],
+        openRouterResolve: "openrouter/mistralai/mistral-large-4-0",
+        hidden: true,
+      },
       "gpt-5-nano": {
         displayName: "GPT Nano",
         resolve: "opencode/gpt-5.4-nano",
