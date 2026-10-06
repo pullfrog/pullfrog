@@ -2,4 +2,4 @@ packages: [] # prevent looking upwards for the workspace root
 minimumReleaseAgeExclude:
   - '@openai/codex@0.159.2 || 0.159.2-linux-x64 || 0.159.2-linux-arm64 || 0.159.2-darwin-x64 || 0.159.2-darwin-arm64 || 0.159.2-win32-x64 || 0.159.2-win32-arm64'
   - '@openai/codex-sdk@0.159.2'
-  - yes@0.2.2
+  - yes@0.2.3
