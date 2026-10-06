@@ -798,12 +798,12 @@ export const providers = {
         fallback: "opencode/big-pickle",
       },
       // Zen's FREE stealth preview (listed 2026-09-23), the third after
-      // big-pickle and union-alpha. OpenRouter's listing: prompts and
-      // completions may be retained by the provider, not trained on. unlike the
-      // first two it publishes an effort ladder, so the gate mirrors one here.
+      // big-pickle and union-alpha. Zen's docs: zero retention, no training.
+      // unlike the first two it publishes an effort ladder, so the gate
+      // mirrors one here.
       "space-bunny": {
         displayName: "Space Bunny",
-        description: "Stealth preview; prompts may be retained",
+        description: "Stealth preview, free for a limited time",
         resolve: "opencode/space-bunny-free",
         effort: ["low", "medium", "high", "xhigh", "max"],
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
@@ -821,16 +821,29 @@ export const providers = {
         // see the big-pickle note above (#1077).
         isFree: true,
       },
-      // Zen's FREE stealth preview (listed 2026-10-01), the fifth promo. Zen
-      // has not published its data terms yet, so the description claims none.
+      // Zen's FREE stealth preview (listed 2026-10-01), the fifth promo. Zen's
+      // docs: data may be used to improve the model during the free period.
       "fledge-alpha": {
         displayName: "Fledge Alpha",
-        description: "Stealth preview, free for a limited time",
+        description: "Stealth preview; data may be used to improve it",
         resolve: "opencode/fledge-alpha-free",
         effort: ["low", "high", "max"],
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
         // see the big-pickle note above (#1077).
         isFree: true,
+      },
+      // Zen's FREE preview (listed 2026-10-06), the sixth promo, on Fledge
+      // Alpha's terms. hidden until a published `pullfrog` resolves it.
+      exo: {
+        displayName: "Exo",
+        description: "Preview; data may be used to improve it",
+        resolve: "opencode/exo-free",
+        // Zen publishes a single rung.
+        effort: ["high"],
+        // free to run, still gated on the provider's own OPENCODE_API_KEY —
+        // see the big-pickle note above (#1077).
+        isFree: true,
+        hidden: true,
       },
       // Zen's live free MiMo, and the second free row in a menu that big-pickle
       // was alone in since `mimo-v2-pro-free` lost its model.
