@@ -1922,14 +1922,17 @@ for (const [name, ladder] of Object.entries({ ...PROVIDER_LADDERS, router: ROUTE
 // the two derived ones are derived because #1190 updated the other two and
 // missed these, leaving the application page selling one model the program had
 // stopped defaulting to, for two allowlist edits running.
+// ordered by Artificial Analysis Intelligence Index, highest first (2026-10-06:
+// Muse Spark 1.3 48, DeepSeek V4.1 Flash 39, GPT-6 Luna 38, MiniMax below
+// M3's 29), so every surface that lists the menu reads best-first.
 export const OSS_MODEL_ALLOWLIST: readonly string[] = [
-  "deepseek/deepseek-flash",
-  "openai/gpt-luna",
-  "openrouter/minimax-m2.5",
   // opt-in: 0.86x the old default on the measured mix, and Meta trains on the
   // traffic — fine for public code on headless runs, the human decided
   // 2026-09-11. unmeasured on a real run; not the default until it is.
   "meta/muse-spark-contributor",
+  "deepseek/deepseek-flash",
+  "openai/gpt-luna",
+  "openrouter/minimax-m2.5",
 ];
 
 /** the pick the console badges. DERIVED from the efficient tier rather than
