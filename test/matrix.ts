@@ -7,8 +7,8 @@
  *   - flagships: one harness smoke per provider (providers-live)
  *   - aliases:   one CLI smoke per model alias (models-live)
  *
- * these matrices run only on the nightly `schedule` and on `workflow_dispatch`
- * — never on PR or `main` pushes (see test.yml for the spend history).
+ * these matrices run only on `workflow_dispatch` (the full matrix at each
+ * release, scoped cells on a PR) — never on PR or `main` pushes (see test.yml for the spend history).
  * MATRIX_FILTER scopes a dispatch to the cells that matter: comma-separated
  * substrings, OR'd, matched against each entry's name and slug.
  *
