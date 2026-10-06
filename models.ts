@@ -1279,6 +1279,17 @@ export const providers = {
         effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
         openRouterResolve: "openrouter/meta/muse-spark-1.3-contributor",
       },
+      // Mistral's flagship (public preview, 2026-10-06), on the routers only:
+      // the catalog carries no direct Mistral provider. out of the pickers
+      // until a published `pullfrog` resolves the slug; see "A new alias
+      // reaches the picker at merge".
+      "mistral-large": {
+        displayName: "Mistral Large",
+        resolve: "openrouter/mistralai/mistral-large-4-0",
+        effort: ["none", "high"],
+        openRouterResolve: "openrouter/mistralai/mistral-large-4-0",
+        hidden: true,
+      },
     },
   }),
   vercel: provider({
@@ -1369,6 +1380,13 @@ export const providers = {
         displayName: "Muse Spark",
         resolve: "vercel/meta/muse-spark-1.3",
         effort: ["minimal", "low", "medium", "high", "xhigh"],
+      },
+      // hidden until a published `pullfrog` resolves it, as on OpenRouter.
+      "mistral-large": {
+        displayName: "Mistral Large",
+        resolve: "vercel/mistral/mistral-large-4",
+        effort: ["none", "low", "medium", "high"],
+        hidden: true,
       },
     },
   }),
