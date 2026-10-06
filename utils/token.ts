@@ -177,7 +177,9 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
     // commit-status check-runs for branch protection. the app already grants
     // checks:write; this scopes the MCP token up to use it.
     checks: "write",
-    actions: "read",
+    // write (not read) so postReviewCleanup can dispatch the follow-up re-review
+    // for commits pushed while a review was in flight; read 403s it.
+    actions: "write",
   } as const;
   const mcpToken = await acquireNewToken({
     repos: writeRepos,
