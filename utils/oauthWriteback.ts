@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import * as core from "@actions/core";
 import { z } from "zod";
 import { apiFetch } from "./apiFetch.ts";
@@ -12,6 +12,9 @@ import { detectCodexRefresh, detectXaiRefresh, type OAuthWriteback } from "./cod
  * post-hook's stdlib-only import graph and bring back #815. Keep the two in
  * sync by hand; `entryPost.stdlibOnly.test.ts` guards the reason they differ. */
 export const OAUTH_WRITEBACK_STATE = "oauth_writeback";
+
+/** GHA state key for the run's subscription data dir (codexHome.ts); `entryPost.ts` spells it literally too. */
+export const SUBSCRIPTION_DATA_DIR_STATE = "subscription_data_dir";
 
 /**
  * Persist any OAuth refresh chain the run rotated, back into Pullfrog's own
@@ -29,11 +32,23 @@ export const OAUTH_WRITEBACK_STATE = "oauth_writeback";
  * to write them back from inside a job — so a token stashed there silently
  * goes stale on the first refresh and the next run fails. See wiki/codex-auth.md.
  *
+ * Then removes the run's subscription data dir (codexHome.ts), which holds the
+ * auth.json diffed here.
+ *
  * Best-effort throughout: a missed write-back costs the user one
  * `pullfrog auth codex` re-run, while a throw here would fail a workflow whose
  * agent already succeeded.
  */
 export async function runOAuthWriteback(): Promise<void> {
+  await writeBackEntries();
+  // last: the writeback diffs the auth.json inside this per-run dir (codexHome.ts, #1475).
+  const dataDir = core.getState(SUBSCRIPTION_DATA_DIR_STATE);
+  if (!dataDir) return;
+  rmSync(dataDir, { recursive: true, force: true });
+  core.info(`oauth post-hook: removed ${dataDir}`);
+}
+
+async function writeBackEntries(): Promise<void> {
   const raw = core.getState(OAUTH_WRITEBACK_STATE);
   if (!raw) {
     core.info("oauth post-hook: no writeback state — skipping");

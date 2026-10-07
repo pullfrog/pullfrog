@@ -208,6 +208,7 @@ type EnsureBeforeShaParams = {
   gitToken: string;
   refreshGitToken?: ((stale: string) => Promise<string>) | undefined;
   isShallow: boolean;
+  signal: AbortSignal;
 };
 
 type CreateTempBranchParams = {
@@ -277,7 +278,7 @@ async function ensureBeforeShaReachable(params: EnsureBeforeShaParams): Promise<
         "origin",
         tempBranch,
       ],
-      { token: params.gitToken, refreshGitToken: params.refreshGitToken },
+      { token: params.gitToken, refreshGitToken: params.refreshGitToken, signal: params.signal },
       `before_sha temp branch ${tempBranch}`
     );
     log.debug(`» fetched before_sha via temp branch ${tempBranch}`);
@@ -305,6 +306,8 @@ function hasLocalCommit(sha: string | undefined): boolean {
 
 type CheckoutPrBranchParams = GitContext & {
   beforeSha?: string | undefined;
+  /** aborts the in-flight fetch (SIGTERM, so git removes its own locks) when the tool deadline fires */
+  signal: AbortSignal;
 };
 
 // stale lock files left over from a crashed/cancelled prior git process block
@@ -334,7 +337,9 @@ function cleanupStaleGitLocks(): void {
     } catch {
       continue;
     }
-    if (now - mtimeMs < STALE_LOCK_AGE_MS) continue;
+    // a lock created after this process started belongs to one of this run's own git
+    // processes (an agent `git_fetch`, or an attempt the deadline is still cancelling).
+    if (now - mtimeMs < STALE_LOCK_AGE_MS || mtimeMs >= performance.timeOrigin) continue;
     try {
       unlinkSync(relPath);
       log.warning(`» removed stale ${relPath} from prior run`);
@@ -411,7 +416,7 @@ export async function checkoutPrBranch(
   pr: PrData,
   params: CheckoutPrBranchParams
 ): Promise<{ hookWarning?: string | undefined }> {
-  const { octokit, owner, name, gitToken, refreshGitToken, toolState, beforeSha } = params;
+  const { octokit, owner, name, gitToken, refreshGitToken, toolState, beforeSha, signal } = params;
 
   // SECURITY: PR ref names come from GitHub and are attacker-controlled on
   // forks (the PR author picks headRef freely, and baseRef could be a
@@ -455,7 +460,7 @@ export async function checkoutPrBranch(
   log.debug(`» fetching base branch (${pr.baseRef})...`);
   await $gitFetchWithDeepen(
     ["--no-tags", "origin", pr.baseRef],
-    { token: gitToken, refreshGitToken },
+    { token: gitToken, refreshGitToken, signal },
     `base branch ${pr.baseRef}`
   );
 
@@ -483,7 +488,7 @@ export async function checkoutPrBranch(
         try {
           await $gitFetchWithDeepen(
             ["--no-tags", "origin", `+pull/${pr.number}/head:${localBranch}`],
-            { token: gitToken, refreshGitToken },
+            { token: gitToken, refreshGitToken, signal },
             `PR #${pr.number}`
           );
         } catch (e) {
@@ -521,6 +526,7 @@ export async function checkoutPrBranch(
         gitToken,
         refreshGitToken,
         isShallow,
+        signal,
       })
     : false;
 
@@ -574,6 +580,7 @@ export async function checkoutPrBranch(
       log.debug(`» deepening by ${deepenDepth} to reach merge base...`);
       await $git("fetch", [`--deepen=${deepenDepth}`, "--no-tags", "origin"], {
         token: gitToken,
+        signal,
       });
     }
   }
@@ -637,6 +644,9 @@ export async function checkoutPrBranch(
     localBranch,
   };
 
+  // the hook ignores the signal, so never start it past the deadline (an abort swallowed by
+  // `ensureBeforeShaReachable` reaches here with no `$git` call left to surface it)
+  signal.throwIfAborted();
   // execute post-checkout lifecycle hook. soft-fail: surface the warning
   // to the agent via the tool response instead of throwing, so a flaky or
   // slightly-broken hook doesn't block checkout entirely.
@@ -669,26 +679,42 @@ const inFlightCheckouts = new Map<number, Promise<CheckoutPrResult>>();
  * work had finished 35 minutes earlier (#1171). Racing here settles the promise
  * the `finally` is waiting on, so the entry always clears and a retry gets a
  * real attempt.
+ *
+ * The deadline also ABORTS the attempt: racing alone left its git child running,
+ * and the retry's lock sweep then deleted that orphan's live `shallow.lock` (#1468).
+ * The race stays as a backstop for awaits the signal cannot reach (Octokit, the hook).
  */
 const CHECKOUT_DEADLINE_MS = 570_000;
+/** covers the 5s SIGKILL escalation and a ≤10s pull-ref retry wait; 585s stays under fastmcp's 600s */
+const CHECKOUT_ABORT_GRACE_MS = 15_000;
 
 function withCheckoutDeadline(
-  promise: Promise<CheckoutPrResult>,
+  run: (signal: AbortSignal) => Promise<CheckoutPrResult>,
   pullNumber: number
 ): Promise<CheckoutPrResult> {
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(
+  const exceeded = `checkout_pr #${pullNumber} exceeded ${CHECKOUT_DEADLINE_MS / 1000}s`;
+  const retry = "retry the call to start a fresh attempt.";
+  const controller = new AbortController();
+  const abortTimer = setTimeout(
+    () => controller.abort(new Error(`${exceeded} and was cancelled; ${retry}`)),
+    CHECKOUT_DEADLINE_MS
+  );
+  let backstopTimer: NodeJS.Timeout | undefined;
+  const backstop = new Promise<never>((_, reject) => {
+    backstopTimer = setTimeout(
       () =>
         reject(
           new Error(
-            `checkout_pr #${pullNumber} exceeded ${CHECKOUT_DEADLINE_MS / 1000}s. the fetch may still be running in the background; retry the call to start a fresh attempt.`
+            `${exceeded} and was asked to cancel, but a step that cannot be interrupted (the post-checkout hook or a GitHub API call) was still running ${CHECKOUT_ABORT_GRACE_MS / 1000}s later. ${retry}`
           )
         ),
-      CHECKOUT_DEADLINE_MS
+      CHECKOUT_DEADLINE_MS + CHECKOUT_ABORT_GRACE_MS
     );
   });
-  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+  return Promise.race([run(controller.signal), backstop]).finally(() => {
+    clearTimeout(abortTimer);
+    clearTimeout(backstopTimer);
+  });
 }
 
 type InitialHead = NonNullable<RepoToolState["initialHead"]>;
@@ -705,7 +731,10 @@ function describeHead(h: InitialHead): string {
 }
 
 export function CheckoutPrTool(ctx: ToolContext) {
-  const runCheckout = async (pull_number: number): Promise<CheckoutPrResult> => {
+  const runCheckout = async (
+    pull_number: number,
+    signal: AbortSignal
+  ): Promise<CheckoutPrResult> => {
     const prResponse = await ctx.octokit.rest.pulls.get({
       owner: ctx.repo.owner,
       repo: ctx.repo.name,
@@ -738,6 +767,7 @@ export function CheckoutPrTool(ctx: ToolContext) {
       shell: ctx.payload.shell,
       postCheckoutScript: ctx.postCheckoutScript,
       beforeSha: primary.beforeSha,
+      signal,
     });
 
     const tempDir = process.env.PULLFROG_TEMP_DIR;
@@ -825,6 +855,7 @@ export function CheckoutPrTool(ctx: ToolContext) {
             pullNumber: pull_number,
             baseSha: prResponse.data.base.sha,
             headSha: checkoutSha,
+            signal,
           });
           impactPath = impact.path;
           log.info(
@@ -1020,7 +1051,10 @@ export function CheckoutPrTool(ctx: ToolContext) {
         }
       }
 
-      const promise = withCheckoutDeadline(runCheckout(pull_number), pull_number);
+      const promise = withCheckoutDeadline(
+        (signal) => runCheckout(pull_number, signal),
+        pull_number
+      );
       inFlightCheckouts.set(pull_number, promise);
       try {
         return await promise;

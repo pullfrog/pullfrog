@@ -11,6 +11,7 @@ import {
 } from "../models.ts";
 import { resolveAgent } from "./agent.ts";
 import { apiFetch } from "./apiFetch.ts";
+import { buildCredentialPoolRefusedError, type RefusedCredential } from "./apiKeys.ts";
 import { log } from "./cli.ts";
 import {
   canInstallSubscription,
@@ -180,7 +181,7 @@ export async function selectConfiguredCredential(input: {
       .map((name) => ({ name, candidate: undefined })),
     ...candidates.map((candidate) => ({ name: candidate.name, candidate })),
   ].sort((a, b) => Number(b.name === subscription) - Number(a.name === subscription));
-  const refused: string[] = [];
+  const refused: RefusedCredential[] = [];
   for (const option of options) {
     const selected = option.candidate
       ? await select({ access, candidate: option.candidate })
@@ -194,11 +195,16 @@ export async function selectConfiguredCredential(input: {
       if (option.candidate) log.info(`» selected ${option.name} from ${from}`);
       return true;
     }
-    refused.push(`${option.name} from ${from}: ${verdict.detail}`);
+    refused.push({ name: option.name, source: option.candidate?.source ?? "workflow", verdict });
     log.info(`» ${option.name} from ${from} unavailable; trying the next credential`);
   }
   throw new Error(
-    `all configured credentials for ${model} were rejected or exhausted (${refused.join("; ")}); no other model or provider was selected`
+    buildCredentialPoolRefusedError({
+      model,
+      refused,
+      owner: input.ctx.repo.owner,
+      name: input.ctx.repo.name,
+    })
   );
 }
 

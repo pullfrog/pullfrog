@@ -11,7 +11,8 @@ export const PROVIDER_NO_ENDPOINTS_LABEL = "provider no routable endpoints";
  * `PROVIDER_BILLING_EXHAUSTED_LABEL`: that label routes to a body whose CTA is
  * "Top up your provider balance", and a capped ChatGPT or Zen plan has no
  * balance to top up — it resets on its own. This label carries the cause into
- * the headline and lets the generic body stand.
+ * the hang headline and lets the generic body stand; a turn it ends directly
+ * gets its own wait-or-raise copy in `renderRunError` (#1474).
  */
 export const PROVIDER_USAGE_LIMIT_LABEL = "provider usage limit reached";
 
@@ -54,7 +55,13 @@ const PROVIDER_ERROR_PATTERNS: ProviderErrorPattern[] = [
   // …/settings/credits`) matched neither this nor `requires more credits`, so
   // the one run in that episode that was a genuinely empty wallet rendered with
   // no CTA at all while runs 1-6 rendered correctly.
-  { regex: /Insufficient (?:balance|credits)/i, label: PROVIDER_BILLING_EXHAUSTED_LABEL },
+  // `account funds` is Zen's (#1474).
+  {
+    regex: /Insufficient (?:balance|credits|account funds)/i,
+    label: PROVIDER_BILLING_EXHAUSTED_LABEL,
+  },
+  // OpenAI's `You have no credits remaining` (#1474).
+  { regex: /no credits remaining/i, label: PROVIDER_BILLING_EXHAUSTED_LABEL },
   { regex: /credit balance is too low/i, label: PROVIDER_BILLING_EXHAUSTED_LABEL },
   // "spending cap" (Gemini) and "spending limit" (xAI, #1076) are the same
   // condition in two house styles — a configured ceiling was reached.
@@ -245,6 +252,11 @@ export function isRouterKeylimitExhaustedError(text: string): boolean {
  */
 export function isProviderBillingExhausted(text: string): boolean {
   return findProviderErrorMatch(text)?.label === PROVIDER_BILLING_EXHAUSTED_LABEL;
+}
+
+/** A capped subscription window or a configured usage limit — see `PROVIDER_USAGE_LIMIT_LABEL`. */
+export function isProviderUsageLimit(text: string): boolean {
+  return findProviderErrorMatch(text)?.label === PROVIDER_USAGE_LIMIT_LABEL;
 }
 
 /**

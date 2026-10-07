@@ -147,6 +147,8 @@ export interface SpawnOptions {
   killGroup?: boolean;
   retain?: RetainMode;
   maxRetainedBytes?: number;
+  // abort terminates the child like `timeout` does, then rejects with `signal.reason` once it exits
+  signal?: AbortSignal | undefined;
 }
 
 /**
@@ -200,6 +202,7 @@ export interface SpawnResult {
 export async function spawn(options: SpawnOptions): Promise<SpawnResult> {
   const activityTimeoutMs = options.activityTimeout ?? DEFAULT_ACTIVITY_TIMEOUT_MS;
 
+  options.signal?.throwIfAborted();
   installSignalHandler();
 
   const startTime = performance.now();
@@ -259,23 +262,27 @@ export async function spawn(options: SpawnOptions): Promise<SpawnResult> {
     // can't make the error message contradict the "no output for Ns" log line.
     let killedAtIdleMs: number | undefined;
 
+    // SIGTERM first: git deletes its own lockfiles on SIGTERM but leaves them on SIGKILL.
+    // the escalator has no `child.killed` guard: that flag turns true once SIGTERM is sent.
+    const terminate = (): void => {
+      if (sigkillEscalatorId) return; // timeout and abort can both fire; arm one escalator
+      killSelf("SIGTERM");
+
+      // track the escalator so a graceful SIGTERM response (close fires
+      // before the 5s elapses) can clear it. without capture, this timer
+      // was orphaned in the event loop and kept node alive for up to 5s
+      // past a timed-out subprocess's clean exit.
+      sigkillEscalatorId = setTimeout(() => killSelf("SIGKILL"), 5000);
+    };
+
     // overall timeout
     if (options.timeout) {
       timeoutId = setTimeout(() => {
         isTimedOut = true;
-        killSelf("SIGTERM");
-
-        // track the escalator so a graceful SIGTERM response (close fires
-        // before the 5s elapses) can clear it. without capture, this timer
-        // was orphaned in the event loop and kept node alive for up to 5s
-        // past a timed-out subprocess's clean exit.
-        sigkillEscalatorId = setTimeout(() => {
-          if (!child.killed) {
-            killSelf("SIGKILL");
-          }
-        }, 5000);
+        terminate();
       }, options.timeout);
     }
+    options.signal?.addEventListener("abort", terminate, { once: true });
 
     // activity timeout: kill if no output for too long
     if (activityTimeoutMs > 0) {
@@ -361,6 +368,12 @@ export async function spawn(options: SpawnOptions): Promise<SpawnResult> {
       if (timeoutId) clearTimeout(timeoutId);
       if (sigkillEscalatorId) clearTimeout(sigkillEscalatorId);
       if (activityCheckIntervalId) clearInterval(activityCheckIntervalId);
+      options.signal?.removeEventListener("abort", terminate);
+
+      if (options.signal?.aborted) {
+        reject(options.signal.reason);
+        return;
+      }
 
       if (isTimedOut) {
         reject(
@@ -414,6 +427,7 @@ export async function spawn(options: SpawnOptions): Promise<SpawnResult> {
       if (timeoutId) clearTimeout(timeoutId);
       if (sigkillEscalatorId) clearTimeout(sigkillEscalatorId);
       if (activityCheckIntervalId) clearInterval(activityCheckIntervalId);
+      options.signal?.removeEventListener("abort", terminate);
 
       // surface the spawn error in stderr so callers (e.g. lifecycle hook
       // warnings) don't just see "exit code 1, output: (empty)" when the

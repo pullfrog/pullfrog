@@ -43,12 +43,14 @@ type CreateChangeImpactParams = {
   pullNumber: number;
   baseSha: string;
   headSha: string;
+  signal: AbortSignal;
 };
 
 type LookupReferencesParams = {
   candidates: AtomChange[];
   addedLines: Set<string>;
   treeish: string;
+  signal: AbortSignal;
 };
 
 type ImpactEntry = {
@@ -81,6 +83,7 @@ const MAX_ATOMS = 12;
 const MAX_REFERENCES = 6;
 const MAX_EXCERPT = 160;
 const MAX_BYTES = 16_000;
+const LOOKUP_BUDGET_MS = 60_000;
 
 function isSymbolShaped(atom: string): boolean {
   return atom.length >= 4 && atom.length <= MAX_ATOM_LENGTH && /[A-Z_]/.test(atom);
@@ -339,7 +342,10 @@ async function lookupReferences(params: LookupReferencesParams) {
   const buckets = emptyBuckets(params.candidates);
   if (params.candidates.length === 0) return { buckets, error: undefined };
 
-  const patterns = params.candidates.flatMap((candidate) => ["-e", candidate.atom]);
+  // ONE alternation, not an `-e` per atom: after every matching line git's look-ahead rescans each
+  // pattern to EOF, so one absent atom made the grep quadratic (20+ min on a 644 MB tree, #1468).
+  // atoms are word characters only, so they need no escaping.
+  const pattern = params.candidates.map((candidate) => candidate.atom).join("|");
   const child = spawn(
     "git",
     [
@@ -350,13 +356,14 @@ async function lookupReferences(params: LookupReferencesParams) {
       "-z",
       "-I",
       "-w",
-      "-F",
-      ...patterns,
+      "-E",
+      "-e",
+      pattern,
       params.treeish,
       "--",
       ":(top)",
     ],
-    { env: resolveEnv(undefined), stdio: ["ignore", "pipe", "pipe"] }
+    { env: resolveEnv(undefined), stdio: ["ignore", "pipe", "pipe"], signal: params.signal }
   );
   const state = createGrepRecordState();
   const maxAtomLength = Math.max(...params.candidates.map((candidate) => candidate.atom.length));
@@ -377,7 +384,8 @@ async function lookupReferences(params: LookupReferencesParams) {
   child.stderr.resume();
   const status = await new Promise<number | null>((resolve) => {
     child.once("error", (error) => {
-      spawnError = error.message;
+      // an abort's `cause` is the signal's reason: the budget's TimeoutError or the checkout deadline
+      spawnError = error.cause instanceof Error ? error.cause.message : error.message;
       resolve(null);
     });
     child.once("close", resolve);
@@ -487,7 +495,10 @@ export async function createChangeImpactArtifact(
     candidates: candidates.selected,
     addedLines: candidates.addedLines,
     treeish: params.headSha,
+    signal: AbortSignal.any([params.signal, AbortSignal.timeout(LOOKUP_BUDGET_MS)]),
   });
+  // the checkout deadline drops the artifact; the lookup budget alone renders as "unavailable"
+  params.signal.throwIfAborted();
   const artifact = formatArtifact({
     entries: candidates.selected.map((change) => {
       return { change, bucket: lookup.buckets.get(change.atom) ?? { count: 0, samples: [] } };

@@ -251,7 +251,7 @@ export async function main(): Promise<MainResult> {
   const repoDir = payload.cwd;
   const preIntrospectionDirty = repoDir ? await dirtyTrackedPaths({ cwd: repoDir }) : null;
   const opencodeCliPath = await agents.opencode.install();
-  captureBaselineModels(opencodeCliPath);
+  captureBaselineModels({ cliPath: opencodeCliPath, tmpdir });
 
   // DRAGON: nothing above this block may resolve a model or read a provider env var — console-stored
   // config (`OPENAI_COMPATIBLE_MODEL`, `BEDROCK_MODEL_ID`, …) is not in process.env yet. 0.1.85 did, and broke every such run (#1433).
@@ -293,7 +293,7 @@ export async function main(): Promise<MainResult> {
   // decision and the opencode-agent path of validateAgentApiKey — strictly
   // more accurate than the static envVars/managedCredentials catalog,
   // which can miss new auth shapes.
-  captureAuthorizedModels(opencodeCliPath);
+  captureAuthorizedModels({ cliPath: opencodeCliPath, tmpdir });
 
   // close the window opened before the baseline capture.
   if (preIntrospectionDirty && repoDir) {

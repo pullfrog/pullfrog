@@ -1,7 +1,8 @@
 // changes to shell security (filterEnv, spawnShell) should be reflected in wiki/security.md and docs/security.mdx
 import { type ChildProcess, type StdioOptions, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, openSync, writeFileSync } from "node:fs";
+import { once } from "node:events";
+import { closeSync, existsSync, openSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -605,6 +606,8 @@ Do NOT use this tool for git commands — use the dedicated git tools instead.`,
 
       const timeout = Math.min(params.timeout ?? 30000, 120000);
       const cwd = params.working_directory ?? process.cwd();
+      // checked here, not left to spawn: its ENOENT names the sandbox binary, not the directory.
+      if (!existsSync(cwd)) throw new Error(`working_directory does not exist: ${cwd}`);
       const env = resolveEnv(ctx.payload.shell === "enabled" ? "inherit" : "restricted");
 
       if (params.command.includes("agent-browser")) {
@@ -640,7 +643,9 @@ Do NOT use this tool for git commands — use the dedicated git tools instead.`,
           closeSync(logFd);
         }
         if (!proc.pid) {
-          throw new Error("failed to start background process");
+          // a spawn failure arrives as a later `error` event, which crashes the action unless handled.
+          const [error] = await once(proc, "error");
+          throw new Error(`failed to start background process: ${error.message}`);
         }
         proc.unref();
         writeFileSync(pidPath, `${proc.pid}\n`);

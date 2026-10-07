@@ -350,6 +350,12 @@ describe("isApiKeyAuthError", () => {
         "provider error: Your authentication token has been invalidated. Please try signing in again."
       )
     ).toBe(true);
+    // #1474 the reversed word order
+    expect(
+      isApiKeyAuthError(
+        "provider error: Encountered invalidated oauth token for user, failing request"
+      )
+    ).toBe(true);
     // #1162 the value is unsendable, not wrong — a line-wrapped paste
     expect(isApiKeyAuthError("API Error: Header '14' has invalid value: '***'")).toBe(true);
     // #1180 OpenAI writes the copula as "is", not "has"

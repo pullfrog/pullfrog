@@ -4,6 +4,7 @@ import {
   findAnthropicSpendCap,
   findProviderErrorMatch,
   isProviderBillingExhausted,
+  isProviderUsageLimit,
   isRouterKeylimitExhaustedError,
   isTransientUpstreamError,
 } from "./providerErrors.ts";
@@ -261,10 +262,25 @@ describe("isProviderBillingExhausted (#835)", () => {
     expect(isProviderBillingExhausted("FreeUsageLimitError: limit hit")).toBe(true);
   });
 
+  // #1474 — Zen and OpenAI wordings no earlier pattern reached
+  it.each([
+    "Upstream request failed: Insufficient account funds",
+    "You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.",
+  ])("matches %s", (text) => {
+    expect(isProviderBillingExhausted(`provider error: ${text}`)).toBe(true);
+  });
+
   it("returns false for unrelated provider errors", () => {
     expect(isProviderBillingExhausted('{"statusCode": 401}')).toBe(false);
     expect(isProviderBillingExhausted("rate_limit_exceeded")).toBe(false);
     expect(isProviderBillingExhausted("just some log noise")).toBe(false);
+  });
+});
+
+describe("isProviderUsageLimit (#1474)", () => {
+  it("matches the Codex / Zen usage cap and nothing billing-shaped", () => {
+    expect(isProviderUsageLimit("provider error: The usage limit has been reached")).toBe(true);
+    expect(isProviderUsageLimit("provider error: Insufficient account funds")).toBe(false);
   });
 });
 

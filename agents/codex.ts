@@ -970,9 +970,8 @@ export const codex = agent({
       initialUsage: initial.usage,
       reflectionPrompt: buildReflectionPrompt(ctx.toolState),
       // a resume needs the thread codex recorded. without one there is nothing
-      // to continue, and `resume --last` would be worse than not resuming: it
-      // picks the newest recorded session in this cwd, which on a self-hosted
-      // runner with a shared CODEX_HOME is somebody else's run.
+      // to continue, and `resume --last` could pick another run's session off CI,
+      // where CODEX_HOME is the shared ~/.local/share/codex (in CI it is per run).
       canResume: (r) => r.threadId !== undefined,
       resume: async (c) =>
         runCodex({

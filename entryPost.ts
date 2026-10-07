@@ -10,11 +10,12 @@
 // exited 0, which is #815. And the state gate stays, so the runs that rotate
 // no credential never pay an npm bootstrap to find that out —
 // `STATE_oauth_writeback` is exactly what `core.getState` reads, without
-// needing `@actions/core` to resolve.
+// needing `@actions/core` to resolve. `STATE_subscription_data_dir` is the
+// per-run dir a subscription run must not leave behind (#1475).
 
 import { runPullfrogCli } from "./runCli.ts";
 
-if (process.env.STATE_oauth_writeback) {
+if (process.env.STATE_oauth_writeback || process.env.STATE_subscription_data_dir) {
   runPullfrogCli({
     cliArgs: ["gha", "--post"],
     // the workflow is over; a bootstrap failure here must not turn a finished

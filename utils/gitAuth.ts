@@ -33,6 +33,7 @@ type GitAuthOptions = {
    * when present, an auth-class failure is retried ONCE with a fresh token.
    */
   refreshGitToken?: ((stale: string) => Promise<string>) | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 /**
@@ -219,6 +220,7 @@ export async function $git(
         GIT_CONFIG_PARAMETERS: "",
       },
       activityTimeout: 0,
+      signal: options.signal,
     });
 
     if (result.stderr.includes("askpass-compromised")) {

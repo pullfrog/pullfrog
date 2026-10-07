@@ -24,7 +24,9 @@
 // (`validateAgentApiKey` + `autoSelectModel`) share one shell-out.
 
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { log } from "./cli.ts";
+import { getSubscriptionDataHome } from "./codexHome.ts";
 
 let baseline: Set<string> | undefined;
 let authorized: Set<string> | undefined;
@@ -35,14 +37,28 @@ let failure: string | undefined;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching SGR escapes is the point
 const ANSI_PATTERN = /\[[0-9;]*m/g;
 
-function readModels(cliPath: string): Set<string> {
+/**
+ * HOME and XDG dirs for every opencode subprocess, all inside this run. the runner user's own
+ * are shared by every run on a self-hosted host, and so is opencode's SQLite db in them (#1475).
+ */
+export function openCodeHomeEnv(tmpdir: string) {
+  return {
+    HOME: tmpdir,
+    XDG_CONFIG_HOME: join(tmpdir, ".config"),
+    XDG_DATA_HOME: getSubscriptionDataHome() ?? join(tmpdir, ".local", "share"),
+    XDG_CACHE_HOME: join(tmpdir, ".cache"),
+    XDG_STATE_HOME: join(tmpdir, ".local", "state"),
+  };
+}
+
+function readModels(params: { cliPath: string; tmpdir: string }): Set<string> {
   // spawnSync, not execFileSync: we want opencode's stderr as a value rather
   // than a throw, and `stdio` keeps it out of the job log (execFileSync leaks
   // it to the parent, so a config error printed once per capture).
-  const result = spawnSync(cliPath, ["models"], {
+  const result = spawnSync(params.cliPath, ["models"], {
     encoding: "utf-8",
     timeout: 30_000,
-    env: process.env,
+    env: { ...process.env, ...openCodeHomeEnv(params.tmpdir) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) {
@@ -78,16 +94,16 @@ export function getModelsFailure(): string | undefined {
 
 /** Snapshot the set of models OpenCode can serve from the current env, BEFORE
  * Pullfrog-stored credentials are merged in. Call once early in `main.ts`. */
-export function captureBaselineModels(cliPath: string): void {
-  baseline = readModels(cliPath);
+export function captureBaselineModels(params: { cliPath: string; tmpdir: string }): void {
+  baseline = readModels(params);
   log.debug(`» opencode baseline: ${baseline.size} models`);
 }
 
 /** Snapshot the set of models OpenCode can serve AFTER dbSecrets +
  * Codex auth.json are in place. Logs the diff against the baseline as
  * `» BYOK auth enabled N model(s): …`. */
-export function captureAuthorizedModels(cliPath: string): void {
-  authorized = readModels(cliPath);
+export function captureAuthorizedModels(params: { cliPath: string; tmpdir: string }): void {
+  authorized = readModels(params);
   const base = baseline;
   if (base) {
     const diff = [...authorized].filter((m) => !base.has(m));

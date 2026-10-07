@@ -23,6 +23,8 @@ import { getApiUrl } from "./apiUrl.ts";
 import { PULLFROG_DATA_DIR, unhostedSubscriptions } from "./codexHome.ts";
 import { getModelsFailure } from "./openCodeModels.ts";
 import { PROVIDER_DASHBOARDS } from "./providerDashboards.ts";
+import type { CredentialCandidate } from "./subscriptionCredentials.ts";
+import type { ProbeVerdict } from "./subscriptionProbe.ts";
 import {
   GOOGLE_CLOUD_PROJECT_ENV,
   readProjectIdFromVertexServiceAccountJson,
@@ -99,6 +101,13 @@ export const ROUTER_UNFUNDED_MARKER = "your Pullfrog Router balance is empty";
  * hand that agent the ability to suppress every other error body.
  */
 export const CREDENTIAL_REJECTED_MARKER = "was rejected by its provider";
+
+/**
+ * marker for the credential pool's refusal: every configured credential for the
+ * model was rejected or exhausted. verbatim for the same reason as
+ * `CREDENTIAL_REJECTED_MARKER` — each bullet quotes the probe's verdict.
+ */
+export const CREDENTIAL_POOL_REFUSED_MARKER = "No configured credential can serve this run";
 
 /**
  * Three ways to arrive at "the runner has no key", each with a different CTA:
@@ -661,6 +670,8 @@ export function isOAuthCredentialExpiredError(text: string): boolean {
     // the provider no longer recognises the token at all (#1086) — same dead
     // credential, phrased as a lookup miss rather than a state transition.
     /Could not find the appropriate key in your authentication token/i.test(text) ||
+    // the reversed word order: `Encountered invalidated oauth token for user` (#1474).
+    /(?:expired|invalidated|revoked) (?:OAuth|authentication) token/i.test(text) ||
     /Token refresh failed/i.test(text)
   );
 }
@@ -785,7 +796,7 @@ export function buildRejectedCredentialError(params: {
   const where = params.inPullfrogStore
     ? `[Update it in Pullfrog →](${settingsUrl})`
     : `[Update the GitHub Actions secret →](https://github.com/${params.owner}/${params.name}/settings/secrets/actions)`;
-  const keysUrl = providerKeysUrl(params.credential);
+  const keysUrl = providerDashboard(params.credential)?.keys;
   const issue = keysUrl ? `[Issue a new key →](${keysUrl}) · ` : "";
 
   return [
@@ -798,15 +809,73 @@ export function buildRejectedCredentialError(params: {
 }
 
 /**
- * The page where the provider that owns this env var issues API keys. First
- * match wins, which only matters for `OPENCODE_API_KEY` — Zen and Go share it,
- * and both rows name the same keys page, so the order is not load-bearing.
+ * The dashboard of the provider that owns this env var. First match wins, which
+ * only matters for `OPENCODE_API_KEY` — Zen and Go share it, and both rows name
+ * the same keys page, so the order is not load-bearing for `keys`.
  */
-function providerKeysUrl(credential: string): string | undefined {
+function providerDashboard(credential: string) {
   for (const [id, provider] of Object.entries(providers)) {
-    if (provider.envVars.includes(credential)) return PROVIDER_DASHBOARDS[id]?.keys;
+    if (provider.envVars.includes(credential)) return PROVIDER_DASHBOARDS[id];
   }
   return undefined;
+}
+
+export type RefusedCredential = {
+  name: string;
+  source: CredentialCandidate["source"] | "workflow";
+  verdict: Extract<ProbeVerdict, { status: "rejected" | "exhausted" }>;
+};
+
+/**
+ * The credential pool probed every credential configured for the model and
+ * none can serve it. One bullet per credential: the probe's own verdict, quoted,
+ * plus the remedy its kind and status call for — never inferred from the prose.
+ */
+export function buildCredentialPoolRefusedError(params: {
+  model: string;
+  refused: RefusedCredential[];
+  owner: string;
+  name: string;
+}): string {
+  const settingsUrl = `${getApiUrl()}/console/${params.owner}/${params.name}`;
+  return [
+    `**${CREDENTIAL_POOL_REFUSED_MARKER}.** Every credential configured for \`${params.model}\` was rejected or is out of quota, so the agent never ran.`,
+    "",
+    ...params.refused.map(
+      (credential) => `- ${describeRefusal({ ...params, credential, settingsUrl })}`
+    ),
+    "",
+    `[Model settings →](${settingsUrl}) · [Ask in Discord →](https://discord.gg/8y96raFg8e)`,
+  ].join("\n");
+}
+
+function describeRefusal(params: {
+  credential: RefusedCredential;
+  owner: string;
+  name: string;
+  settingsUrl: string;
+}) {
+  const credential = params.credential;
+  const verdict = credential.verdict;
+  const workflow = credential.source === "workflow";
+  const head = `\`${credential.name}\` from ${workflow ? "the workflow" : `${credential.source} scope`}: \`${verdict.detail}\` —`;
+  const subscription = SUBSCRIPTION_CREDENTIALS[credential.name];
+  const dashboard = providerDashboard(credential.name);
+  if (verdict.status === "exhausted" && subscription) {
+    const wait = verdict.resetAt
+      ? `it resets at **${verdict.resetAt.toISOString().slice(0, 16).replace("T", " ")} UTC**; re-trigger after that`
+      : "re-trigger after the limit resets";
+    return `${head} ${wait}, or add an API key for this provider, which Pullfrog falls back to automatically.`;
+  }
+  if (verdict.status === "exhausted")
+    return `${head} add credit or raise its quota with the provider.${dashboard ? ` [Top up →](${dashboard.billing})` : ""}`;
+  if (subscription)
+    return `${head} re-authenticate with \`${subscription.command}\`, or switch this repo to a model you hold an API key for. [Re-authenticate →](${subscription.docs})`;
+  const where = workflow
+    ? `[Update the GitHub Actions secret →](https://github.com/${params.owner}/${params.name}/settings/secrets/actions)`
+    : `[Update it in Pullfrog →](${params.settingsUrl})`;
+  const issue = dashboard?.keys ? `[Issue a new key →](${dashboard.keys}) · ` : "";
+  return `${head} issue a new key and update the copy Pullfrog uses. ${issue}${where}`;
 }
 
 /**
