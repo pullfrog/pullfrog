@@ -165,8 +165,9 @@ export const providers = {
       },
       "claude-haiku": {
         displayName: "Claude Haiku",
-        resolve: "anthropic/claude-haiku-4-5",
-        openRouterResolve: "openrouter/anthropic/claude-haiku-4.5",
+        resolve: "anthropic/claude-haiku-5-5",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/anthropic/claude-haiku-5.5",
       },
     },
   }),
@@ -584,8 +585,9 @@ export const providers = {
       },
       "claude-haiku": {
         displayName: "Claude Haiku",
-        resolve: "opencode/claude-haiku-4-5",
-        openRouterResolve: "openrouter/anthropic/claude-haiku-4.5",
+        resolve: "opencode/claude-haiku-5-5",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/anthropic/claude-haiku-5.5",
       },
       "gpt-sol": {
         displayName: "GPT Sol",
@@ -1356,7 +1358,8 @@ export const providers = {
       },
       "claude-haiku": {
         displayName: "Claude Haiku",
-        resolve: "vercel/anthropic/claude-haiku-4.5",
+        resolve: "vercel/anthropic/claude-haiku-5.5",
+        effort: ["none", "low", "medium", "high", "xhigh", "max"],
       },
       "gpt-sol": {
         displayName: "GPT Sol",

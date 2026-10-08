@@ -34,7 +34,7 @@ describe("deriveSubagentModels", () => {
       expect(deriveSubagentModels("opencode/claude-sonnet-5-5")).toEqual({ reviewer: undefined });
     });
     it("haiku has no downshift", () => {
-      expect(deriveSubagentModels("anthropic/claude-haiku-4-5")).toEqual({ reviewer: undefined });
+      expect(deriveSubagentModels("anthropic/claude-haiku-5-5")).toEqual({ reviewer: undefined });
     });
   });
 
