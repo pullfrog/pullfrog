@@ -125,6 +125,7 @@ export async function executeLifecycleHook(
         command: params.script,
         env: resolveEnv(params.shell === "enabled" ? "inherit" : "restricted"),
         cwd: process.cwd(),
+        seal: params.shell !== "enabled",
         timeout: LIFECYCLE_HOOK_TIMEOUT_MS,
         onStdout: (chunk) => process.stdout.write(chunk),
         onStderr: (chunk) => process.stderr.write(chunk),

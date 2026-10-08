@@ -1,3 +1,9 @@
+import {
+  CLAUDE_PRETOOL_GATE_FILENAME,
+  CLAUDE_SETTINGS_FILENAME,
+  CLAUDE_STOP_HOOK_FILENAME,
+} from "./claudePretoolGate.ts";
+
 // Canonical native-FS-tool deny set shared by the OpenCode and Claude harnesses.
 //
 // The agent's NATIVE FS tools (Read/Write/Edit/Glob/Grep) run in the agent
@@ -80,3 +86,35 @@ export const GIT_NATIVE_WRITE_DENY_CLAUDE: string[] = [
 export const GIT_NATIVE_READ_DENY_CLAUDE: string[] = CLAUDE_READ_TOOLS.map(
   (tool) => `${tool}(.git/config)`
 );
+
+// Pullfrog-managed hook/gate/plugin scripts. They live in the per-run tmpdir
+// (== the agent's HOME) and EXECUTE with the agent's full, secret-bearing
+// environment — the Claude PreToolUse gate + Stop hook, and the OpenCode
+// plugins. A prompt-injected agent that rewrites one to print the env exfils
+// every secret, which a token-exfil run did in July 2026. The agent owns these
+// files, so the no_new_privs shell seal does not stop a shell rewrite (no root
+// needed); and the native FS tools run outside the shell sandbox entirely. So
+// two independent seals, mirroring `.git`: a sandbox read-only bind on every
+// asset (MCP shell, both agents — see buildFsMounts in action/mcp/shell.ts) and
+// a native-tool deny (Claude settings deny / OpenCode external_directory deny).
+// Nothing legitimately writes these at runtime: the action process writes them
+// once before the agent starts, OUTSIDE the sandbox, so the binds never block
+// our own writes.
+
+/** Claude hook assets, relative to the per-run tmpdir (== HOME). */
+export const CLAUDE_HOOK_ASSET_RELPATHS: readonly string[] = [
+  CLAUDE_PRETOOL_GATE_FILENAME,
+  CLAUDE_STOP_HOOK_FILENAME,
+  CLAUDE_SETTINGS_FILENAME,
+];
+
+/** OpenCode auto-discovers every plugin in this dir (relative to tmpdir); seal
+ * the whole dir so both bundled plugins and any future one are covered. */
+export const OPENCODE_PLUGIN_DIR_RELPATH = ".config/opencode/plugin" as const;
+
+/** every hook asset, tmpdir-relative — the read-only-bind set for the MCP
+ * shell, which both agents share. dir entries bind recursively like `.git`. */
+export const HOOK_ASSET_TMPDIR_RELPATHS: readonly string[] = [
+  ...CLAUDE_HOOK_ASSET_RELPATHS,
+  OPENCODE_PLUGIN_DIR_RELPATH,
+];

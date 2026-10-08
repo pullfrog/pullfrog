@@ -54,9 +54,15 @@ import {
   buildClaudePretoolGateSettings,
   buildClaudePretoolGateSource,
   CLAUDE_PRETOOL_GATE_FILENAME,
+  CLAUDE_SETTINGS_FILENAME,
+  CLAUDE_STOP_HOOK_FILENAME,
 } from "./claudePretoolGate.ts";
 import { startGateServer } from "./gateServer.ts";
-import { GIT_NATIVE_READ_DENY_CLAUDE, GIT_NATIVE_WRITE_DENY_CLAUDE } from "./nativeFsDenies.ts";
+import {
+  CLAUDE_HOOK_ASSET_RELPATHS,
+  GIT_NATIVE_READ_DENY_CLAUDE,
+  GIT_NATIVE_WRITE_DENY_CLAUDE,
+} from "./nativeFsDenies.ts";
 import { finalizeAgentResult } from "./postRun.ts";
 import { REVIEWER_AGENT_NAME, REVIEWER_SYSTEM_PROMPT } from "./reviewer.ts";
 import { formatWithLabel, ORCHESTRATOR_LABEL, SessionLabeler } from "./sessionLabeler.ts";
@@ -177,7 +183,7 @@ function writePretoolGateAssets(params: { ctx: AgentRunContext; stopHookPath: st
   const scriptPath = join(params.ctx.tmpdir, CLAUDE_PRETOOL_GATE_FILENAME);
   writeFileSync(scriptPath, buildClaudePretoolGateSource(params.ctx.subagentDeniedTools));
   chmodSync(scriptPath, 0o755);
-  const settingsPath = join(params.ctx.tmpdir, "pullfrog-claude-settings.json");
+  const settingsPath = join(params.ctx.tmpdir, CLAUDE_SETTINGS_FILENAME);
   const settings = buildClaudeSettings({
     ctx: params.ctx,
     stopHookPath: params.stopHookPath,
@@ -1027,6 +1033,16 @@ function buildClaudeSettings(params: ManagedSettingsParams): Record<string, unkn
     `Glob(${path}/**)`,
     `Glob(/${path}/**)`,
   ]);
+  // write-deny the pullfrog hook assets so a prompt-injected agent cannot
+  // rewrite the gate/Stop hook to capture the env it runs with. exact absolute
+  // paths under tmpdir; dual leading-slash mirrors the secretDenyPaths form.
+  // reads stay allowed (the files are not secret; the write is the vector).
+  // canonical set: action/agents/nativeFsDenies.ts. the MCP shell is sealed
+  // separately by the read-only bind in action/mcp/shell.ts.
+  const hookDeny = CLAUDE_HOOK_ASSET_RELPATHS.flatMap((rel) => {
+    const abs = join(params.ctx.tmpdir, rel);
+    return [`Edit(${abs})`, `Edit(/${abs})`];
+  });
   // single builder for both the PreToolUse gate hook and the native tool deny —
   // both fields are consumed here (and identically in the flag-settings path via
   // writePretoolGateAssets), keeping CLAUDE_DENY_RULES the single source.
@@ -1055,6 +1071,7 @@ function buildClaudeSettings(params: ManagedSettingsParams): Record<string, unkn
         ...GIT_NATIVE_WRITE_DENY_CLAUDE,
         ...GIT_NATIVE_READ_DENY_CLAUDE,
         ...toolDeny,
+        ...hookDeny,
       ],
     },
     sandbox: {
@@ -1221,7 +1238,7 @@ export const claude = agent({
     // managed Stop hook that curls a sidecar gate server. see
     // `buildStopHookScript` for the cost rationale (PR #792 audit) and
     // `gateServer.ts` for the decision policy.
-    const stopHookPath = join(ctx.tmpdir, "pullfrog-stop-hook.sh");
+    const stopHookPath = join(ctx.tmpdir, CLAUDE_STOP_HOOK_FILENAME);
     writeFileSync(stopHookPath, buildStopHookScript(), { mode: 0o755 });
 
     const pretoolGate = writePretoolGateAssets({ ctx, stopHookPath });

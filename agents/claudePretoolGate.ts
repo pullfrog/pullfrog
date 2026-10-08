@@ -41,6 +41,12 @@
  */
 export const CLAUDE_PRETOOL_GATE_FILENAME = "pullfrog-pretool-gate.mjs" as const;
 
+/** the Stop-hook script and the flag `--settings` JSON, both written into the
+ * per-run tmpdir alongside the gate. named here so the hook-asset seal
+ * (nativeFsDenies.ts) and the writers in claude.ts share one source. */
+export const CLAUDE_STOP_HOOK_FILENAME = "pullfrog-stop-hook.sh" as const;
+export const CLAUDE_SETTINGS_FILENAME = "pullfrog-claude-settings.json" as const;
+
 /**
  * Build the gate script source, embedding the run's derived denied-tool set
  * (see `subagentDeniedToolNames` in action/agents/subagentToolGates.ts).

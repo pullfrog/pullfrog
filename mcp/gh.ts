@@ -71,6 +71,8 @@ export function GhTool(ctx: ToolContext) {
         command,
         cwd: process.cwd(),
         timeout: GH_TIMEOUT_MS,
+        // `gh` never needs root, and a shell alias would otherwise reach `sudo`
+        seal: true,
         env: {
           ...filterEnvForUntrustedCode(),
           GH_TOKEN: ctx.ghToken,

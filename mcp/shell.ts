@@ -7,6 +7,7 @@ import { userInfo } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { type } from "arktype";
+import { HOOK_ASSET_TMPDIR_RELPATHS } from "../agents/nativeFsDenies.ts";
 import { ensureBrowserDaemon } from "../utils/browser.ts";
 import { log } from "../utils/log.ts";
 import { resolveEnv } from "../utils/secrets.ts";
@@ -32,9 +33,24 @@ type SpawnParams = {
   env: Record<string, string | undefined>;
   cwd: string;
   stdio: StdioOptions;
+  /** set no_new_privs on the command so setuid `sudo` cannot re-elevate to root
+   * inside the namespace and unmount the protective mounts. false only for
+   * `shell: enabled`, whose users are trusted and may need `sudo apt-get`. */
+  seal: boolean;
 };
 
 export type SandboxMethod = "unshare" | "sudo-unshare" | "userns-unshare" | "none";
+
+/** `setpriv` args that leave a root process no capabilities and no way to regain one. */
+const DROP_ALL_PRIVS = [
+  "--no-new-privs",
+  "--bounding-set",
+  "-all",
+  "--inh-caps",
+  "-all",
+  "--ambient-caps",
+  "-all",
+];
 
 /** cached result of sandbox capability check */
 let detectedSandboxMethod: SandboxMethod | undefined;
@@ -61,12 +77,15 @@ function detectSandboxMethod(): SandboxMethod {
     return "none";
   }
 
-  // try unprivileged unshare first (works on some systems)
+  // try unprivileged unshare first (works where the job already runs as root).
+  // each probe runs the `setpriv` its branch exec's, so a runner without it falls
+  // through to the actionable CI-gate error instead of failing every command.
   try {
-    const result = spawnSync("unshare", ["--pid", "--fork", "--mount-proc", "true"], {
-      timeout: 5000,
-      stdio: "ignore",
-    });
+    const result = spawnSync(
+      "unshare",
+      ["--pid", "--fork", "--mount-proc", "setpriv", ...DROP_ALL_PRIVS, "true"],
+      { timeout: 5000, stdio: "ignore" }
+    );
     if (result.status === 0) {
       detectedSandboxMethod = "unshare";
       log.debug("PID namespace isolation enabled (unprivileged unshare)");
@@ -78,10 +97,11 @@ function detectSandboxMethod(): SandboxMethod {
 
   // sudo unshare (works on GHA runners)
   try {
-    const result = spawnSync("sudo", ["unshare", "--pid", "--fork", "--mount-proc", "true"], {
-      timeout: 5000,
-      stdio: "ignore",
-    });
+    const result = spawnSync(
+      "sudo",
+      ["unshare", "--pid", "--fork", "--mount-proc", "setpriv", "--no-new-privs", "true"],
+      { timeout: 5000, stdio: "ignore" }
+    );
     if (result.status === 0) {
       detectedSandboxMethod = "sudo-unshare";
       log.debug("PID namespace isolation enabled (sudo unshare)");
@@ -124,13 +144,7 @@ function detectSandboxMethod(): SandboxMethod {
         "--fork",
         "--mount",
         "setpriv",
-        "--no-new-privs",
-        "--bounding-set",
-        "-all",
-        "--inh-caps",
-        "-all",
-        "--ambient-caps",
-        "-all",
+        ...DROP_ALL_PRIVS,
         "true",
       ],
       { timeout: 5000, stdio: ["ignore", "ignore", "pipe"] }
@@ -158,11 +172,14 @@ function detectSandboxMethod(): SandboxMethod {
 // strip inherited proc mount that sits underneath --mount-proc's overlay.
 // --mount-proc mounts fresh proc on top, but `umount /proc` peels it off and exposes the
 // host's proc with all host PIDs — allowing /proc/<pid>/environ exfiltration.
-// double-umount removes both layers, then a clean mount gives only sandbox PIDs.
+// drain every proc layer, then a clean mount gives only sandbox PIDs. `-R` is
+// load-bearing: GitHub runners carry a binfmt_misc submount under the host's proc,
+// so a plain `umount /proc` on that layer fails EBUSY and leaves it in place.
 // on unprivileged systems where umount fails, --mount-proc still provides isolation
 // (the agent also can't umount in that case).
 const PROC_CLEANUP =
-  "umount /proc 2>/dev/null; umount /proc 2>/dev/null; mount -t proc proc /proc 2>/dev/null;";
+  "for i in 1 2 3 4; do grep -q ' - proc ' /proc/self/mountinfo 2>/dev/null || break; " +
+  "umount -R /proc 2>/dev/null || break; done; mount -t proc proc /proc 2>/dev/null;";
 
 // block container-runtime sockets that would otherwise grant a PID-namespace
 // escape: `docker run --pid=host --privileged busybox cat /proc/<pid>/environ`
@@ -224,15 +241,15 @@ const SOCKET_CLEANUP = [
 //
 // these mounts run as root inside the namespace (before `exec su -p` drops
 // to runner). after the drop, runner has no CAP_SYS_ADMIN in the host, so
-// can't undo from outside. intra-namespace sudo undo is theoretically
-// possible — same risk profile as SOCKET_CLEANUP, accepted per wiki/security.md
-// "why sudo inside sandbox doesn't break security".
+// can't undo from outside. intra-namespace sudo CAN undo them — a sealed
+// command (`no_new_privs`, see SpawnParams.seal) cannot regain root; `enabled`
+// mode keeps sudo on trust. see wiki/security.md "sudo inside the sandbox".
 //
-// in the unprivileged-unshare path (Docker --privileged test environments),
-// the user retains CAP_SYS_ADMIN inside the user namespace and could
-// `umount` these. production seals them one of two ways: sudo-unshare via the
-// `su -p` drop, and userns-unshare via the `setpriv` cap-drop plus MNT_LOCKED
-// on every inherited mount (see the userns branch in spawnShell).
+// in the unprivileged-unshare path (a job running as root: Docker --privileged
+// test environments and root self-hosted images), the command holds
+// CAP_SYS_ADMIN and could `umount` these unless sealed. seals: sudo-unshare via
+// the `su -p` drop plus no_new_privs, and unshare / userns-unshare via the
+// `setpriv` cap-drop (plus MNT_LOCKED on every inherited mount for userns).
 //
 // repoDir is interpolated by the action process from resolveRepoRoot() —
 // NOT $PWD — because spawnShell's cwd is agent-controllable via
@@ -262,9 +279,33 @@ function buildFsMounts(repoDir: string): string {
     // one tier it exists to protect. `$RUNNER_TEMP` above is safe only because
     // `RUNNER_` is an allowed prefix.
     shimMount(),
+    hookMounts(),
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/** pullfrog-managed hook/gate scripts live in the per-run HOME (tmpdir) and
+ * execute with the agent's full environment. the agent runs the sandboxed
+ * shell as the uid that OWNS them, so the no_new_privs seal does not stop it
+ * rewriting one to capture that env — a leak a token-exfil run found in July.
+ * ro-bind each (the names are deterministic under PULLFROG_TEMP_DIR; the action
+ * writes them before the first shell call) so the sandboxed shell cannot. the
+ * action process writes them OUTSIDE this namespace, so our own writes are
+ * unaffected. native FS tools are denied separately (claude settings deny,
+ * opencode external_directory deny) since they run outside this sandbox.
+ *
+ * this leaf ro-bind does NOT stop the agent renaming an owned ancestor dir
+ * (tmpdir, `.config/opencode`) and planting a tampered asset — a known, open
+ * gap (see wiki/security.md "Scope and Limitations"); the direct rewrite is
+ * sealed, the rename variant is not. */
+function hookMounts(): string {
+  const tempDir = process.env.PULLFROG_TEMP_DIR;
+  if (!tempDir) return "";
+  return HOOK_ASSET_TMPDIR_RELPATHS.map((rel) => {
+    const path = join(tempDir, rel).replace(/'/g, "'\\''");
+    return `[ -e '${path}' ] && mount --bind '${path}' '${path}' 2>/dev/null && mount -o remount,bind,ro '${path}' 2>/dev/null;`;
+  }).join(" ");
 }
 
 /** read-only bind for the corepack shim dir, or "" when this run has no tmpdir. */
@@ -332,6 +373,11 @@ function spawnShell(params: SpawnParams): ChildProcess {
   const fsMounts = buildFsMounts(repoRoot);
 
   if (sandboxMethod === "unshare") {
+    // the job itself is root here, so sealing must drop capabilities, not just
+    // block setuid — the same seal as the userns branch below.
+    const command = params.seal
+      ? `exec setpriv ${DROP_ALL_PRIVS.join(" ")} bash -c '${params.command.replace(/'/g, "'\\''")}'`
+      : params.command;
     return spawn(
       "unshare",
       [
@@ -340,7 +386,7 @@ function spawnShell(params: SpawnParams): ChildProcess {
         "--mount-proc",
         "bash",
         "-c",
-        `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} ${params.command}`,
+        `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} ${command}`,
       ],
       spawnOpts
     );
@@ -385,7 +431,7 @@ function spawnShell(params: SpawnParams): ChildProcess {
         "bash",
         "-c",
         `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} ` +
-          `exec setpriv --no-new-privs --bounding-set -all --inh-caps -all --ambient-caps -all ` +
+          `exec setpriv ${DROP_ALL_PRIVS.join(" ")} ` +
           `bash -c '${escaped}'`,
       ],
       spawnOpts
@@ -408,7 +454,13 @@ function spawnShell(params: SpawnParams): ChildProcess {
     // restore it from the SANDBOX_PATH env var that survives the su transition.
     // biome-ignore lint/suspicious/noTemplateCurlyInString: we need to restore the PATH variable
     const pathRestore = 'export PATH="${SANDBOX_PATH:-$PATH}"; ';
-    const escaped = (pathRestore + params.command).replace(/'/g, "'\\''");
+    const command = pathRestore + params.command;
+    // after `su`, which needs its own setuid privileges; the unprivileged user
+    // cannot drop the bounding set, but no_new_privs alone blocks every setuid path.
+    const sealed = params.seal
+      ? `exec setpriv --no-new-privs bash -c '${command.replace(/'/g, "'\\''")}'`
+      : command;
+    const escaped = sealed.replace(/'/g, "'\\''");
     envArgs.push(`SANDBOX_PATH=${params.env.PATH ?? ""}`);
     return spawn(
       "sudo",
@@ -478,6 +530,7 @@ export async function runSandboxed(params: {
   env: Record<string, string | undefined>;
   cwd: string;
   timeout: number;
+  seal: boolean;
   /** live-stream chunks as they arrive, on top of the buffered `output`.
    * lifecycle hooks use this to keep a long `pnpm test` visible in the
    * workflow log instead of silent until it exits. */
@@ -489,6 +542,7 @@ export async function runSandboxed(params: {
     env: params.env,
     cwd: params.cwd,
     stdio: ["ignore", "pipe", "pipe"],
+    seal: params.seal,
   });
 
   // bounded: agent-chosen output accumulates in OUR process, and a `data`
@@ -609,6 +663,7 @@ Do NOT use this tool for git commands — use the dedicated git tools instead.`,
       // checked here, not left to spawn: its ENOENT names the sandbox binary, not the directory.
       if (!existsSync(cwd)) throw new Error(`working_directory does not exist: ${cwd}`);
       const env = resolveEnv(ctx.payload.shell === "enabled" ? "inherit" : "restricted");
+      const seal = ctx.payload.shell !== "enabled";
 
       if (params.command.includes("agent-browser")) {
         const daemonError = ensureBrowserDaemon(ctx.toolState);
@@ -638,6 +693,7 @@ Do NOT use this tool for git commands — use the dedicated git tools instead.`,
             env,
             cwd,
             stdio: ["ignore", logFd, logFd],
+            seal,
           });
         } finally {
           closeSync(logFd);
@@ -658,7 +714,7 @@ Do NOT use this tool for git commands — use the dedicated git tools instead.`,
         };
       }
 
-      const result = await runSandboxed({ command: params.command, env, cwd, timeout });
+      const result = await runSandboxed({ command: params.command, env, cwd, timeout, seal });
 
       if (result.exitCode !== 0) {
         log.info(`shell command failed with exit code ${result.exitCode}: ${params.command}`);

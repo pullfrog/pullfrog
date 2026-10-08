@@ -1289,8 +1289,19 @@ export const opencode = agent({
     // recursive in opencode's Wildcard dialect. grep/glob match the search
     // pattern not a filepath, so they can't be path-denied (documented in
     // wiki/security.md). canonical surfaces: action/agents/nativeFsDenies.ts.
+    // the plugin dir sits under /tmp (the per-run HOME), which the /tmp allow
+    // would otherwise expose to native FS tools. deny it back AFTER that allow
+    // (last-match-wins) so the agent cannot rewrite a pullfrog plugin to capture
+    // the env it loads with — the OpenCode side of the hook seal. opencode's own
+    // plugin loader is unaffected (it does not go through this tool gate). the
+    // MCP shell is sealed separately by the read-only bind in action/mcp/shell.ts.
     const permissionOverride = JSON.stringify({
-      external_directory: { "*": "deny", "/tmp/*": "allow" },
+      external_directory: {
+        "*": "deny",
+        "/tmp/*": "allow",
+        [opencodePluginDir]: "deny",
+        [`${opencodePluginDir}/*`]: "deny",
+      },
       read: { "*": "allow", ...GIT_NATIVE_READ_DENY_OPENCODE },
       edit: { "*": "allow", ...GIT_NATIVE_WRITE_DENY_OPENCODE },
     });
