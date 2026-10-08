@@ -742,13 +742,12 @@ export const providers = {
         openRouterResolve: "openrouter/qwen/qwen3.8-flash",
       },
       // Zen lists Mistral Large 4 at half its list price for launch, level with
-      // the routers. hidden until a published `pullfrog` resolves it, as there.
+      // the routers.
       "mistral-large": {
         displayName: "Mistral Large",
         resolve: "opencode/mistral-large-4",
         effort: ["none", "high"],
         openRouterResolve: "openrouter/mistralai/mistral-large-4-0",
-        hidden: true,
       },
       "gpt-5-nano": {
         displayName: "GPT Nano",
@@ -833,7 +832,7 @@ export const providers = {
         isFree: true,
       },
       // Zen's FREE preview (listed 2026-10-06), the sixth promo, on Fledge
-      // Alpha's terms. hidden until a published `pullfrog` resolves it.
+      // Alpha's terms.
       exo: {
         displayName: "Exo",
         description: "Preview; data may be used to improve it",
@@ -843,7 +842,6 @@ export const providers = {
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
         // see the big-pickle note above (#1077).
         isFree: true,
-        hidden: true,
       },
       // Zen's live free MiMo, and the second free row in a menu that big-pickle
       // was alone in since `mimo-v2-pro-free` lost its model.
@@ -1129,6 +1127,9 @@ export const providers = {
       "claude-haiku": {
         displayName: "Claude Haiku",
         resolve: "openrouter/~anthropic/claude-haiku-latest",
+        // the rolling alias moved to Haiku 5.5 on 2026-10-07, which publishes
+        // the ladder Haiku 4.5 did not.
+        effort: ["low", "medium", "high", "xhigh", "max"],
         openRouterResolve: "openrouter/~anthropic/claude-haiku-latest",
       },
       // pinned to the explicit Sol/Terra/Luna tiers (not the ~openai/gpt-latest
@@ -1301,16 +1302,13 @@ export const providers = {
         effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
         openRouterResolve: "openrouter/meta/muse-spark-1.3-contributor",
       },
-      // Mistral's flagship (public preview, 2026-10-06), on the routers only:
-      // the catalog carries no direct Mistral provider. out of the pickers
-      // until a published `pullfrog` resolves the slug; see "A new alias
-      // reaches the picker at merge".
+      // Mistral's flagship (public preview, 2026-10-06), on the routers and
+      // Zen only: the catalog carries no direct Mistral provider.
       "mistral-large": {
         displayName: "Mistral Large",
         resolve: "openrouter/mistralai/mistral-large-4-0",
         effort: ["none", "high"],
         openRouterResolve: "openrouter/mistralai/mistral-large-4-0",
-        hidden: true,
       },
     },
   }),
@@ -1403,12 +1401,10 @@ export const providers = {
         resolve: "vercel/meta/muse-spark-1.3",
         effort: ["minimal", "low", "medium", "high", "xhigh"],
       },
-      // hidden until a published `pullfrog` resolves it, as on OpenRouter.
       "mistral-large": {
         displayName: "Mistral Large",
         resolve: "vercel/mistral/mistral-large-4",
         effort: ["none", "low", "medium", "high"],
-        hidden: true,
       },
     },
   }),
