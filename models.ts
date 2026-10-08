@@ -851,7 +851,7 @@ export const providers = {
       },
       // Zen's FREE StepFun preview (listed 2026-10-08), the seventh promo. Zen's
       // docs: zero retention, no training. Go lists the same free id; one key
-      // reaches both. hidden until a published `pullfrog` resolves it.
+      // reaches both.
       "step-5-preview": {
         displayName: "Step 5 Preview",
         description: "StepFun preview, free for a limited time",
@@ -860,7 +860,6 @@ export const providers = {
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
         // see the big-pickle note above (#1077).
         isFree: true,
-        hidden: true,
       },
       // Zen's live free MiMo, and the second free row in a menu that big-pickle
       // was alone in since `mimo-v2-pro-free` lost its model.
