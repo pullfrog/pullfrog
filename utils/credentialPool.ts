@@ -40,7 +40,10 @@ function saveReceipts() {
 }
 
 const select = yes.mutation({
-  run: async (input: { access: CredentialAccess; candidate: CredentialCandidate }) => {
+  run: async (
+    input: { access: CredentialAccess; candidate: CredentialCandidate },
+    ctx: yes.ctx
+  ) => {
     const response = await apiFetch({
       path: "/api/runtime/credentials",
       method: "POST",
@@ -49,7 +52,7 @@ const select = yes.mutation({
         "content-type": "application/json",
       },
       body: JSON.stringify({ id: input.candidate.id }),
-      signal: AbortSignal.timeout(35_000),
+      signal: ctx.signal,
     });
     if (response.status === 404) return null;
     if (!response.ok)
@@ -65,6 +68,7 @@ const select = yes.mutation({
     error.cause < 500
       ? -1
       : yes.delay([250, 1000], attempt),
+  timeout: 35_000,
 });
 
 function subscriptionForModel(model: string) {

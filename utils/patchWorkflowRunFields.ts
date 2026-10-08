@@ -84,7 +84,7 @@ export async function patchWorkflowRunFields(
   if (Number.isInteger(runAttempt) && runAttempt >= 1) body.runAttempt = runAttempt;
   try {
     await yes.mutation({
-      run: async () => {
+      run: async (patch: typeof body, opCtx: yes.ctx) => {
         const response = await apiFetch({
           path: `/api/workflow-run/${ctx.runId}`,
           method: "PATCH",
@@ -92,8 +92,8 @@ export async function patchWorkflowRunFields(
             authorization: `Bearer ${ctx.apiToken}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify(patch),
+          signal: opCtx.signal,
         });
         if (response.status === 404) {
           // a run Pullfrog neither dispatched nor could record (see wiki/run-correlation.md), so
@@ -108,8 +108,9 @@ export async function patchWorkflowRunFields(
       // a status-bearing message and should fail fast.
       retry: (error, attempt) =>
         isTransientNetworkError(error) ? yes.delay([2000, 4000], attempt) : -1,
+      timeout: 10_000,
       name: "patchWorkflowRunFields",
-    })();
+    })(body);
   } catch (error) {
     // not necessarily exhausted — an explicit HTTP status bails on the first
     // attempt via the predicate above, so say "failed" rather than implying
