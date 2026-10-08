@@ -1,6 +1,6 @@
 {
   "name": "pullfrog",
-  "version": "0.1.97",
+  "version": "0.1.98",
   "cliContractVersion": "1",
   "type": "module",
   "bin": {
