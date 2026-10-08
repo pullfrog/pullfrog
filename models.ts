@@ -830,6 +830,10 @@ export const providers = {
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
         // see the big-pickle note above (#1077).
         isFree: true,
+        // Zen dropped the id from `/v1/models` and its docs on 2026-10-08 and
+        // answers a 500 for it; stored picks land on the other free stealth
+        // model, as `union-alpha` does.
+        fallback: "opencode/big-pickle",
       },
       // Zen's FREE preview (listed 2026-10-06), the sixth promo, on Fledge
       // Alpha's terms.
