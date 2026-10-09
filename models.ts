@@ -1423,7 +1423,7 @@ export const providers = {
       "mistral-large": {
         displayName: "Mistral Large",
         resolve: "vercel/mistral/mistral-large-4",
-        effort: ["none", "low", "medium", "high"],
+        effort: ["none", "high"],
       },
     },
   }),
