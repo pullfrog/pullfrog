@@ -848,6 +848,9 @@ export const providers = {
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
         // see the big-pickle note above (#1077).
         isFree: true,
+        // Zen answers "Model exo-free has been deprecated." on both lanes since
+        // 2026-10-09; stored picks land on Big Pickle, as `fledge-alpha` does.
+        fallback: "opencode/big-pickle",
       },
       // Zen's FREE StepFun preview (listed 2026-10-08), the seventh promo. Zen's
       // docs: zero retention, no training. Go lists the same free id; one key
