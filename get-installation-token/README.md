@@ -41,7 +41,7 @@ jobs:
   example:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Get installation token
         id: token
@@ -71,7 +71,7 @@ jobs:
           repos: pullfrog,app
 
       - name: Checkout another repo with installation token
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: pullfrog/pullfrog
           token: ${{ steps.token.outputs.token }}
