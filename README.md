@@ -99,7 +99,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pullfrog/pullfrog@v0
         with:
           prompt: ${{ inputs.prompt }}
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -163,7 +163,7 @@ For longer prompts you want to version and reuse, commit the prompt text to the 
 
 ```yaml
 # .github/workflows/triage.yml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v6
 - uses: pullfrog/pullfrog@v0
   with:
     prompt_file: .github/pullfrog/triage.md
