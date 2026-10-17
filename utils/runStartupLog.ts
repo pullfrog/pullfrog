@@ -36,14 +36,20 @@ function resolveModelForLog(ctx: {
  * "no effort control" and "model we don't recognize" are distinct causes and
  * read very differently to whoever pastes this line into a support thread.
  */
-function resolveEffortForLog(ctx: {
+export function resolveEffortForLog(ctx: {
   payload: ResolvedPayload;
   resolvedModel: string | undefined;
+  agentName: string;
 }): string {
   const effort = resolveRunEffort(ctx);
   // this block prints before the agent starts, so an auto-select run has no
   // model yet — the harness prints the real rung once it picks one.
   if (!ctx.resolvedModel && !ctx.payload.proxyModel) return "pending — model not chosen yet";
+  // the opencode harness reads an uncatalogued model's variants once its
+  // session exists (resolveDeclaredRung) and prints the rung it sends then.
+  if (!effort.alias && ctx.agentName === "opencode") {
+    return "pending — read from the model's opencode variants at session start";
+  }
   if (!effort.alias) return "not applied — model not recognized";
   if (!effort.rung) return "n/a (model has no effort control)";
   return effort.configured ? effort.rung : `${effort.rung} (default)`;
@@ -73,7 +79,7 @@ export function logRunStartup(ctx: {
     `» model:   ${resolveModelForLog({ payload: ctx.payload, resolvedModel: ctx.resolvedModel })}`
   );
   log.info(
-    `» effort:  ${resolveEffortForLog({ payload: ctx.payload, resolvedModel: ctx.resolvedModel })}`
+    `» effort:  ${resolveEffortForLog({ payload: ctx.payload, resolvedModel: ctx.resolvedModel, agentName: ctx.agentName })}`
   );
   const routing = ctx.payload.routing;
   if (routing) {

@@ -80,7 +80,7 @@ import type { OAuthWriteback } from "../utils/codexRefreshDetect.ts";
 import { OAUTH_WRITEBACK_STATE } from "../utils/oauthWriteback.ts";
 import { openCodeHomeEnv } from "../utils/openCodeModels.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
-import { resolveRunEffort } from "../utils/runEffort.ts";
+import { resolveDeclaredRung, resolveRunEffort } from "../utils/runEffort.ts";
 import { saveSecretState } from "../utils/secretCommands.ts";
 import { addSkill, installBundledSkills } from "../utils/skills.ts";
 import { isTrackedChild, trackChild, untrackChild } from "../utils/subprocess.ts";
@@ -1425,6 +1425,20 @@ export const opencode = agent({
       const sessionID = sessionResp.data.id;
       log.info(`» opencode session: ${sessionID}`);
 
+      // a model the catalog doesn't know has no ladder, so `effort.rung` is
+      // empty. opencode declares the variants of every model it can place, so
+      // read them rather than drop the configured effort.
+      let variant = effort.rung;
+      if (!effort.alias && model) {
+        const providersResp = await client.config.providers();
+        variant = resolveDeclaredRung({
+          model,
+          position: effort.position,
+          providers: providersResp.data?.providers ?? [],
+        });
+        if (variant) log.info(`» effort: ${variant} (from the model's opencode variants)`);
+      }
+
       // bind the orchestrator label up front. without this, the first
       // foreign sessionID we see (a subagent) would consume the ORCHESTRATOR
       // slot in the labeler's FIFO and every label downstream would shift.
@@ -1439,7 +1453,7 @@ export const opencode = agent({
         labeler,
         toolState: ctx.toolState,
         // `rawModel` folds in the auto-select pick — see the opencode.ts twin.
-        variant: effort.rung,
+        variant,
         todoTracker: ctx.todoTracker,
         onActivityTimeout: ctx.onActivityTimeout,
         onTurnRecovered: ctx.onTurnRecovered,
