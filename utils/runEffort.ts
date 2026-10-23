@@ -8,6 +8,7 @@
 import {
   DEFAULT_EFFORT_POSITION,
   type EffortPosition,
+  resolveRung,
   rungPosition,
   SUBSIDY_RUNG,
 } from "../effort.ts";
@@ -129,4 +130,34 @@ export function resolveRunEffort(ctx: {
     }),
     alias,
   };
+}
+
+/** the slice of opencode's provider listing that `resolveDeclaredRung` reads. */
+export interface DeclaredProvider {
+  id: string;
+  models: Record<string, { variants?: Record<string, unknown> | undefined }>;
+}
+
+/**
+ * the rung for a model the catalog doesn't know, taken from the variants
+ * opencode itself declares for it (`config.providers`), in opencode's order.
+ *
+ * `resolveRunEffort` sends no flag for an uncatalogued model because opencode
+ * may be unable to place it. a model opencode lists with its own variants is
+ * one it can place, so landing the position on those variant names is the same
+ * safe case as a catalogued model. a model opencode doesn't list, or lists
+ * without variants, still gets no flag.
+ */
+export function resolveDeclaredRung(params: {
+  model: string;
+  position: EffortPosition;
+  providers: readonly DeclaredProvider[];
+}): string | undefined {
+  const slash = params.model.indexOf("/");
+  if (slash <= 0) return undefined;
+  const providerID = params.model.slice(0, slash);
+  const modelID = params.model.slice(slash + 1);
+  const variants = params.providers.find((p) => p.id === providerID)?.models[modelID]?.variants;
+  if (!variants) return undefined;
+  return resolveRung({ position: params.position, published: Object.keys(variants) });
 }
