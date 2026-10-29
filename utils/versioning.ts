@@ -1,4 +1,4 @@
-import semver from "semver";
+import { findMinimumForRange, normalize, satisfies, tryParse } from "verkit";
 
 type CompatibilityPolicy =
   /**
@@ -23,7 +23,7 @@ const COMPATIBILITY_POLICY: CompatibilityPolicy = "non-breaking";
  * @param actionVersion the version of the action (recipient)
  */
 export function validateCompatibility(payloadVersion: string, actionVersion: string): void {
-  const payloadSemVer = semver.parse(payloadVersion);
+  const payloadSemVer = tryParse(payloadVersion);
   if (!payloadSemVer)
     throw new Error(`Payload version ${payloadVersion} is not a valid semantic version.`);
   const major = payloadSemVer.major;
@@ -35,10 +35,11 @@ export function validateCompatibility(payloadVersion: string, actionVersion: str
       ? `^${major}.${minor}.${major === 0 ? patch : 0}`
       : `^${major}.${major === 0 ? minor : 0}.${major === 0 ? "x" : 0}`; // non-breaking
 
-  if (!semver.satisfies(actionVersion, compatibilityRange)) {
+  if (!satisfies(actionVersion, compatibilityRange)) {
+    const minimum = findMinimumForRange(compatibilityRange);
     throw new Error(
       `Payload version ${payloadVersion} is incompatible with action version ${actionVersion}. ` +
-        `Please update your workflow to use at least ${semver.minVersion(compatibilityRange)} version of the action.`
+        `Please update your workflow to use at least ${minimum && normalize(minimum)} version of the action.`
     );
   }
 }
