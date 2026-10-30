@@ -3,9 +3,7 @@ name: Publish & Release
 on:
   # dispatch only, and deliberately so. a `workflow_dispatch` needs a GitHub session or token
   # carrying write access; a stolen git push credential carries neither, so it can no longer start a
-  # release by landing a commit. that is the shape of the 2026-09-21 nubjs/nub compromise, where a
-  # stolen push credential cut a tag and 18 packages published unattended. bumping the version in
-  # package.json is therefore inert until a maintainer runs `gh workflow run publish.yml -R
+  # release by landing a commit. bumping the version in package.json is therefore inert until a maintainer runs `gh workflow run publish.yml -R
   # pullfrog/pullfrog -f notes="$(cat notes.md)"`, and the staged version then still needs their 2FA
   # approval before npm serves it.
   #
