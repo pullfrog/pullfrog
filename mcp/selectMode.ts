@@ -54,7 +54,11 @@ function buildOrchestratorGuidance(
   const hardcoded = overrideGuidance ?? mode.prompt ?? "";
   const lookupKey = modeInstructionParent[mode.name] ?? mode.name;
   const userInstructions = ctx.modeInstructions[lookupKey] ?? "";
-  const guidance = [hardcoded, userInstructions].filter(Boolean).join("\n\n");
+  // unlabeled, these lost to the checklist's own drop rules (e.g. Review's "drop style preferences")
+  const repoSection = userInstructions
+    ? `### Repository instructions\n\nSet by this repository's maintainers. Where they conflict with the steps above, including asking for feedback those steps drop, follow them.\n\n${userInstructions}`
+    : "";
+  const guidance = [hardcoded, repoSection].filter(Boolean).join("\n\n");
   return {
     modeName: mode.name,
     description: mode.description,
