@@ -30,6 +30,7 @@ import {
 import { formatCommercialGateSummary } from "./utils/billingErrors.ts";
 import { resolveBody } from "./utils/body.ts";
 import { log } from "./utils/cli.ts";
+import { installCodenav, logCodenavCalls } from "./utils/codenav.ts";
 import { installCodexAuth, installXaiAuth, PULLFROG_DATA_DIR } from "./utils/codexHome.ts";
 import { checkConfiguredCredentials } from "./utils/credentialFallback.ts";
 import {
@@ -734,6 +735,7 @@ export async function main(): Promise<MainResult> {
       plan: runContext.plan,
       resolvedModel,
     };
+    if (payload.codenav) installCodenav(tmpdir);
     await using mcpHttpServer = await startMcpHttpServer(toolContext, { outputSchema });
     toolContext.mcpServerUrl = mcpHttpServer.url;
     log.info(`» MCP server started at ${mcpHttpServer.url}`);
@@ -1155,6 +1157,7 @@ export async function main(): Promise<MainResult> {
       if (toolState.model) patch.model = toolState.model;
       if (toolState.agent) patch.agent = toolState.agent;
       if (toolState.credential) patch.credential = toolState.credential;
+      logCodenavCalls(toolContext.tmpdir);
       patch.succeeded = succeeded;
       await patchWorkflowRunFields(toolContext, patch);
     }

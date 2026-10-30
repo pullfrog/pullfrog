@@ -76,6 +76,14 @@ await build({
   },
 });
 
+// the codenav CLI runs as its own process in the agent's sandbox; utils/codenav.ts copies it onto PATH
+await build({
+  ...sharedConfig,
+  entryPoints: ["./codenavCli.ts"],
+  outfile: "./dist/codenav.mjs",
+  target: "node20",
+});
+
 // Build ESM library entrypoints for programmatic imports
 await build({
   ...sharedConfig,

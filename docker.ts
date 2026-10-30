@@ -76,6 +76,8 @@ const HOST_ONLY_VARS = new Set([
   "COLORTERM",
   "ITERM_PROFILE",
   "ITERM_SESSION_ID",
+  // nub preloads a module from the host's cache, which the container's node cannot find
+  "NODE_OPTIONS",
   // outer-CI workflow-run identifiers — when the test suite runs inside
   // pullfrog/app's CI, these refer to pullfrog/app's run, NOT the test repo
   // the harness is acting against (e.g. pullfrog/test-repo). Anything inside

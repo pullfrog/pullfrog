@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import * as core from "@actions/core";
 import { type } from "arktype";
-import { type AuthorPermission, type PayloadEvent, parseEffortPosition } from "../external.ts";
+import {
+  type AuthorPermission,
+  type PayloadEvent,
+  parseEffortPosition,
+  type Rollout,
+} from "../external.ts";
 import packageJson from "../package.json" with { type: "json" };
 import { log } from "./cli.ts";
 import { isPullfrog } from "./isPullfrog.ts";
@@ -402,6 +407,13 @@ export function resolvePayload(
     generateSummary: jsonPayload?.generateSummary,
     codexArm: jsonPayload?.codexArm,
     rollouts: jsonPayload?.rollouts,
+    // the `codenav` rollout, which `PULLFROG_CODENAV=1|0` forces either way for e2e runs. never
+    // without a shell to run it in
+    codenav:
+      resolvedShell !== "disabled" &&
+      (process.env.PULLFROG_CODENAV
+        ? process.env.PULLFROG_CODENAV === "1"
+        : (jsonPayload?.rollouts ?? []).includes("codenav" satisfies Rollout)),
 
     // permissions: inputs > repoSettings > fallbacks
     push,

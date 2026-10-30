@@ -64,6 +64,8 @@ function buildRuntimeContext(ctx: InstructionsContext): string {
     eventInstructions: _ei,
     previousRunsNote: _prn,
     event: _e,
+    // the shell instructions already say when it is on
+    codenav: _cn,
     ...payloadRest
   } = ctx.payload;
 
@@ -118,10 +120,8 @@ function buildEventMetadata(event: PayloadEvent): string {
   return toonEncode(restWithTrigger);
 }
 
-function getShellInstructions(
-  shell: ResolvedPayload["shell"],
-  t: (name: string) => string
-): string {
+function getShellInstructions(payload: ResolvedPayload, t: (name: string) => string): string {
+  const shell = payload.shell;
   switch (shell) {
     case "disabled":
       return `### Shell commands
@@ -131,7 +131,7 @@ Shell command execution is DISABLED. Do not attempt to run shell commands.`;
     case "enabled":
       return `### Shell commands
 
-Use the \`${t("shell")}\` MCP tool for all shell command execution.${shell === "restricted" ? " This tool provides a secure environment with filtered credentials. Do NOT use any native shell tool — it is disabled for security." : ""} For long-running processes (dev servers, watchers), use \`shell({ command, background: true })\`. Use \`${t("kill_background")}\` to stop background processes.`;
+Use the \`${t("shell")}\` MCP tool for all shell command execution.${shell === "restricted" ? " This tool provides a secure environment with filtered credentials. Do NOT use any native shell tool — it is disabled for security." : ""} For long-running processes (dev servers, watchers), use \`shell({ command, background: true })\`. Use \`${t("kill_background")}\` to stop background processes.${payload.codenav ? ` In that shell, \`codenav def|impl|refs|callers <file>:<line> <symbol>\` resolves a TypeScript/JavaScript or Python symbol's definition, implementations, references or callers through its imports and types, one \`path:line:col: source\` per hit.` : ""}`;
     default: {
       const _exhaustive: never = shell;
       return _exhaustive satisfies never;
@@ -379,7 +379,7 @@ Call \`${t("find_similar_issues")}\` for #${ctx.payload.event.issue_number} befo
     : ""
 }
 
-${getShellInstructions(ctx.payload.shell, t)}
+${getShellInstructions(ctx.payload, t)}
 
 ${getFileInstructions()}
 
