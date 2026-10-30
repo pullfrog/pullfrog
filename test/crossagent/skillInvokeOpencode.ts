@@ -25,7 +25,8 @@ function validator(result: AgentResult): ValidationCheck[] {
   const tokenMatches = result.structuredOutput === token;
 
   const agentOutput = getAgentOutput(result);
-  const skillInvoked = /skill\(\{[^)]*"name":"pullfrog-skill-check"/.test(agentOutput);
+  // V1's skill tool takes `name`, V2's `id`
+  const skillInvoked = /skill\(\{[^)]*"(name|id)":"pullfrog-skill-check"/.test(agentOutput);
 
   return [
     { name: "set_output", passed: setOutputCalled },

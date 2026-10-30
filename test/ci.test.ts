@@ -58,7 +58,7 @@ const agnosticTests = getTestNamesFromDir("agnostic");
 const adhocTests = getTestNamesFromDir("adhoc");
 
 // all provider API key names + managed credentials (e.g. Codex auth blob)
-// + GITHUB_TOKEN + model overrides. openai-compatible and azure point at a
+// + GITHUB_TOKEN + model and opencode-generation overrides. openai-compatible and azure point at a
 // backend only the customer has, so we hold no credential to wire into the CI
 // env blocks — exclude them. bedrock/vertex are routing too but CI-wired with
 // real test creds.
@@ -76,9 +76,14 @@ const expectedAgentEnvVars = [
       .flatMap((p) => [...p.envVars, ...(p.managedCredentials ?? [])])
   ),
   "PULLFROG_MODEL",
+  "PULLFROG_OPENCODE_VERSION",
 ].sort();
 
-const expectedAgnosticEnvVars = ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"].sort();
+const expectedAgnosticEnvVars = [
+  "ANTHROPIC_API_KEY",
+  "GITHUB_TOKEN",
+  "PULLFROG_OPENCODE_VERSION",
+].sort();
 
 describe("ci workflow consistency", () => {
   it("workflow names match", () => {

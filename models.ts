@@ -1523,9 +1523,24 @@ export function modelIdLabel(specifier: string): string {
   return specifier.slice(specifier.lastIndexOf("/") + 1).replace(/^~/, "");
 }
 
+/**
+ * A provider by its slug prefix, or by the prefix its models resolve under: the action passes
+ * resolved specifiers, and Kimi Code's (`kimi-code-plan-cn/…`) differ from its slugs
+ * (`kimi-for-coding/…`). Without the second lookup every Kimi model read as needing no key.
+ */
+function getProviderConfig(prefix: string): ProviderConfig | undefined {
+  const all: Record<string, ProviderConfig> = providers;
+  return (
+    all[prefix] ??
+    Object.values(all).find((config) =>
+      Object.values(config.models).some((model) => model.resolve.startsWith(`${prefix}/`))
+    )
+  );
+}
+
 export function getModelEnvVars(slug: string): string[] {
   const parsed = parseModel(slug);
-  const providerConfig = (providers as Record<string, ProviderConfig>)[parsed.provider];
+  const providerConfig = getProviderConfig(parsed.provider);
   if (!providerConfig) {
     return [];
   }
@@ -1544,7 +1559,7 @@ export function getModelEnvVars(slug: string): string[] {
  * see `provider.managedCredentials` and wiki/codex-auth.md. */
 export function getModelManagedCredentials(slug: string): string[] {
   const parsed = parseModel(slug);
-  const providerConfig = (providers as Record<string, ProviderConfig>)[parsed.provider];
+  const providerConfig = getProviderConfig(parsed.provider);
   return providerConfig?.managedCredentials?.slice() ?? [];
 }
 

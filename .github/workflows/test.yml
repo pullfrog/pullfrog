@@ -86,6 +86,7 @@ jobs:
       VERTEX_LOCATION: global
       VERTEX_MODEL_ID: gemini-3.8-flash
       PULLFROG_MODEL: ${{ vars.PULLFROG_MODEL }}
+      PULLFROG_OPENCODE_VERSION: ${{ vars.PULLFROG_OPENCODE_VERSION }}
       # CI smoke-testing shortcut only — production stores this in Pullfrog's
       # per-org secret store (Postgres), set via `pullfrog auth codex`. GH
       # Actions secrets are immutable at runtime so the post-hook can't write
@@ -130,6 +131,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      PULLFROG_OPENCODE_VERSION: ${{ vars.PULLFROG_OPENCODE_VERSION }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4

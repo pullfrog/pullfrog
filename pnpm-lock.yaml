@@ -44,6 +44,12 @@ importers:
       '@opencode-ai/sdk':
         specifier: 1.18.29
         version: 1.18.29
+      '@opencode/cli':
+        specifier: 2.2.0
+        version: 2.2.0
+      '@opencode/client':
+        specifier: 2.2.0
+        version: 2.2.0
       '@standard-schema/spec':
         specifier: 1.1.0
         version: 1.1.0
@@ -529,6 +535,89 @@ packages:
   '@opencode-ai/sdk@1.18.29':
     resolution: {integrity: sha512-4CS+FoLPkymTlcga8jxivGDDb2AbWMIIl3b8+myoe2wtv/1ANYCErslgz1xy5hTVHymWE6CtVNKzRuPU0ED57A==}
 
+  '@opencode/cli-darwin-arm64@2.2.0':
+    resolution: {integrity: sha512-y3q/sghk/xCengTlv1pH2+5t9j0cuxXcEAY9yvyM7loKLQIYE1eSLEkDacCAVNyfnATd3D2JpueFSEB/i6A0Qg==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@opencode/cli-darwin-x64-baseline@2.2.0':
+    resolution: {integrity: sha512-91JnM4NW91kufSeYbdScwsrWQIX1w87WRG2Gy9aG27/6DhmPwCqJZlOf1yZeER557QUs0xrtaSpNXa4T7hczmA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@opencode/cli-darwin-x64@2.2.0':
+    resolution: {integrity: sha512-oK46aktdkYIAlkFs72I4JNgFS+cEgrks/HAykoKXwcZTW3XlGY1GlhTfdp55XRw9XTfTCqHvtCtvD9IgCnGhQA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@opencode/cli-linux-arm64-musl@2.2.0':
+    resolution: {integrity: sha512-/HJnmU6a+a06RMVCZrsICO6FP4DQRWtgZdXgdtcduxtpCGd4PF2YOqhthuc0HBMr6YzjzJTxkFEhcsmgKMMVPg==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@opencode/cli-linux-arm64@2.2.0':
+    resolution: {integrity: sha512-NCCltb8h/8WL30X9o2KTm3UFX0lmfk48lG8tglXJN9moscxeB7w2qOmfHVa32iFngk0iVAKH4xRPlBc88Y0qlw==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@opencode/cli-linux-x64-baseline-musl@2.2.0':
+    resolution: {integrity: sha512-a2i5CONPImfufYzlLxIcuajpdxV73arWpUS3x+1zsiQ5QPjwTuToUPqIEN9fqRdLHFTonKsub1pmaT1uemB92w==}
+    cpu: [x64]
+    os: [linux]
+
+  '@opencode/cli-linux-x64-baseline@2.2.0':
+    resolution: {integrity: sha512-ComUyKWDToJMBEI1IdxiCGSSdJ0BhXYPoOkb+o2BozDERtTg51UWiomfkiwMIJ3qgR1p/9Itdt/c8oVINUKNmg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@opencode/cli-linux-x64-musl@2.2.0':
+    resolution: {integrity: sha512-6gq4MeySSZU0Uh8Fzg8iVS7Aklrtdv6mImxDEEDJXJwwMMx78t/IJn1RsApFx/wuS1GvbcuJxXmA+7YfRuBaog==}
+    cpu: [x64]
+    os: [linux]
+
+  '@opencode/cli-linux-x64@2.2.0':
+    resolution: {integrity: sha512-XTGFTiZTgugps6rgTXp4mPjOM8klsa5uHn/Shcms2o3k1bjSA3Sgl6O4yJ48y18WWxn9My5Pxt7JKcLID7LOHg==}
+    cpu: [x64]
+    os: [linux]
+
+  '@opencode/cli-windows-arm64@2.2.0':
+    resolution: {integrity: sha512-IK9FGVGMC0akI2/NHWuwiUvMmaSDTTjjl0S5TUdgxBFQEfCvg/wL1S23BKPq4KDZuI4rfk7w36ajcp2CCZ9IGw==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@opencode/cli-windows-x64-baseline@2.2.0':
+    resolution: {integrity: sha512-pHacmWjCbm0BrCjVBJhPiPot579oCntWCsQcIIFUKBRJNZYiabxMxYRV6M9rXdq87tSdKOt5MQVg56cnajvBBw==}
+    cpu: [x64]
+    os: [win32]
+
+  '@opencode/cli-windows-x64@2.2.0':
+    resolution: {integrity: sha512-S/eVkzMaUqoiBmeLHgEdr4b3yIQjpfDzLo4CFSSB3skB0UH+lduqqjTnmvAvDeli4fEjcNbZmd/8YwkoKnFkBA==}
+    cpu: [x64]
+    os: [win32]
+
+  '@opencode/cli@2.2.0':
+    resolution: {integrity: sha512-05wLSq/M/vqw32uZnrNUGnhSpcpXlF+4OfvKzGghtbPYyF7kB82qfIRSIZQk3vFBIH32HWu8UQCai38b7J36kw==}
+    cpu: [arm64, x64]
+    os: [darwin, linux, win32]
+    hasBin: true
+
+  '@opencode/client@2.2.0':
+    resolution: {integrity: sha512-gus2XLaUcGh3ERH+OnOqEO6K379cS9DFNPOgWr8OTM2VM+zn8b4Qe+dgfyysTayv1BpMMlILsRG4eKlDSuyYWQ==}
+    peerDependencies:
+      effect: 4.0.1
+      solid-js: '>=1.9.0'
+    peerDependenciesMeta:
+      effect:
+        optional: true
+      solid-js:
+        optional: true
+
+  '@opencode/protocol@2.2.0':
+    resolution: {integrity: sha512-bvZGwEU0WVgHXzDOsbmUluMWSCQZw6NVKNI+dGjNynxVWRvvpFJ+GA1wDiBkaAwx7dJ6FOH3SO3kNCJlPu2kOA==}
+
+  '@opencode/schema@2.2.0':
+    resolution: {integrity: sha512-oyj1xiSnGA/Gwmqyk3MUVOwleozuT1Lt/x7eErhvNO0lyq2xhONnu7mK+riV98uMbD6+GxGWQV369gmpO9fAkQ==}
+
   '@oxc-project/types@0.155.0':
     resolution: {integrity: sha512-SeE8JPwW1xs1tHeNycjUtUBdhorRa8o4jlvjwk49R7/Z291i+4DQa7JJIgOm/TaYQZx+QrPQbVJ/9c8dMIZN8Q==}
 
@@ -895,6 +984,9 @@ packages:
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
+
+  effect@4.0.1:
+    resolution: {integrity: sha512-b1VlQG9g8fwxE5QnIZuPoOP/0MsqHJSRKxUijjoM80E5q95FXrX5yWtY5XI8G+GJsBQAVSDbLS458z9a++uVvw==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -2200,6 +2292,72 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
+  '@opencode/cli-darwin-arm64@2.2.0':
+    optional: true
+
+  '@opencode/cli-darwin-x64-baseline@2.2.0':
+    optional: true
+
+  '@opencode/cli-darwin-x64@2.2.0':
+    optional: true
+
+  '@opencode/cli-linux-arm64-musl@2.2.0':
+    optional: true
+
+  '@opencode/cli-linux-arm64@2.2.0':
+    optional: true
+
+  '@opencode/cli-linux-x64-baseline-musl@2.2.0':
+    optional: true
+
+  '@opencode/cli-linux-x64-baseline@2.2.0':
+    optional: true
+
+  '@opencode/cli-linux-x64-musl@2.2.0':
+    optional: true
+
+  '@opencode/cli-linux-x64@2.2.0':
+    optional: true
+
+  '@opencode/cli-windows-arm64@2.2.0':
+    optional: true
+
+  '@opencode/cli-windows-x64-baseline@2.2.0':
+    optional: true
+
+  '@opencode/cli-windows-x64@2.2.0':
+    optional: true
+
+  '@opencode/cli@2.2.0':
+    optionalDependencies:
+      '@opencode/cli-darwin-arm64': 2.2.0
+      '@opencode/cli-darwin-x64': 2.2.0
+      '@opencode/cli-darwin-x64-baseline': 2.2.0
+      '@opencode/cli-linux-arm64': 2.2.0
+      '@opencode/cli-linux-arm64-musl': 2.2.0
+      '@opencode/cli-linux-x64': 2.2.0
+      '@opencode/cli-linux-x64-baseline': 2.2.0
+      '@opencode/cli-linux-x64-baseline-musl': 2.2.0
+      '@opencode/cli-linux-x64-musl': 2.2.0
+      '@opencode/cli-windows-arm64': 2.2.0
+      '@opencode/cli-windows-x64': 2.2.0
+      '@opencode/cli-windows-x64-baseline': 2.2.0
+
+  '@opencode/client@2.2.0':
+    dependencies:
+      '@opencode/protocol': 2.2.0
+      '@opencode/schema': 2.2.0
+
+  '@opencode/protocol@2.2.0':
+    dependencies:
+      '@opencode/schema': 2.2.0
+      effect: 4.0.1
+
+  '@opencode/schema@2.2.0':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      effect: 4.0.1
+
   '@oxc-project/types@0.155.0': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.15':
@@ -2495,6 +2653,8 @@ snapshots:
       gopd: 1.2.0
 
   ee-first@1.1.1: {}
+
+  effect@4.0.1: {}
 
   emoji-regex@10.6.0: {}
 

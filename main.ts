@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detect } from "package-manager-detector";
 import { agents } from "./agents/index.ts";
+import { opencodeGeneration } from "./agents/opencodeGeneration.ts";
 import { subagentDeniedToolNames } from "./agents/subagentToolGates.ts";
 import { findDanglingPromptToolRefs } from "./external.ts";
 import { reportProgress } from "./mcp/comment.ts";
@@ -260,6 +261,8 @@ export async function main(): Promise<MainResult> {
   // is nothing to protect, so the window simply does not open.
   const repoDir = payload.cwd;
   const preIntrospectionDirty = repoDir ? await dirtyTrackedPaths({ cwd: repoDir }) : null;
+  // decided from the checkout, before anything installs or runs opencode; every later read reuses it.
+  opencodeGeneration(repoDir ?? process.cwd());
   const opencodeCliPath = await agents.opencode.install();
   // not alongside the install: its `spawnSync` tar extraction blocks the event loop, which spent the
   // download's timeout on every first attempt on a hosted runner

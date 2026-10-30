@@ -25,11 +25,12 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import * as yes from "yes";
+import { opencodeGeneration } from "../agents/opencodeGeneration.ts";
 import { log } from "./cli.ts";
-import { getSubscriptionDataHome } from "./codexHome.ts";
+import { getSubscriptionDataHome, openCodeV2Credentials } from "./codexHome.ts";
 
 let baseline: Set<string> | undefined;
 let authorized: Set<string> | undefined;
@@ -48,13 +49,60 @@ const ANSI_PATTERN = /\[[0-9;]*m/g;
  * are shared by every run on a self-hosted host, and so is opencode's SQLite db in them (#1475).
  */
 export function openCodeHomeEnv(tmpdir: string) {
+  const dataHome = getSubscriptionDataHome() ?? join(tmpdir, ".local", "share");
+  const catalog = modelsCatalogPath(tmpdir);
   return {
     HOME: tmpdir,
     XDG_CONFIG_HOME: join(tmpdir, ".config"),
-    XDG_DATA_HOME: getSubscriptionDataHome() ?? join(tmpdir, ".local", "share"),
+    XDG_DATA_HOME: dataHome,
     XDG_CACHE_HOME: join(tmpdir, ".cache"),
     XDG_STATE_HOME: join(tmpdir, ".local", "state"),
+    // named so it is never the runner user's own: locally the data home is their real one, and
+    // V2 keeps credentials in this db, which `syncOpenCodeCredentials` deletes and rebuilds.
+    OPENCODE_DB: join(dataHome, "opencode", "pullfrog.db"),
+    // the seeded catalog: V1 reads this path by default, V2 only through the variable. V2 then never
+    // swaps in a later download, so the variable is set only once the seed has written the file.
+    OPENCODE_MODELS_PATH:
+      process.env.OPENCODE_MODELS_PATH || (existsSync(catalog) ? catalog : undefined),
   };
+}
+
+/** where `seedModelsCatalog` writes: the cache file V1 reads first, named as V1 names it. */
+function modelsCatalogPath(tmpdir: string): string {
+  const source = process.env.OPENCODE_MODELS_URL || DEFAULT_MODELS_URL;
+  const name =
+    source === DEFAULT_MODELS_URL
+      ? "models.json"
+      : `models-${createHash("sha1").update(source).digest("hex")}.json`;
+  return join(tmpdir, ".cache", "opencode", name);
+}
+
+/**
+ * Make V2's credential store hold exactly the subscriptions installed into auth.json. V2 never reads
+ * auth.json once its database exists, and `auth import` skips a credential id it already holds, so
+ * the run's database is rebuilt: the credential pool can swap a chain between two captures. A no-op
+ * on V1, which reads auth.json itself. see wiki/opencode-v2.md.
+ */
+export function syncOpenCodeCredentials(params: {
+  cliPath: string;
+  env: NodeJS.ProcessEnv & { OPENCODE_DB: string };
+}): void {
+  if (opencodeGeneration() !== 2) return;
+  for (const suffix of ["", "-wal", "-shm"])
+    rmSync(`${params.env.OPENCODE_DB}${suffix}`, { force: true });
+  const credentials = openCodeV2Credentials();
+  if (credentials.length === 0) return;
+  const result = spawnSync(params.cliPath, ["auth", "import", "--standalone"], {
+    encoding: "utf-8",
+    timeout: 30_000,
+    env: params.env,
+    input: JSON.stringify(credentials),
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  if (result.status !== 0) {
+    const reason = (result.stderr ?? "").replace(ANSI_PATTERN, "").trim() || result.error?.message;
+    log.warning(`» could not import subscription credentials into opencode: ${reason}`);
+  }
 }
 
 const fetchCatalog = yes.query({
@@ -79,10 +127,6 @@ const fetchCatalog = yes.query({
  */
 export async function seedModelsCatalog(tmpdir: string): Promise<void> {
   const source = process.env.OPENCODE_MODELS_URL || DEFAULT_MODELS_URL;
-  const name =
-    source === DEFAULT_MODELS_URL
-      ? "models.json"
-      : `models-${createHash("sha1").update(source).digest("hex")}.json`;
   const result = await yes.try(fetchCatalog(`${source}/api.json`));
   if (result instanceof Error) {
     // undici's own message is a bare "fetch failed"; the cause names the DNS, TLS or socket error
@@ -93,9 +137,9 @@ export async function seedModelsCatalog(tmpdir: string): Promise<void> {
     );
     return;
   }
-  const dir = join(openCodeHomeEnv(tmpdir).XDG_CACHE_HOME, "opencode");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, name), result);
+  const file = modelsCatalogPath(tmpdir);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, result);
 }
 
 /** Why `seedModelsCatalog` failed, leaving opencode on its build-time snapshot. */
@@ -104,13 +148,17 @@ export function getModelsCatalogFailure(): string | undefined {
 }
 
 function readModels(params: { cliPath: string; tmpdir: string }): Set<string> {
+  const env = { ...process.env, ...openCodeHomeEnv(params.tmpdir) };
+  syncOpenCodeCredentials({ cliPath: params.cliPath, env });
+  // without --standalone, V2 starts a detached `serve --service` daemon that outlives the command.
+  const args = opencodeGeneration() === 2 ? ["models", "--standalone"] : ["models"];
   // spawnSync, not execFileSync: we want opencode's stderr as a value rather
   // than a throw, and `stdio` keeps it out of the job log (execFileSync leaks
   // it to the parent, so a config error printed once per capture).
-  const result = spawnSync(params.cliPath, ["models"], {
+  const result = spawnSync(params.cliPath, args, {
     encoding: "utf-8",
     timeout: 30_000,
-    env: { ...process.env, ...openCodeHomeEnv(params.tmpdir) },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) {

@@ -83,7 +83,7 @@ export function installBundledSkills(params: { home: string }): void {
 export function addSkill(params: {
   ref: string;
   skill: string;
-  env: Record<string, string>;
+  env: NodeJS.ProcessEnv;
   agent: string;
 }): void {
   const result = spawnSync(

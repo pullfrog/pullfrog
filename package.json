@@ -38,6 +38,8 @@
     "@octokit/webhooks-types": "^7.6.1",
     "@openai/codex": "0.159.2",
     "@openai/codex-sdk": "0.159.2",
+    "@opencode/cli": "2.2.0",
+    "@opencode/client": "2.2.0",
     "@opencode-ai/sdk": "1.18.29",
     "@standard-schema/spec": "1.1.0",
     "@toon-format/toon": "^2.3.1",

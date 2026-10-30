@@ -24,6 +24,7 @@ import { log } from "../utils/cli.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
 import { getAuthorizedModels } from "../utils/openCodeModels.ts";
 import { getDevDependencyVersion } from "../utils/version.ts";
+import { opencodeGeneration } from "./opencodeGeneration.ts";
 import { REVIEWER_AGENT_NAME, REVIEWER_SYSTEM_PROMPT } from "./reviewer.ts";
 import { deriveSubagentModels } from "./subagentModels.ts";
 
@@ -282,18 +283,16 @@ export function buildReviewerAgentConfig(
 // ── install ────────────────────────────────────────────────────────────────────
 
 /**
- * Install the opencode-ai npm tarball and return the path to the executable.
- *
- * The bin path differs by version: v1.4.x and earlier shipped `bin/opencode`;
- * v1.14+ renames the platform-specific binary to `bin/opencode.exe` for every
- * OS via the postinstall script. Callers pass the binPath that matches their
- * pinned version so a v1↔v2 swap can't silently install the wrong file.
+ * Install the run's OpenCode generation from its npm tarball and return the path
+ * to the executable: `opencode-ai` for V1, `@opencode/cli` for V2. Both ship the
+ * platform binary as `bin/opencode.exe` for every OS via their postinstall.
  */
-export async function installOpencodeCli(params: { binPath: string }): Promise<string> {
+export async function installOpencodeCli(): Promise<string> {
+  const packageName = opencodeGeneration() === 2 ? "@opencode/cli" : "opencode-ai";
   return await installFromNpmTarball({
-    packageName: "opencode-ai",
-    version: getDevDependencyVersion("opencode-ai"),
-    executablePath: params.binPath,
+    packageName,
+    version: getDevDependencyVersion(packageName),
+    executablePath: "bin/opencode.exe",
     installDependencies: true,
   });
 }

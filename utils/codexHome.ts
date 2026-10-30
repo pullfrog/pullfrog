@@ -51,7 +51,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import type { CredentialEntry } from "@opencode/client";
 import { log } from "./cli.ts";
 import { type CodexAuthBody, parseCodexAuthBody, stringifyCodexAuthBody } from "./codexOAuth.ts";
 import { decodeJwtExpMs } from "./oauthShared.ts";
@@ -223,6 +224,72 @@ function writeOpenCodeAuthEntry(params: {
   const merged: OpenCodeAuthFile = { ...existing, [params.provider]: params.entry };
   mkdirSync(params.opencodeDir, { recursive: true });
   writeFileSync(params.authPath, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
+}
+
+/** the sign-in method V2 files each subscription under, as its own legacy auth.json import does. */
+const V2_METHOD_IDS: Record<string, string> = { openai: "chatgpt-browser", xai: "device" };
+
+function installedAuthPath(): string | undefined {
+  return installedDataHome && join(installedDataHome, "opencode", "auth.json");
+}
+
+/**
+ * The installed subscriptions in `opencode auth export`'s shape. OpenCode V2 keeps credentials in
+ * SQLite and imports auth.json only in a migration a fresh database never runs, so this is the only
+ * way they reach it. see wiki/opencode-v2.md.
+ */
+export function openCodeV2Credentials() {
+  const authPath = installedAuthPath();
+  if (!authPath || !existsSync(authPath)) return [];
+  const file: OpenCodeAuthFile = JSON.parse(readFileSync(authPath, "utf8"));
+  return Object.entries(file).flatMap(([integrationID, entry]) => {
+    const methodID = V2_METHOD_IDS[integrationID];
+    if (!methodID || entry.type !== "oauth") return [];
+    const metadata = entry.accountId ? { accountID: entry.accountId } : {};
+    const value = {
+      type: "oauth",
+      methodID,
+      refresh: entry.refresh,
+      access: entry.access,
+      expires: entry.expires,
+      metadata,
+    };
+    return [
+      {
+        id: `cred_pullfrog_${integrationID}`,
+        integrationID,
+        label: "Pullfrog",
+        active: true,
+        value,
+      },
+    ];
+  });
+}
+
+/**
+ * Write V2's current subscription tokens back into auth.json. V2 rotates them in its database, and
+ * the post hook reads only auth.json, so a refresh the run does not mirror is a chain lost.
+ */
+export function mirrorOpenCodeV2Credentials(credentials: CredentialEntry[]): void {
+  const authPath = installedAuthPath();
+  if (!authPath) return;
+  for (const credential of credentials) {
+    const value = credential.value;
+    if (!V2_METHOD_IDS[credential.integrationID] || value.type !== "oauth") continue;
+    const accountId = value.metadata?.accountID;
+    writeOpenCodeAuthEntry({
+      opencodeDir: dirname(authPath),
+      authPath,
+      provider: credential.integrationID,
+      entry: {
+        type: "oauth",
+        refresh: value.refresh,
+        access: value.access,
+        expires: value.expires,
+        ...(typeof accountId === "string" ? { accountId } : {}),
+      },
+    });
+  }
 }
 
 export interface InstalledXaiAuth {
