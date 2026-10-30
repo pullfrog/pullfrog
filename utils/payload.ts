@@ -80,6 +80,7 @@ export const JsonPayload = type({
   // optional so a payload from a pre-canary server build still parses against a
   // newer action across a rolling deploy.
   "codexArm?": "boolean | undefined",
+  "rollouts?": "string[] | undefined",
 });
 
 // permission levels that indicate collaborator status (have push access)
@@ -400,6 +401,7 @@ export function resolvePayload(
     checkRun: jsonPayload?.checkRun,
     generateSummary: jsonPayload?.generateSummary,
     codexArm: jsonPayload?.codexArm,
+    rollouts: jsonPayload?.rollouts,
 
     // permissions: inputs > repoSettings > fallbacks
     push,

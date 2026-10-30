@@ -422,6 +422,9 @@ export interface PayloadRouting {
 
 export type RouterSource = "jev" | "scorer" | "heuristic" | "fixed";
 
+/** a rollout the server can assign a run to (`utils/rollouts.ts`). see wiki/rollouts.md. */
+export type Rollout = "opencode-v2";
+
 // writeable payload type for building payloads
 export interface WriteablePayload {
   "~pullfrog": true;
@@ -511,6 +514,11 @@ export interface WriteablePayload {
    * `resolveAgent` — it widens who reaches codex, never narrows it.
    */
   codexArm?: boolean | undefined;
+  /**
+   * the rollouts this run was assigned to, drawn once server-side at reservation and stamped on the
+   * run row. a name this build does not know is ignored, so the server may run ahead of a release.
+   */
+  rollouts?: string[] | undefined;
 }
 
 // immutable payload type for agent execution

@@ -22,6 +22,7 @@ export type {
   PayloadRouting,
   ProviderConfig,
   PushPermission,
+  Rollout,
   RouterSource,
   RouterTier,
   ShellPermission,

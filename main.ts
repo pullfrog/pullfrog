@@ -263,7 +263,7 @@ export async function main(): Promise<MainResult> {
   const repoDir = payload.cwd;
   const preIntrospectionDirty = repoDir ? await dirtyTrackedPaths({ cwd: repoDir }) : null;
   // decided from the checkout, before anything installs or runs opencode; every later read reuses it.
-  opencodeGeneration(repoDir ?? process.cwd());
+  opencodeGeneration({ cwd: repoDir ?? process.cwd(), rollouts: payload.rollouts ?? [] });
   const opencodeCliPath = await agents.opencode.install();
   // not alongside the install: its `spawnSync` tar extraction blocks the event loop, which spent the
   // download's timeout on every first attempt on a hosted runner

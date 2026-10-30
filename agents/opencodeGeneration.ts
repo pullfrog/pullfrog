@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Rollout } from "../external.ts";
 import { log } from "../utils/cli.ts";
 
 export type OpencodeGeneration = 1 | 2;
@@ -25,31 +26,42 @@ const V2_CONFIG_KEYS = [
 
 let decided: OpencodeGeneration | undefined;
 
+type GenerationInput = { cwd: string; rollouts: readonly string[] };
+
 /**
  * Which OpenCode drives the run. V1 (`opencode-ai`) is the default; V2 (`@opencode/cli`) runs when
- * `PULLFROG_OPENCODE_VERSION=2` opts in, or when the checkout's own OpenCode setup is written for V2.
- * Decided once per run: main.ts calls this with the checkout before anything installs opencode.
- * See wiki/opencode-v2.md.
+ * `PULLFROG_OPENCODE_VERSION=2` opts in, when the checkout's own OpenCode setup is written for V2, or
+ * when the server assigned the run to the `opencode-v2` rollout. Decided once per run: main.ts calls
+ * this with the checkout before anything installs opencode. See wiki/opencode-v2.md.
  */
-export function opencodeGeneration(cwd = process.cwd()): OpencodeGeneration {
+export function opencodeGeneration(
+  input: GenerationInput = { cwd: process.cwd(), rollouts: [] }
+): OpencodeGeneration {
   if (decided) return decided;
-  const pick = decide(cwd);
+  const pick = decide(input);
   decided = pick.generation;
   log.info(`» opencode: V${pick.generation} (${pick.reason})`);
   return decided;
 }
 
-function decide(cwd: string): { generation: OpencodeGeneration; reason: string } {
+function decide(input: GenerationInput): { generation: OpencodeGeneration; reason: string } {
   const pinned = process.env.PULLFROG_OPENCODE_VERSION?.trim();
   if (pinned === "1") return { generation: 1, reason: "PULLFROG_OPENCODE_VERSION=1" };
   if (pinned === "2") return { generation: 2, reason: "PULLFROG_OPENCODE_VERSION=2" };
   if (pinned) log.warning(`» PULLFROG_OPENCODE_VERSION=${pinned} is not 1 or 2; ignoring it`);
   for (const file of CONFIG_FILES) {
-    const key = v2ConfigKey(readJsonc(join(cwd, file)));
+    const key = v2ConfigKey(readJsonc(join(input.cwd, file)));
     if (key) return { generation: 2, reason: `${file} sets V2's \`${key}\`` };
   }
-  if (dependsOnV2Plugin(readJsonc(join(cwd, ".opencode", "package.json")))) {
+  if (dependsOnV2Plugin(readJsonc(join(input.cwd, ".opencode", "package.json")))) {
     return { generation: 2, reason: ".opencode/package.json depends on @opencode/plugin" };
+  }
+  const rollout: Rollout = "opencode-v2";
+  if (input.rollouts.includes(rollout)) {
+    // the rollout measures our harness on V2, not how V2 reads a setup written for V1
+    const own = [...CONFIG_FILES, ".opencode"].find((path) => existsSync(join(input.cwd, path)));
+    if (!own) return { generation: 2, reason: `rollout ${rollout}` };
+    return { generation: 1, reason: `rollout ${rollout} skipped: the checkout has its own ${own}` };
   }
   return { generation: 1, reason: "default" };
 }
