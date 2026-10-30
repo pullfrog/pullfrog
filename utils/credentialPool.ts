@@ -93,6 +93,8 @@ export async function initializeCredentialPool(input: {
   ctx: RunContextData;
   slug: string | undefined;
   injected: string[];
+  /** subscriptions keyless auth displaced: loading one back would outrank it. */
+  exclude: string[];
 }) {
   const access = input.ctx.credentialAccess;
   if (!access) return;
@@ -111,7 +113,7 @@ export async function initializeCredentialPool(input: {
   }
   for (const name of subscriptionNameSchema.options) {
     if (model && subscriptionForModel(model) !== name) continue;
-    if (workflowCredentials[name]) continue;
+    if (workflowCredentials[name] || input.exclude.includes(name)) continue;
     const candidate = access.candidates.find((item) => item.name === name);
     if (!candidate) continue;
     const selected = await select({ access, candidate }).catch(() => {

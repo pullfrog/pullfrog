@@ -1615,6 +1615,7 @@ export function modelHasStoredAuth(params: { model: string; secretNames: string[
     ...getModelEnvVars(slug),
     ...getModelManagedCredentials(slug),
     ...(HARNESS_ONLY_CREDENTIALS[getModelProvider(slug)] ?? []),
+    ...(KEYLESS_AUTH_ENV[getModelProvider(slug)]?.required ?? []),
     // the default endpoint's vars above still count: a runner holding no such set runs the
     // slug as a raw model id on it
     ...openAICompatibleSetEnvVars(slug),
@@ -2337,6 +2338,36 @@ export function getProviderGatewayUrl(specifier: string | undefined): string | u
   // a trailing slash doubles up against the path opencode joins onto it
   return process.env[envVar]?.trim().replace(/\/$/, "") || undefined;
 }
+
+// ── keyless auth ───────────────────────────────────────────────────────────────
+
+/**
+ * The IDs a provider's keyless (workload identity federation) exchange takes,
+ * under the provider's own variable names. They are identifiers, not secrets:
+ * the credential is the run's GitHub OIDC token. Stored like any secret, and a
+ * provider is keyless once every `required` name is set. `audience` is what the
+ * GitHub token is minted for, which the provider's rule must match; OpenAI's
+ * can be overridden with `OPENAI_WIF_AUDIENCE`. See wiki/keyless-auth.md.
+ */
+export const KEYLESS_AUTH_ENV: Record<
+  string,
+  { required: string[]; optional: string[]; audience: string }
+> = {
+  anthropic: {
+    required: [
+      "ANTHROPIC_FEDERATION_RULE_ID",
+      "ANTHROPIC_ORGANIZATION_ID",
+      "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    ],
+    optional: ["ANTHROPIC_WORKSPACE_ID"],
+    audience: "https://api.anthropic.com",
+  },
+  openai: {
+    required: ["OPENAI_IDENTITY_PROVIDER_ID", "OPENAI_SERVICE_ACCOUNT_ID"],
+    optional: ["OPENAI_WIF_AUDIENCE"],
+    audience: "https://api.openai.com/v1",
+  },
+};
 
 /**
  * the Bedrock model ID passed to claude-code or opencode is whatever the

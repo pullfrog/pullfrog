@@ -20,7 +20,8 @@
  *   1b. Pre-rendered bodies — a throw site that already built the markdown
  *      (`MODEL_ACCESS_MARKER`, `SECRETS_UNAVAILABLE_MARKER`,
  *      `ROUTER_UNFUNDED_MARKER`, `TRIAL_SPENT_MARKER`,
- *      `CREDENTIAL_REJECTED_MARKER`, `CREDENTIAL_POOL_REFUSED_MARKER`) passes
+ *      `CREDENTIAL_REJECTED_MARKER`, `CREDENTIAL_POOL_REFUSED_MARKER`,
+ *      `KEYLESS_UNUSABLE_MARKER`) passes
  *      through verbatim.
  *
  *   2. BYOK provider billing-exhausted (#835) — DeepSeek "Insufficient
@@ -66,6 +67,7 @@ import {
   formatApiKeyErrorSummary,
   isApiKeyAuthError,
   isByokSetupError,
+  KEYLESS_UNUSABLE_MARKER,
   pickModelLink,
   providerDisplayName,
   providerLink,
@@ -475,6 +477,7 @@ function renderRunErrorBody(ctx: RenderContext): string {
       TRIAL_SPENT_MARKER,
       CREDENTIAL_REJECTED_MARKER,
       CREDENTIAL_POOL_REFUSED_MARKER,
+      KEYLESS_UNUSABLE_MARKER,
     ].some((marker) => message.includes(marker))
   ) {
     return message;

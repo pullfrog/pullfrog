@@ -48,6 +48,7 @@ import {
 } from "./utils/github.ts";
 import { resolveInstructions } from "./utils/instructions.ts";
 import { setBotLogin } from "./utils/isPullfrog.ts";
+import { startKeylessAuth } from "./utils/keylessAuth.ts";
 import {
   persistLearnings,
   persistXrepoLearnings,
@@ -292,9 +293,18 @@ export async function main(): Promise<MainResult> {
   // a named OpenAI-compatible set only exists from here on when it is stored in Pullfrog.
   const openAICompatibleSet = activateOpenAICompatibleSet({ slug: payload.model });
 
+  // keyless auth is the first credential a provider tries, so it starts before the pool loads,
+  // and before model discovery so opencode reads the provider as authorized.
+  await using keyless = await startKeylessAuth({ oidc: oidcCredentials });
+
   // load one stored subscription per provider for the discovery below. `injected` keeps a
   // workflow credential distinct from a stored one now that both sit in process.env.
-  await initializeCredentialPool({ ctx: runContext, slug: payload.model, injected });
+  await initializeCredentialPool({
+    ctx: runContext,
+    slug: payload.model,
+    injected,
+    exclude: keyless.suppressed,
+  });
 
   // materialize the subscription auth.json entries (idempotent — the opencode
   // agent re-calls both inside run() and writes the same file; the writer

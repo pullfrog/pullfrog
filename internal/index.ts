@@ -52,6 +52,7 @@ export {
   isEffortPosition,
   isOssAllowedModel,
   isRouterTier,
+  KEYLESS_AUTH_ENV,
   ladderRungs,
   modelAliases,
   modelHasStoredAuth,

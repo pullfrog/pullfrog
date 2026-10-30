@@ -145,9 +145,12 @@ class TokenExchangeError extends Error {
  * timeout so `acquireNewToken`'s retry predicate treats 5xx/429/timeouts
  * as transient.
  */
-export async function fetchIdTokenFromStash(creds: OidcCredentials): Promise<string> {
+export async function fetchIdTokenFromStash(
+  creds: OidcCredentials,
+  audience = OIDC_AUDIENCE
+): Promise<string> {
   const url = new URL(creds.requestUrl);
-  url.searchParams.set("audience", OIDC_AUDIENCE);
+  url.searchParams.set("audience", audience);
   const timeoutMs = 30000;
   let response: Response;
   try {

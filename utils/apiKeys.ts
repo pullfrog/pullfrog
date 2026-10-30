@@ -20,6 +20,7 @@ import {
 import { getApiUrl } from "./apiUrl.ts";
 import { PULLFROG_DATA_DIR, unhostedSubscriptions } from "./codexHome.ts";
 import { DISCORD_LINK, type FailureLink, renderFailure } from "./failureBody.ts";
+import { keylessRejection } from "./keylessAuth.ts";
 import { getModelsFailure } from "./openCodeModels.ts";
 import { PROVIDER_DASHBOARDS } from "./providerDashboards.ts";
 import type { CredentialCandidate } from "./subscriptionCredentials.ts";
@@ -138,6 +139,9 @@ export const CREDENTIAL_REJECTED_MARKER = "was rejected by its provider";
  */
 export const CREDENTIAL_POOL_REFUSED_MARKER = "No configured credential can serve this run";
 
+/** marker for keyless auth that nothing could stand in for. verbatim: its reason quotes the provider. */
+export const KEYLESS_UNUSABLE_MARKER = "keyless auth could not be used";
+
 /**
  * Three ways to arrive at "the runner has no key", each with a different CTA:
  * we couldn't read the key you stored, your Router wallet ran dry and you have
@@ -171,6 +175,9 @@ function throwKeyError(params: {
   secretsUnavailable?: boolean | undefined;
   routerUnfunded?: boolean | undefined;
 }): never {
+  // not a `NoUsableCredentialError`: the user brought a credential, it just failed
+  const keyless = keylessRejection(params.model);
+  if (keyless) throw new Error(buildKeylessRejectedError({ ...keyless, owner: params.owner }));
   if (params.secretsUnavailable) throw new Error(buildSecretsUnavailableError());
   if (params.routerUnfunded) throw new NoUsableCredentialError(buildRouterUnfundedError(params));
   throw new NoUsableCredentialError(buildMissingApiKeyError(params));
@@ -878,6 +885,34 @@ export function buildRejectedCredentialError(params: {
     detail: `Issue a new key and update the copy ${params.inPullfrogStore ? "stored in Pullfrog" : "in this repo's GitHub Actions secrets"}.`,
     details,
     links: keysUrl ? [{ label: "Issue a new key", url: keysUrl }, update] : [update],
+  });
+}
+
+/** keyless auth was set up for the provider, could not pay (refused, or set up incompletely), and nothing else could. */
+function buildKeylessRejectedError(params: {
+  provider: string;
+  name: string;
+  reason: string;
+  owner: string;
+}): string {
+  const fix: FailureLink = {
+    label: "Check keyless auth",
+    url: `${getApiUrl()}/console/${params.owner}#billing`,
+  };
+  return renderFailure({
+    headline: `Your ${params.name} ${KEYLESS_UNUSABLE_MARKER}.`,
+    detail: `No other ${params.name} credential is set up to fall back to. If the provider refused the exchange, check that its rule matches this repo's Pullfrog runs.`,
+    details: { summary: "Why", text: params.reason },
+    links:
+      params.provider === "anthropic"
+        ? [
+            {
+              label: "Open the authentication history",
+              url: "https://platform.claude.com/settings/workload-identity-federation?tab=history",
+            },
+            fix,
+          ]
+        : [fix],
   });
 }
 
