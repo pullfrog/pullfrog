@@ -581,6 +581,7 @@ const CODEX_MODEL_PRICING: Record<
   "gpt-6-astra": { input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
   "gpt-6.1-sol": { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
   "gpt-6-luna": { input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
+  "gpt-6.1-terra": { input: 1, cacheRead: 0.05, cacheWrite: 1.25, output: 5 },
   "gpt-5.6-terra": { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 12 },
 };
 

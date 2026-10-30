@@ -218,9 +218,9 @@ export const bundledProviders = {
       // cheaper lens-fanout subagent — replaces the old hidden gpt-5.4 target.
       "gpt-terra": {
         displayName: "GPT Terra",
-        resolve: "openai/gpt-5.6-terra",
+        resolve: "openai/gpt-6.1-terra",
         effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-5.6-terra",
+        openRouterResolve: "openrouter/openai/gpt-6.1-terra",
       },
       "gpt-luna": {
         displayName: "GPT Luna",
@@ -634,7 +634,7 @@ export const bundledProviders = {
         displayName: "GPT Terra",
         resolve: "opencode/gpt-5.6-terra",
         effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-5.6-terra",
+        openRouterResolve: "openrouter/openai/gpt-6.1-terra",
       },
       "gpt-luna": {
         displayName: "GPT Luna",
@@ -1246,9 +1246,9 @@ export const bundledProviders = {
       // gpt-5.6 balanced mid-tier — selectable + Sol's subagent. see openai above.
       "gpt-terra": {
         displayName: "GPT Terra",
-        resolve: "openrouter/openai/gpt-5.6-terra",
+        resolve: "openrouter/openai/gpt-6.1-terra",
         effort: ["none", "low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-5.6-terra",
+        openRouterResolve: "openrouter/openai/gpt-6.1-terra",
       },
       "gpt-luna": {
         displayName: "GPT Luna",
@@ -1445,8 +1445,8 @@ export const bundledProviders = {
       },
       "gpt-terra": {
         displayName: "GPT Terra",
-        resolve: "vercel/openai/gpt-5.6-terra",
-        effort: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        resolve: "vercel/openai/gpt-6.1-terra",
+        effort: ["none", "low", "medium", "high", "xhigh", "max"],
       },
       "gpt-luna": {
         displayName: "GPT Luna",

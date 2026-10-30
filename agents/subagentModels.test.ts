@@ -49,7 +49,7 @@ describe("deriveSubagentModels", () => {
     );
     it("gpt → gpt-terra (direct)", () => {
       expect(deriveSubagentModels("openai/gpt-6.1-sol")).toEqual({
-        reviewer: "openai/gpt-5.6-terra",
+        reviewer: "openai/gpt-6.1-terra",
       });
     });
     it("gpt → gpt-terra (opencode-vendored)", () => {
@@ -59,7 +59,7 @@ describe("deriveSubagentModels", () => {
     });
     it("gpt → gpt-terra (openrouter)", () => {
       expect(deriveSubagentModels("openrouter/openai/gpt-6.1-sol")).toEqual({
-        reviewer: "openrouter/openai/gpt-5.6-terra",
+        reviewer: "openrouter/openai/gpt-6.1-terra",
       });
     });
     // gpt-pro's direct-key resolve is plain Sol (no -pro id on models.dev), so it
@@ -71,7 +71,7 @@ describe("deriveSubagentModels", () => {
       });
     });
     it("gpt-terra itself (the subagent target) has no further downshift", () => {
-      expect(deriveSubagentModels("openai/gpt-5.6-terra")).toEqual({ reviewer: undefined });
+      expect(deriveSubagentModels("openai/gpt-6.1-terra")).toEqual({ reviewer: undefined });
     });
     it("gpt-mini has no downshift", () => {
       expect(deriveSubagentModels("openai/gpt-6-luna")).toEqual({ reviewer: undefined });
