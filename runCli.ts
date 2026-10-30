@@ -144,6 +144,9 @@ function createRuntimeContext(): RuntimeContext {
   // migration renamed the prefix). tracked: #713
   env.npm_config_min_release_age = "0";
   env.pnpm_config_minimum_release_age = "0";
+  // `prefer-offline` trusts a cached packument forever, so it would pin the
+  // bootstrap to the newest version that packument lists, or ETARGET an exact one
+  env.npm_config_prefer_offline = "false";
   const currentPath = process.env.PATH ?? "";
   env.PATH = currentPath ? `${nodeBinDir}${delimiter}${currentPath}` : nodeBinDir;
 
@@ -239,6 +242,50 @@ function prefetchPackage(params: {
   }
 }
 
+function compareReleases(a: string, b: string): number {
+  const left = a.split(".").map(Number);
+  const right = b.split(".").map(Number);
+  return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
+}
+
+/** `version` is a stable release satisfying `^<base>`: same major (same minor below 1.0), not older */
+function satisfiesCaret(version: string, base: string): boolean {
+  if (!/^\d+\.\d+\.\d+$/.test(version) || compareReleases(version, base) < 0) return false;
+  const [major, minor] = version.split(".");
+  const [baseMajor, baseMinor] = base.split(".");
+  return major === baseMajor && (baseMajor !== "0" || minor === baseMinor);
+}
+
+/**
+ * npx before npm 11.2 reuses any cached install that satisfies a range, so on a
+ * self-hosted runner's persistent `~/.npm/_npx` the range pins the first version
+ * it ever installed. An exact version gets a fresh npx dir per release. Picks
+ * the way npm does: `latest` if it satisfies the range, else the highest match.
+ */
+async function resolvePackageSpec(): Promise<string> {
+  try {
+    const response = await fetch(`${NPM_REGISTRY}/pullfrog`, {
+      headers: { accept: "application/vnd.npm.install-v1+json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`registry answered ${response.status}`);
+    const packument: { "dist-tags": { latest: string }; versions: Record<string, unknown> } =
+      JSON.parse(await response.text());
+    const matches = Object.keys(packument.versions)
+      .filter((version) => satisfiesCaret(version, actionPackageJson.version))
+      .sort((a, b) => compareReleases(b, a));
+    const latest = packument["dist-tags"].latest;
+    const picked = matches.includes(latest) ? latest : matches[0];
+    if (!picked) throw new Error("no published version matches");
+    return `pullfrog@${picked}`;
+  } catch (error) {
+    console.warn(
+      `» could not resolve ${FALLBACK_PACKAGE_SPEC} (${getErrorMessage(error)}); using the range`
+    );
+    return FALLBACK_PACKAGE_SPEC;
+  }
+}
+
 function runPackageCli(context: RuntimeContext, packageSpec: string, cliArgs: string[]): void {
   // `verify` here and not in `requireExecutable`: this is the one resolution
   // whose failure is unattributable, because a broken launcher dies before any
@@ -311,7 +358,7 @@ function runLocalCli(context: RuntimeContext, cliArgs: string[]): void {
   });
 }
 
-function runPullfrogCliInner(context: RuntimeContext, cliArgs: string[]): void {
+async function runPullfrogCliInner(context: RuntimeContext, cliArgs: string[]): Promise<void> {
   if (process.env.PULLFROG_FORCE_LOCAL_CLI === "1") {
     runLocalCli(context, cliArgs);
     return;
@@ -322,7 +369,7 @@ function runPullfrogCliInner(context: RuntimeContext, cliArgs: string[]): void {
     return;
   }
 
-  runPackageCli(context, FALLBACK_PACKAGE_SPEC, cliArgs);
+  runPackageCli(context, await resolvePackageSpec(), cliArgs);
 }
 
 // the inner CLI and the bootstrap install run with `stdio: "inherit"`, so on a
@@ -341,12 +388,12 @@ function propagateChildExit(error: unknown): never {
   throw error;
 }
 
-export function runPullfrogCli(params: RunPullfrogCliParams): void {
+export async function runPullfrogCli(params: RunPullfrogCliParams): Promise<void> {
   const context = createRuntimeContext();
 
   if (params.swallowErrors) {
     try {
-      runPullfrogCliInner(context, params.cliArgs);
+      await runPullfrogCliInner(context, params.cliArgs);
     } catch (error) {
       console.warn(`» pullfrog cleanup bootstrap failed: ${getErrorMessage(error)}`);
       // best-effort cleanup
@@ -355,7 +402,7 @@ export function runPullfrogCli(params: RunPullfrogCliParams): void {
   }
 
   try {
-    runPullfrogCliInner(context, params.cliArgs);
+    await runPullfrogCliInner(context, params.cliArgs);
   } catch (error) {
     propagateChildExit(error);
   }

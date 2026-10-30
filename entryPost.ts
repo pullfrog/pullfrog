@@ -21,7 +21,7 @@ if (
   process.env.STATE_subscription_data_dir ||
   process.env.STATE_temp_dir
 ) {
-  runPullfrogCli({
+  await runPullfrogCli({
     cliArgs: ["gha", "--post"],
     // the workflow is over; a bootstrap failure here must not turn a finished
     // run red. a missed write-back costs one `pullfrog auth codex` re-run.

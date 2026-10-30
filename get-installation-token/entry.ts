@@ -1,5 +1,5 @@
 import { runPullfrogCli } from "../runCli.ts";
 
-runPullfrogCli({
+await runPullfrogCli({
   cliArgs: ["gha", "token"],
 });
