@@ -52,7 +52,7 @@ No API key required. Connect a coding-agent plan once and every run bills agains
 
 | Plan | Connect with |
 | --- | --- |
-| [Claude Pro/Max](https://docs.pullfrog.com/claude-auth) | `npx pullfrog auth claude` |
+| [Claude](https://docs.pullfrog.com/claude-auth) | `npx pullfrog auth claude` |
 | [ChatGPT Codex](https://docs.pullfrog.com/codex-auth) | `npx pullfrog auth codex` |
 | [Grok](https://docs.pullfrog.com/grok-auth) | `npx pullfrog auth grok` |
 | [Kimi Code](https://docs.pullfrog.com/kimi-code) | a Kimi Code key as `KIMI_API_KEY` |

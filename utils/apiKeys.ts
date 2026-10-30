@@ -799,7 +799,7 @@ const SUBSCRIPTION_CREDENTIALS: Record<
   { label: string; command: string; provider: string }
 > = {
   CLAUDE_CODE_OAUTH_TOKEN: {
-    label: "Claude Pro/Max subscription",
+    label: "Claude subscription",
     command: "pullfrog auth claude",
     provider: "anthropic",
   },
@@ -1027,7 +1027,7 @@ export function formatApiKeyErrorSummary(params: {
   if (isClaudeSessionLimitError(params.raw)) {
     const reset = CLAUDE_SESSION_LIMIT_PATTERN.exec(params.raw)?.[1]?.trim();
     return renderFailure({
-      headline: "Your Claude Pro/Max subscription has hit its usage limit.",
+      headline: "Your Claude subscription has hit its usage limit.",
       detail: `${reset ? `It resets at **${reset}**. ` : ""}Re-trigger after that, or connect an Anthropic API key, which Pullfrog falls back to automatically.`,
       details,
       links: [providerLink(params.owner)],

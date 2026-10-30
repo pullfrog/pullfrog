@@ -196,7 +196,7 @@ function printAuthUsage(params: { stream: typeof console.log; prog: string }): v
   params.stream("");
   params.stream("providers:");
   params.stream("  codex    mint a Codex (ChatGPT) subscription credential");
-  params.stream("  claude   mint a Claude (Pro / Max) subscription OAuth token");
+  params.stream("  claude   mint a Claude subscription OAuth token");
   params.stream("  grok     mint a Grok (SuperGrok / X Premium) subscription credential");
   params.stream("  list     list subscriptions and their IDs");
   params.stream("  remove   remove a subscription by binding ID");
@@ -568,7 +568,7 @@ async function pasteClaudeToken(): Promise<string | null> {
       `mint a long-lived Claude Code OAuth token, then paste it below.`,
       ``,
       `${pc.dim("run:")} ${pc.cyan("claude setup-token")}`,
-      `it opens your browser, works with Pro/Max subscriptions, and prints a`,
+      `it opens your browser, works with Claude subscriptions, and prints a`,
       `token starting with ${pc.cyan("sk-ant-oat…")}. copy that token.`,
     ].join("\n")
   );

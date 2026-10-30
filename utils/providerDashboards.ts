@@ -44,7 +44,7 @@ export const PROVIDER_DASHBOARDS: Record<string, ProviderDashboard> = {
     keys: "https://platform.claude.com/settings/keys",
   },
   "claude-plan": {
-    name: "Claude Pro/Max",
+    name: "Claude",
     credential: "CLAUDE_CODE_OAUTH_TOKEN",
     billing: "https://claude.ai/settings/billing",
     usage: "https://claude.ai/settings/usage",
