@@ -3,9 +3,9 @@ name: Publish & Release
 on:
   # dispatch only, and deliberately so. a `workflow_dispatch` needs a GitHub session or token
   # carrying write access; a stolen git push credential carries neither, so it can no longer start a
-  # release by landing a commit. bumping the version in package.json is therefore inert until a maintainer runs `gh workflow run publish.yml -R
-  # pullfrog/pullfrog -f notes="$(cat notes.md)"`, and the staged version then still needs their 2FA
-  # approval before npm serves it.
+  # release by landing a commit. bumping the version in package.json is therefore inert until a
+  # maintainer runs `gh workflow run publish.yml -R pullfrog/pullfrog -f notes="$(cat notes.md)"`,
+  # and the staged version then still needs their 2FA approval before npm serves it.
   #
   # two jobs. `stage` puts the version in npm's staged queue. `finish` runs on the `release-approval`
   # environment, whose required reviewers are the npm maintainers: GitHub holds the run there, with no
