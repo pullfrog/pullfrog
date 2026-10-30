@@ -55,8 +55,36 @@ export const selectedCredentialSchema = z.object({
   receipt: z.string(),
 });
 
-export function subscriptionLabel(input: { email: string | null; suffix: string }) {
-  return input.email ?? `•••• ${input.suffix}`;
+/** ChatGPT plan ids whose name is not the id read aloud, as the codex CLI names them. */
+const PLAN_NAMES: Record<string, string> = {
+  prolite: "Pro",
+  pro: "Pro (More)",
+  promax: "Pro (Max)",
+  self_serve_business_prolite: "Business",
+  self_serve_business_usage_based: "Business",
+  ent26: "Enterprise",
+  enterprise_cbp_automation: "Enterprise",
+  enterprise_cbp_usage_based: "Enterprise",
+  sci: "Academic Researchers",
+  sci_plus: "Academic Researchers Plus",
+};
+
+/** `plan` is the plan id the credential itself carries, so it is as current as the credential. */
+export function subscriptionLabel(input: {
+  email: string | null;
+  suffix: string;
+  plan: string | null;
+}) {
+  const account = input.email ?? `•••• ${input.suffix}`;
+  if (!input.plan) return account;
+  // an id not in the table is read aloud (`edu_plus` → "Edu Plus"), so a new plan needs no code
+  const plan =
+    PLAN_NAMES[input.plan] ??
+    input.plan
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  return `${plan} · ${account}`;
 }
 
 /** the provider's last verdict on a subscription, or null when it last worked. */
