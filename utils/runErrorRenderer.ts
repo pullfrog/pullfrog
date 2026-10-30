@@ -117,7 +117,7 @@ type RenderRunErrorInput = {
 
 /** who answered the request, as the customer knows them. */
 type Account = {
-  /** "OpenAI", "ChatGPT/Codex", or null when nothing names the provider. */
+  /** "OpenAI", "Codex / ChatGPT", or null when nothing names the provider. */
   name: string | null;
   /** "ChatGPT subscription", "OpenAI account" or "model provider account". */
   phrase: string;

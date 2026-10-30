@@ -195,7 +195,7 @@ function printAuthUsage(params: { stream: typeof console.log; prog: string }): v
   params.stream("manage provider credentials for the current repository.");
   params.stream("");
   params.stream("providers:");
-  params.stream("  codex    mint a Codex (ChatGPT) subscription credential");
+  params.stream("  codex    mint a Codex / ChatGPT subscription credential");
   params.stream("  claude   mint a Claude subscription OAuth token");
   params.stream("  grok     mint a Grok (SuperGrok / X Premium) subscription credential");
   params.stream("  list     list subscriptions and their IDs");

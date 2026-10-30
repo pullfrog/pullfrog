@@ -56,7 +56,7 @@ export const PROVIDER_DASHBOARDS: Record<string, ProviderDashboard> = {
     keys: "https://platform.openai.com/api-keys",
   },
   "codex-plan": {
-    name: "ChatGPT/Codex",
+    name: "Codex / ChatGPT",
     credential: "CODEX_AUTH_JSON",
     billing: "https://chatgpt.com/#settings/Subscription",
     usage: "https://chatgpt.com/codex/settings/usage",
