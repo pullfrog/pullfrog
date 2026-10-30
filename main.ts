@@ -210,6 +210,7 @@ export async function main(): Promise<MainResult> {
     // gate-refusal path: posts one comment and exits, so no agent and no gh token
     await using _commentTokenRef = await resolveTokens({
       push: "disabled",
+      shell: "disabled",
       authorPermission: undefined,
       oidc: oidcCredentials,
     });
@@ -350,6 +351,7 @@ export async function main(): Promise<MainResult> {
   // resolve tokens first — acquireNewToken needs OIDC env vars for token exchange
   await using tokenRef = await resolveTokens({
     push: payload.push,
+    shell: payload.shell,
     authorPermission: payload.event.authorPermission,
     xrepo: payload.xrepo,
     xrepoGrant: payload.xrepoGrant,
@@ -709,6 +711,7 @@ export async function main(): Promise<MainResult> {
       refreshGitToken: tokenRef.refreshGitToken,
       readToken: tokenRef.readToken,
       ghToken: tokenRef.ghToken,
+      shellToken: tokenRef.shellToken,
       xrepo: payload.xrepo,
       apiToken: runContext.apiToken,
       modes,

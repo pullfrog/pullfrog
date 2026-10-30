@@ -1312,6 +1312,9 @@ export const claude = agent({
     // progress comment's task list (TaskCreate/TaskUpdate would need a second parser).
     env.CLAUDE_CODE_ENABLE_TODO_TOOLS = "1";
     env.CLAUDE_CODE_ENABLE_TASKS = "0";
+    // unset, first-party routes defer every MCP tool behind ToolSearch, a turn spent before the
+    // first Pullfrog call. `false` loads them up front, as gateway routes already do.
+    env.ENABLE_TOOL_SEARCH ||= "false";
     if (isBedrockRoute) {
       env.CLAUDE_CODE_USE_BEDROCK = "1";
     }

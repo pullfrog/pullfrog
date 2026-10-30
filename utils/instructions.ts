@@ -334,7 +334,7 @@ MCP servers provide tools you can call. Inspect your available MCP servers at st
 
 ### Git
 
-Use \`${t("git")}\` for local git commands (status, log, add, commit, checkout, branch, merge, etc.). When reviewing a PR, the diffPath returned by \`${t("checkout_pr")}\` is authoritative — read it rather than re-deriving the diff. To diff a branch against its base yourself, use \`git diff --merge-base <base>\`; the tool rejects the symmetric forms and tells you what to use instead. Note the git tool runs git directly, so \`$(…)\` subshells do not interpolate. For operations requiring remote authentication, use the dedicated MCP tools:
+Use \`${t("git")}\` to change local git state (add, commit, checkout, branch, merge, etc.). When reviewing a PR, the diffPath returned by \`${t("checkout_pr")}\` is authoritative — read it rather than re-deriving the diff. To diff a branch against its base yourself, use \`git diff --merge-base <base>\`; the tool rejects the symmetric forms and tells you what to use instead. Note the git tool runs git directly, so \`$(…)\` subshells do not interpolate. For operations requiring remote authentication, use the dedicated MCP tools:
 - \`${t("push_branch")}\` - push current or specified branch
 - \`${t("git_fetch")}\` - fetch refs from remote
 - \`${t("checkout_pr")}\` - checkout a PR branch (fetches and configures push for forks)
@@ -367,7 +367,7 @@ Rules:
 
 ### GitHub
 
-Use MCP tools from ${pullfrogMcpName} for all GitHub operations. Never use the \`gh\` CLI — it is not authenticated and will fail. The MCP tools handle authentication and enforce permissions.
+Use MCP tools from ${pullfrogMcpName} for GitHub writes — they handle authentication and enforce permissions.
 ${
   ctx.payload.event.issue_number !== undefined &&
   hasSimilarIssues({ repoIntelligence: ctx.repoIntelligence, event: ctx.payload.event })

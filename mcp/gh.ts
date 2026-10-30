@@ -48,9 +48,9 @@ export function GhTool(ctx: ToolContext) {
   const permissions = mirrorRolePermissions(ctx.payload.event.authorPermission);
   return tool({
     name: "gh",
-    // denied to subagents. `shell` is deliberately unmarked because git is
-    // blocked inside it, but `gh` reaches PR and issue state changes — the
-    // shape of the 2026-05-18 cross-branch clobber the gate exists for.
+    // denied to subagents. `shell` is deliberately unmarked because its `.git`
+    // and its own `gh` token are read-only, but this `gh` reaches PR and issue
+    // state changes — the shape of the 2026-05-18 cross-branch clobber the gate exists for.
     mutates: true,
     timeoutMs: GH_TIMEOUT_MS,
     description:

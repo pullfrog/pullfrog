@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import * as core from "@actions/core";
-import type { AuthorPermission, PushPermission, XrepoConfig } from "../external.ts";
+import type {
+  AuthorPermission,
+  PushPermission,
+  ShellPermission,
+  XrepoConfig,
+} from "../external.ts";
 import { log } from "./cli.ts";
 import { onExitSignal } from "./exitHandler.ts";
 import { acquireNewToken, type OidcCredentials } from "./github.ts";
-import { formatPermissions, mirrorRolePermissions } from "./roleMirror.ts";
+import { formatPermissions, mirrorRolePermissions, shellTokenPermissions } from "./roleMirror.ts";
 import { maskSecret } from "./secretCommands.ts";
 
 // re-export for `pullfrog gha token` subcommand
@@ -66,6 +71,9 @@ export type TokenRef = {
   // user's own repo role. undefined below the mirror threshold (read/none),
   // which is what withholds the tool entirely. see roleMirror.ts.
   ghToken?: string | undefined;
+  // read-only credential for `gh` inside the shell. undefined when the run has
+  // no shell, or on the external-GH_TOKEN path. see shellTokenPermissions.
+  shellToken?: string | undefined;
   // re-mint the git-scoped token matching `stale` (the write gitToken or the
   // read readToken) for push retries, when GitHub hands out a token its
   // git-over-HTTPS edge never accepts. undefined on the external-GH_TOKEN path
@@ -79,6 +87,8 @@ type ResolveTokensParams = {
   // the triggering user's repo role, resolved server-side before dispatch. the
   // `gh` token's scope is derived from it; `undefined` withholds the token.
   authorPermission: AuthorPermission | undefined;
+  // a run with no shell has nowhere to put the shell token, so none is minted.
+  shell: ShellPermission;
   // cross-repo access sets (server-resolved). when present, gitToken + mcpToken
   // are scoped to the WRITE set (∪ primary) and a readToken is minted over the
   // READ set. absent → single-repo, primary-scoped tokens (unchanged).
@@ -211,6 +221,14 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
     );
   }
 
+  // like ghToken, printable by the agent, so read-only scope on this repo is its whole boundary.
+  let shellToken: string | undefined;
+  if (params.shell !== "disabled") {
+    shellToken = await acquireNewToken({ permissions: shellTokenPermissions });
+    maskSecret(shellToken);
+    log.info(`» acquired shell token (${formatPermissions(shellTokenPermissions)})`);
+  }
+
   // read-tier token for cloning read-only secondaries (cross-repo only).
   let readToken: string | undefined;
   if (params.xrepo) {
@@ -336,6 +354,7 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
         ...(currentReadToken ? [revokeGitHubInstallationToken(currentReadToken)] : []),
         // revoking this one is what bounds a `gh` leak to the run's lifetime
         ...(ghToken ? [revokeGitHubInstallationToken(ghToken)] : []),
+        ...(shellToken ? [revokeGitHubInstallationToken(shellToken)] : []),
       ]);
     } finally {
       removeSignalHandler();
@@ -353,6 +372,7 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
     mcpToken,
     readToken,
     ghToken,
+    shellToken,
     refreshGitToken,
     [Symbol.asyncDispose]: dispose,
   };

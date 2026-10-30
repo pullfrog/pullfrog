@@ -75,6 +75,9 @@ export interface ToolContext {
   // the tool. unlike the MCP token this one IS reachable by the agent — `gh`
   // can print it — so its scope is the whole boundary. see roleMirror.ts.
   ghToken: string | undefined;
+  // read-only credential `gh` gets inside the shell tool. reachable by the
+  // agent like ghToken, so read-only scope is its boundary. see shellTokenPermissions.
+  shellToken: string | undefined;
   // cross-repo access sets, resolved server-side. undefined ⇒ single-repo run.
   // checkout_repo / list_repos gate on this; resolveRepoCtx routes by tier.
   xrepo: XrepoConfig | undefined;

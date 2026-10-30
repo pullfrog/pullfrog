@@ -10,6 +10,7 @@ import { type } from "arktype";
 import { HOOK_ASSET_TMPDIR_RELPATHS } from "../agents/nativeFsDenies.ts";
 import { ensureBrowserDaemon } from "../utils/browser.ts";
 import { log } from "../utils/log.ts";
+import { formatPermissions, shellTokenPermissions } from "../utils/roleMirror.ts";
 import { resolveEnv } from "../utils/secrets.ts";
 import { DEFAULT_MAX_RETAINED_BYTES, TailBuffer } from "../utils/subprocess.ts";
 import type { ToolContext } from "./server.ts";
@@ -225,7 +226,7 @@ const SOCKET_CLEANUP = [
 //   3. self-bind + remount-ro on the ENTIRE <repoRoot>/.git directory.
 //      A blanket ro-bind is free: nothing legitimately writes .git from
 //      bash (commits go through our $git(), whose binary runs OUTSIDE this
-//      namespace, so it's unaffected; bash `git` is already blocked). It
+//      namespace, so it's unaffected; bash `git` can only read). It
 //      robustly covers every code-exec surface an enumerated list would miss
 //      — .git/config, .git/config.worktree, .git/modules/*/config (all carry
 //      core.hooksPath / filter / alias / credential.helper exec vectors),
@@ -620,12 +621,18 @@ export function capOutput(output: string): string {
   return `... [${elided} chars truncated; output saved to ${fullPath}] ...\n${output.slice(-MAX_OUTPUT_CHARS)}`;
 }
 
-/** detect git as a command invocation (not as part of another word like .gitignore) */
-function isGitCommand(command: string): boolean {
-  const trimmed = command.trim();
-  if (trimmed === "git" || trimmed.startsWith("git ")) return true;
-  if (trimmed.startsWith("sudo git")) return true;
-  return /[;&|]\s*(?:sudo\s+)?git(?:\s|$)/.test(trimmed);
+function shellEnv(ctx: ToolContext) {
+  // copied: under `enabled` resolveEnv hands back process.env itself
+  const env = { ...resolveEnv(ctx.payload.shell === "enabled" ? "inherit" : "restricted") };
+  // a GitHub token the repo allowlisted into the shell stays the one `gh` uses
+  if (ctx.shellToken && !env.GH_TOKEN && !env.GITHUB_TOKEN) env.GH_TOKEN = ctx.shellToken;
+  return env;
+}
+
+/** spelled out so the agent never has to probe what `gh` can do */
+function describeGh(ctx: ToolContext): string {
+  if (!ctx.shellToken || shellEnv(ctx).GH_TOKEN !== ctx.shellToken) return "";
+  return ` \`gh\` is authenticated for ${ctx.repo.owner}/${ctx.repo.name} with a token limited to ${formatPermissions(shellTokenPermissions)}.`;
 }
 
 export function ShellTool(ctx: ToolContext) {
@@ -643,26 +650,14 @@ Use this tool to:
 
 Output is capped at ${MAX_OUTPUT_CHARS} chars: if exceeded, only the tail is returned and the captured output is saved to a tempfile (path included in the response). Re-read the tempfile with cat/tail/grep when you need more.
 
-Do NOT use this tool for git commands — use the dedicated git tools instead.`,
+\`git\` works here, but \`.git\` is mounted read-only.${describeGh(ctx)}`,
     parameters: ShellParams,
     execute: execute(async (params) => {
-      if (isGitCommand(params.command)) {
-        throw new Error(
-          "git commands are not allowed in the shell tool. use the dedicated git tools instead:\n" +
-            // the bare tool name here was the on-ramp to malformed `git` calls:
-            // models read it as a command word and sent `command: "git"` (#1199).
-            '- git: local operations, e.g. git({ command: "log", args: ["--oneline"] }) — `command` is the subcommand ONLY\n' +
-            "- push_branch: push to remote (handles authentication)\n" +
-            "- git_fetch: fetch from remote (handles authentication)\n" +
-            "- checkout_pr: check out PR branches"
-        );
-      }
-
       const timeout = Math.min(params.timeout ?? 30000, 120000);
       const cwd = params.working_directory ?? process.cwd();
       // checked here, not left to spawn: its ENOENT names the sandbox binary, not the directory.
       if (!existsSync(cwd)) throw new Error(`working_directory does not exist: ${cwd}`);
-      const env = resolveEnv(ctx.payload.shell === "enabled" ? "inherit" : "restricted");
+      const env = shellEnv(ctx);
       const seal = ctx.payload.shell !== "enabled";
 
       if (params.command.includes("agent-browser")) {

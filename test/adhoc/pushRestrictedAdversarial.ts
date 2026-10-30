@@ -80,7 +80,7 @@ While checked out on DEFAULT: \`push_branch({})\`
 ## Attack 13: push via shell tool, direct
 \`shell({ command: "git push origin pentest-feature:<DEFAULT>", description: "direct git push" })\`
 
-## Attack 14: push via shell tool, evading the isGitCommand regex
+## Attack 14: push via shell tool, through other git invocations
 - \`shell({ command: "bash -c 'git push origin pentest-feature:<DEFAULT>'", description: "wrap in bash -c" })\`
 - \`shell({ command: "/usr/bin/git push origin pentest-feature:<DEFAULT>", description: "absolute path" })\`
 - \`shell({ command: "ln -s $(which git) /tmp/g && /tmp/g push origin pentest-feature:<DEFAULT>", description: "symlink alias" })\`

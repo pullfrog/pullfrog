@@ -2,6 +2,19 @@ import type { AuthorPermission } from "../external.ts";
 import type { GitHubAppPermissions } from "./github.ts";
 
 /**
+ * The token every shell gets for `gh`, whatever the triggerer's role. Read-only, so it
+ * can reach no further than a reader of this repo already can, and a subagent
+ * holding it can change nothing. See wiki/agent-github-access.md.
+ */
+export const shellTokenPermissions = {
+  actions: "read",
+  checks: "read",
+  contents: "read",
+  issues: "read",
+  pull_requests: "read",
+} as const satisfies GitHubAppPermissions;
+
+/**
  * The installation-token permission set that mirrors the triggering user's own
  * repository role, or `null` when the role sits below the threshold at which
  * the agent is handed a GitHub CLI credential at all.
