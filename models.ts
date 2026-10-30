@@ -425,13 +425,14 @@ export const bundledProviders = {
     models: {
       // Moonshot's premium 1M-context multimodal reasoning flagship — pricier
       // than K2.7-code, so it's the preferred BYOK pick but NOT the subsidized
-      // efficient default (that stays K2 via AUTO_EFFICIENT).
+      // efficient default (that stays K2 via AUTO_EFFICIENT). the slug tracks the
+      // K3 line: K3.1 Pro is its post-trained successor, at $2/$10 against K3's $3/$15.
       "kimi-k3": {
         displayName: "Kimi K3",
-        resolve: "moonshotai/kimi-k3",
+        resolve: "moonshotai/kimi-k3.1-pro",
         effort: ["low", "high", "max"],
         openRouterEffort: ["none", "low", "high", "max"],
-        openRouterResolve: "openrouter/moonshotai/kimi-k3",
+        openRouterResolve: "openrouter/moonshotai/kimi-k3.1-pro",
         preferred: true,
         subagentModel: "kimi-k2",
       },
@@ -907,6 +908,18 @@ export const bundledProviders = {
         // see the big-pickle note above (#1077).
         isFree: true,
       },
+      // Zen's FREE Flint 40B (listed 2026-10-21), the ninth promo: Recursive's
+      // open-weights MoE, 2.5B active. Zen's docs: free-period data may train
+      // the model, kept 30 days.
+      flint: {
+        displayName: "Flint",
+        description: "Free on Zen for a limited time",
+        resolve: "opencode/flint-40b-free",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        // free to run, still gated on the provider's own OPENCODE_API_KEY —
+        // see the big-pickle note above (#1077).
+        isFree: true,
+      },
       // Zen's live free MiMo, and the second free row in a menu that big-pickle
       // was alone in since `mimo-v2-pro-free` lost its model.
       mimo: {
@@ -990,12 +1003,12 @@ export const bundledProviders = {
       // Moonshot — parity with moonshotai/* and openrouter/*.
       "kimi-k3": {
         displayName: "Kimi K3",
-        resolve: "opencode-go/kimi-k3",
-        // Go publishes a single rung for K3 where the OpenRouter route
-        // publishes three, so every position lands on `max` here.
-        effort: ["max"],
+        resolve: "opencode-go/kimi-k3.1-pro",
+        // Go published a single rung (`max`) for K3; K3.1 Pro publishes the
+        // same three as the direct route.
+        effort: ["low", "high", "max"],
         openRouterEffort: ["none", "low", "high", "max"],
-        openRouterResolve: "openrouter/moonshotai/kimi-k3",
+        openRouterResolve: "openrouter/moonshotai/kimi-k3.1-pro",
         subagentModel: "kimi-k2",
       },
       "kimi-k2": {
@@ -1346,9 +1359,9 @@ export const bundledProviders = {
       },
       "kimi-k3": {
         displayName: "Kimi K3",
-        resolve: "openrouter/moonshotai/kimi-k3",
+        resolve: "openrouter/moonshotai/kimi-k3.1-pro",
         effort: ["none", "low", "high", "max"],
-        openRouterResolve: "openrouter/moonshotai/kimi-k3",
+        openRouterResolve: "openrouter/moonshotai/kimi-k3.1-pro",
       },
       // slug pins the m2 line for DB stability; resolve tracks the current m2.7.
       "minimax-m2.5": {
@@ -1470,7 +1483,7 @@ export const bundledProviders = {
       },
       "kimi-k3": {
         displayName: "Kimi K3",
-        resolve: "vercel/moonshotai/kimi-k3",
+        resolve: "vercel/moonshotai/kimi-k3.1-pro",
         effort: ["low", "high", "max"],
       },
       "muse-spark": {
