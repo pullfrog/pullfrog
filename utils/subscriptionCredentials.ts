@@ -69,7 +69,7 @@ const PLAN_NAMES: Record<string, string> = {
   sci_plus: "Academic Researchers Plus",
 };
 
-/** `plan` is the plan id the credential itself carries, so it is as current as the credential. */
+/** `plan` is a ChatGPT plan id: the one `wham/usage` last reported, else the token's own claim. */
 export function subscriptionLabel(input: {
   email: string | null;
   suffix: string;

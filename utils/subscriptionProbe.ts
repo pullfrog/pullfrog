@@ -11,11 +11,13 @@ const identitySchema = z.object({
   user_id: z.string().optional(),
   account_id: z.string().optional(),
   email_verified: z.boolean().optional(),
+  plan_type: z.string().optional(),
 });
 const codexWindowSchema = z
   .object({ used_percent: z.number().optional(), reset_at: z.number().optional() })
   .nullish();
 const codexUsageSchema = z.object({
+  plan_type: z.string().optional(),
   rate_limit: z
     .object({
       allowed: z.boolean(),
@@ -36,20 +38,21 @@ const codexUsageSchema = z.object({
 
 /**
  * the provider's answer about one credential. only `rejected` and `exhausted`
- * advance the chain; `unknown` never changes who pays.
+ * advance the chain; `unknown` never changes who pays. `plan` is the ChatGPT plan
+ * `wham/usage` reported, which an upgrade changes long before the token's claim.
  */
 export type ProbeVerdict =
-  | { status: "usable" }
+  | { status: "usable"; plan?: string | undefined }
   | { status: "unknown" }
   | { status: "rejected"; detail: string }
-  | { status: "exhausted"; detail: string; resetAt: Date | undefined };
+  | { status: "exhausted"; detail: string; resetAt: Date | undefined; plan?: string | undefined };
 
 const unknown = { status: "unknown" } as const;
 
 export class SubscriptionCredentialError extends Error {}
 
 export async function subscriptionIdentity(input: { name: SubscriptionName; value: string }) {
-  const empty = { email: null, subject: null };
+  const empty = { email: null, subject: null, plan: null };
   if (input.name === "CLAUDE_CODE_OAUTH_TOKEN") return empty;
   const codex = input.name === "CODEX_AUTH_JSON" ? parseCodexAuthBody(input.value) : null;
   const grok = input.name === "GROK_AUTH_JSON" ? parseXaiAuthBody(input.value) : null;
@@ -69,6 +72,7 @@ export async function subscriptionIdentity(input: { name: SubscriptionName; valu
   return {
     email: parsed.data.email_verified === false ? null : (parsed.data.email ?? null),
     subject: subject ? `${subject}:${parsed.data.account_id ?? ""}` : null,
+    plan: parsed.data.plan_type ?? null,
   };
 }
 
@@ -131,7 +135,8 @@ export async function probeSubscription(input: {
   const parsed = codexUsageSchema.safeParse(body);
   if (!parsed.success || !parsed.data.rate_limit) return unknown;
   const limit = parsed.data.rate_limit;
-  if (limit.allowed && !limit.limit_reached) return { status: "usable" };
+  const plan = parsed.data.plan_type;
+  if (limit.allowed && !limit.limit_reached) return { status: "usable", plan };
   // workspace credits keep serving past the plan window until spent or capped
   const credits = parsed.data.credits;
   if (
@@ -139,7 +144,7 @@ export async function probeSubscription(input: {
     !credits.overage_limit_reached &&
     !parsed.data.spend_control?.reached
   )
-    return { status: "usable" };
+    return { status: "usable", plan };
   // the full window decides when the plan works again
   const windows = [limit.primary_window, limit.secondary_window];
   const full = windows.filter((window) => (window?.used_percent ?? 0) >= 100);
@@ -150,6 +155,7 @@ export async function probeSubscription(input: {
     status: "exhausted",
     detail: "the ChatGPT plan's usage limit is reached",
     resetAt: resets.length ? new Date(Math.max(...resets) * 1000) : undefined,
+    plan,
   };
 }
 
