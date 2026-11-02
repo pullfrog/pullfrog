@@ -312,9 +312,10 @@ function formatProviderBillingExhausted(ctx: RenderContext): string {
 function formatProviderUsageLimit(ctx: RenderContext): string {
   // the Codex CLI names the reset in the runner's own clock: `try again at 7:58 AM`.
   const tryAgainAt = /try again at (\d{1,2}:\d{2}\s*[AP]M)/i.exec(ctx.errorMessage)?.[1];
-  const resets = tryAgainAt
-    ? `${ctx.account.name ?? "The provider"} says to try again at ${tryAgainAt}. `
-    : "";
+  // opencode's Go cap: `It will reset in 4 days.`
+  const resetIn = /It will reset in ([^.]+)\./i.exec(ctx.errorMessage)?.[1];
+  const said = tryAgainAt ? `to try again at ${tryAgainAt}` : resetIn && `it resets in ${resetIn}`;
+  const resets = said ? `${ctx.account.name ?? "The provider"} says ${said}. ` : "";
   return renderFailure({
     headline: `Your ${ctx.account.phrase} has hit its usage limit.`,
     detail: ctx.account.subscription

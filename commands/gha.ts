@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import * as core from "@actions/core";
 import arg from "arg";
@@ -13,6 +14,38 @@ import { acquireInstallationToken, revokeInstallationToken } from "../utils/toke
 process.env.PATH = `${dirname(process.execPath)}:${process.env.PATH}`;
 
 const STATE_TOKEN = "token";
+
+/** `runs.using: node24`; the runtime reaches node 22+ APIs (`Promise.withResolvers`, `Promise.try`) */
+const MIN_NODE_MAJOR = 24;
+
+/**
+ * a Volta/asdf/mise `npx` shim answers `--version`, so the bootstrap's PATH walk accepts it,
+ * then runs the CLI on its own default node. on node 20 the run worked until teardown threw
+ * on `Promise.withResolvers` with every installation token still live (#1565). so re-run
+ * under the bootstrap's own node; an older bootstrap that does not pass it fails up front.
+ */
+async function rerunOnBootstrapNode(args: string[]): Promise<void> {
+  const node = process.env.PULLFROG_NODE;
+  const found = `the runner's npx launched Pullfrog on Node ${process.versions.node} (${process.execPath}), which is below Node ${MIN_NODE_MAJOR}`;
+  // equal to ours means the bootstrap itself ran on it, and re-running would loop
+  if (!node || node === process.execPath) {
+    // the post step must never fail a finished run (#815)
+    if (args.includes("--post")) core.warning(found);
+    else
+      core.setFailed(
+        `${found}. bump the Pullfrog action ref, or make the runner's npx use Node ${MIN_NODE_MAJOR}.`
+      );
+    return;
+  }
+  core.info(`» ${found}; re-running under ${node}`);
+  const child = spawn(node, process.argv.slice(1), { stdio: "inherit" });
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => child.kill(signal));
+  }
+  process.exitCode = await new Promise<number>((resolve) =>
+    child.on("exit", (code) => resolve(code ?? 1))
+  );
+}
 
 interface GhaCliParams {
   args: string[];
@@ -176,6 +209,10 @@ export async function runCli(params: GhaCliParams): Promise<void> {
 }
 
 export async function run(args: string[]) {
+  if (Number(process.versions.node.split(".")[0]) < MIN_NODE_MAJOR) {
+    await rerunOnBootstrapNode(args);
+    return;
+  }
   // the cleanup step runs after the agent has already exited, so it must never
   // reach `setFailed` below — a red X there flips a finished, successful run to
   // `failure` with nothing actionable in the comment. that is #815's shape.

@@ -149,6 +149,9 @@ function createRuntimeContext(): RuntimeContext {
   env.npm_config_prefer_offline = "false";
   const currentPath = process.env.PATH ?? "";
   env.PATH = currentPath ? `${nodeBinDir}${delimiter}${currentPath}` : nodeBinDir;
+  // data, not logic: a version-manager npx shim runs the CLI on its own node, and the
+  // CLI re-runs itself under this one (commands/gha.ts, #1565)
+  env.PULLFROG_NODE = process.execPath;
 
   return {
     actionRef: process.env.GITHUB_ACTION_REF,

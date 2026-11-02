@@ -11,11 +11,11 @@ import {
 import type { Mode } from "../modes.ts";
 import type { ResolvedPayload } from "./payload.ts";
 import type { LearningsHeading } from "./runContext.ts";
-import type { RunContextData } from "./runContextData.ts";
+import type { RunRepo } from "./runContextData.ts";
 
 interface InstructionsContext {
   payload: ResolvedPayload;
-  repo: RunContextData["repo"];
+  repo: RunRepo;
   modes: Mode[];
   agentId: AgentId;
   outputSchema?: Record<string, unknown> | undefined;
@@ -80,7 +80,7 @@ function buildRuntimeContext(ctx: InstructionsContext): string {
   const data: Record<string, unknown> = {
     ...payloadRest,
     repo: `${ctx.repo.owner}/${ctx.repo.name}`,
-    default_branch: ctx.repo.data.default_branch,
+    default_branch: ctx.repo.defaultBranch,
     working_directory: process.cwd(),
     log_level: process.env.LOG_LEVEL,
     git_status: gitStatus,

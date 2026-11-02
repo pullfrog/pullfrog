@@ -4,7 +4,7 @@ import { reportReviewNodeId } from "../mcp/review.ts";
 import type { ToolContext } from "../mcp/server.ts";
 import { primaryRepoState } from "../toolState.ts";
 import { log } from "./cli.ts";
-import { isTransientOctokitError } from "./isTransientNetworkError.ts";
+import { retryTransientOctokit } from "./isTransientNetworkError.ts";
 import { patchWorkflowRunFields } from "./patchWorkflowRunFields.ts";
 
 const RE_REVIEW_PREAMBLE =
@@ -62,6 +62,15 @@ async function bestEffort(fn: () => Promise<unknown>, label: string): Promise<vo
 async function dispatchFollowUpReReview(ctx: ToolContext, reviewedSha: string): Promise<void> {
   const issueNumber = ctx.payload.event.issue_number;
   if (!issueNumber) return;
+  // a run that ended where it was dispatched from would dispatch a copy of itself, forever:
+  // a stale pull ref (#1527), a failed checkout (#1523). read the payload, which review.ts never rewrites.
+  const dispatched = ctx.payload.event;
+  if (dispatched.trigger === "pull_request_synchronize" && dispatched.before_sha === reviewedSha) {
+    log.warning(
+      `safety net: run made no progress past before_sha ${reviewedSha.slice(0, 7)} — not re-dispatching`
+    );
+    return;
+  }
 
   const pr = await ctx.octokit.rest.pulls.get({
     owner: ctx.repo.owner,
@@ -120,8 +129,7 @@ async function dispatchFollowUpReReview(ctx: ToolContext, reviewedSha: string): 
         inputs: { prompt: JSON.stringify(payload) },
       }),
     name: "reReviewDispatch",
-    retry: (error, attempt) =>
-      isTransientOctokitError(error) ? yes.backoff([500, 2000], attempt) : -1,
+    retry: retryTransientOctokit,
   })();
 }
 

@@ -10,7 +10,7 @@ import { closeBrowserDaemon } from "../utils/browser.ts";
 import type { OctokitWithPlugins } from "../utils/github.ts";
 import type { ResolvedPayload } from "../utils/payload.ts";
 import type { AccountPlan } from "../utils/runContext.ts";
-import type { RunContextData } from "../utils/runContextData.ts";
+import type { RunRepo } from "../utils/runContextData.ts";
 import { CheckoutPrTool } from "./checkout.ts";
 import { GetCheckSuiteLogsTool } from "./checkSuite.ts";
 import {
@@ -58,7 +58,7 @@ import { CheckoutRepoTool, ListReposTool } from "./xrepo.ts";
 
 export interface ToolContext {
   agentId: AgentId;
-  repo: RunContextData["repo"];
+  repo: RunRepo;
   payload: ResolvedPayload;
   octokit: OctokitWithPlugins;
   githubInstallationToken: string;

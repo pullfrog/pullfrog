@@ -14,12 +14,15 @@ import {
   type EventSubscribeResponse,
   type OpencodeClient,
   type Part,
+  type SessionStatus,
   type TextPartInput,
 } from "@opencode-ai/sdk/v2";
-import { markActivity } from "../utils/activity.ts";
+import { AGENT_ACTIVITY_TIMEOUT_MS, markActivity } from "../utils/activity.ts";
 import { log } from "../utils/cli.ts";
+import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { buildOpencodeSubagentGateSource } from "./opencodePlugin.ts";
 import {
+  bindSubagentSession,
   createRunState,
   declaredRung,
   emptyTurn,
@@ -34,6 +37,7 @@ import {
   stallCause,
   stallError,
   type TurnText,
+  withServerStderr,
 } from "./opencodeSession.ts";
 import type { AgentResult, AgentUsage } from "./shared.ts";
 
@@ -90,6 +94,10 @@ interface RunnerContext extends RunState {
    * ONLY there — the prompt itself gets an opaque 500 (#1470).
    */
   lastSessionError: string | undefined;
+  /** a provider retry this turn cannot outlast, which ends it at once (#1575) */
+  terminalRetry: string | undefined;
+  /** aborts the turn in flight; replaced for each prompt */
+  turnAbort: AbortController;
 }
 
 async function open(launch: OpencodeLaunch) {
@@ -99,6 +107,7 @@ async function open(launch: OpencodeLaunch) {
     fetch: launch.fetch,
   });
 
+  const createStartedAt = Date.now();
   const sessionResp = await client.session.create({ title: "Pullfrog" });
   if (sessionResp.error || !sessionResp.data) {
     const msg = sessionResp.error
@@ -109,7 +118,8 @@ async function open(launch: OpencodeLaunch) {
     throw new Error(`opencode session.create failed: ${msg}`);
   }
   const sessionID = sessionResp.data.id;
-  log.info(`» opencode session: ${sessionID}`);
+  // the first request awaits plugin-dependency installs, so boot latency lands here (#1513)
+  log.info(`» opencode session: ${sessionID} (${Date.now() - createStartedAt}ms)`);
 
   const model = parseModel(launch.model);
   const variant =
@@ -126,6 +136,8 @@ async function open(launch: OpencodeLaunch) {
     currentTurn: null,
     promptMessageID: undefined,
     lastSessionError: undefined,
+    terminalRetry: undefined,
+    turnAbort: new AbortController(),
   };
 
   const eventsController = new AbortController();
@@ -142,6 +154,10 @@ async function open(launch: OpencodeLaunch) {
   return {
     state: ctx,
     prompt: (text: string, signal: AbortSignal) => runPromptTurn(ctx, { text, signal }),
+    interrupt: async (sessionID: string) => {
+      const resp = await ctx.client.session.abort({ sessionID });
+      if (!resp.data) throw new Error(resp.error ? JSON.stringify(resp.error) : "nothing aborted");
+    },
     close: async () => {
       eventsController.abort();
       await eventLoopPromise;
@@ -259,9 +275,37 @@ async function dispatchEvent(ctx: RunnerContext, event: EventSubscribeResponse):
     if (err) ctx.lastSessionError = message;
     return;
   }
-  // session.idle / session.status are useful breadcrumbs but we don't drive
+  if (event.type === "session.status" && event.properties.status.type === "retry") {
+    onProviderRetry(ctx, { sessionID: event.properties.sessionID, retry: event.properties.status });
+    return;
+  }
+  // session.idle and the other session.status types are useful breadcrumbs but we don't drive
   // anything off them — the prompt() POST returns when the assistant message
   // is committed, which is also when the session goes idle.
+}
+
+/**
+ * opencode retries a capped provider for as long as its `retry-after` says, days for a Go
+ * cap, and publishes each retry only here: not on stderr and not as an error. ignored, the
+ * turn waited out two watchdog budgets and told the customer to re-trigger (#1575). a retry
+ * this turn cannot outlast ends it now: an account cap (opencode attaches an `action` only to
+ * those) or a wait past the budget the watchdog would allow anyway.
+ */
+function onProviderRetry(
+  ctx: RunnerContext,
+  params: { sessionID: string; retry: Extract<SessionStatus, { type: "retry" }> }
+): void {
+  const waitMs = params.retry.next - Date.now();
+  log.info(
+    `» ${ctx.label} provider retry #${params.retry.attempt}: ${params.retry.message} (next in ${Math.round(waitMs / 1000)}s)`
+  );
+  if (params.sessionID !== ctx.orchestratorSessionID) return;
+  const match = findProviderErrorMatch(params.retry.message);
+  if (match) ctx.diagnostic.lastProviderError = match.label;
+  // a shorter wait stays the watchdog's: a salvage re-prompt joins the run the server is still retrying
+  if (!params.retry.action && waitMs <= AGENT_ACTIVITY_TIMEOUT_MS) return;
+  ctx.terminalRetry = params.retry.message;
+  ctx.turnAbort.abort();
 }
 
 function extractErrorMessage(err: {
@@ -334,6 +378,10 @@ function onToolPart(ctx: RunnerContext, part: Extract<Part, { type: "tool" }>): 
       prompt?: string;
     };
     recordSubagentDispatch(ctx, { callID: part.callID, input });
+    // the child's id lands on a later running update, once the task tool publishes its metadata.
+    const child = part.state.metadata?.sessionId;
+    if (typeof child === "string")
+      bindSubagentSession(ctx, { callID: part.callID, sessionID: child });
     return;
   }
   recordTerminalToolPart(ctx, part);
@@ -418,6 +466,9 @@ async function runPromptTurn(
   ctx.diagnostic.sawModelOutput = false;
   ctx.diagnostic.idleSec = undefined;
   ctx.lastSessionError = undefined;
+  ctx.terminalRetry = undefined;
+  ctx.turnAbort = new AbortController();
+  const signal = AbortSignal.any([params.signal, ctx.turnAbort.signal]);
 
   let assistant: AssistantMessage | undefined;
   let returnedParts: Part[] | undefined;
@@ -433,7 +484,7 @@ async function runPromptTurn(
       // wire the inner activity watchdog's abort signal into the SDK request
       // — without this a hung HTTP keeps the run stuck even after the
       // watchdog fires.
-      { signal: params.signal }
+      { signal }
     );
     if (response.error) {
       networkError = formatPromptError(response.error);
@@ -490,6 +541,15 @@ async function runPromptTurn(
     (ctx.diagnostic.sawModelOutput ? undefined : ctx.lastSessionError) ??
     ctx.diagnostic.lastProviderError;
 
+  if (networkError && ctx.terminalRetry) {
+    // a provider error, not a hang: no salvage, and the usage-limit copy rather than "re-trigger"
+    return {
+      success: false,
+      output: finalText,
+      error: `provider error: ${ctx.terminalRetry}`,
+      usage,
+    };
+  }
   if (networkError) {
     // a watchdog-fired abort surfaces here as a caught `session.prompt`
     // rejection (or an aborted `response.error`), not a throw that escapes to
@@ -504,7 +564,10 @@ async function runPromptTurn(
             what: `the model went silent and the turn was aborted by the activity watchdog (${networkError})`,
             cause,
           })
-        : `opencode prompt failed: ${networkError}${promptCause ? ` — likely cause: ${promptCause}` : ""}`,
+        : promptCause
+          ? `opencode prompt failed: ${networkError} — likely cause: ${promptCause}`
+          : // an untyped server defect leaves its cause only in the server's log (#1586)
+            withServerStderr(`opencode prompt failed: ${networkError}`, ctx.serverStderr),
       usage,
     };
   }

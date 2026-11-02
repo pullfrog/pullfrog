@@ -127,6 +127,9 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
   assert(!mcpTokenValue, "tokens are already resolved");
 
   const externalToken = process.env.GH_TOKEN;
+  // `gh` runs in the shell sandbox and its aliases are shell capability: no shell, no `gh` (#1517)
+  const ghPermissions =
+    params.shell === "disabled" ? undefined : mirrorRolePermissions(params.authorPermission);
 
   // external token takes precedence - use for both git and MCP
   if (externalToken) {
@@ -143,7 +146,7 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
       readToken: params.xrepo ? externalToken : undefined,
       // the scope is the user's to choose here, but the role threshold still
       // decides whether the agent gets a CLI credential at all.
-      ghToken: mirrorRolePermissions(params.authorPermission) ? externalToken : undefined,
+      ghToken: ghPermissions ? externalToken : undefined,
       async [Symbol.asyncDispose]() {
         mcpTokenValue = undefined;
         // GH_TOKEN isn't acquired here, so it's not revoked here either
@@ -211,7 +214,6 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
   // `$GITHUB_REPOSITORY`, so the list is exactly `[this repo]` regardless of how
   // much org-wide reach the triggerer has, and a leak cannot cross into the
   // xrepo write set. see mirrorRolePermissions for why that stays correct.
-  const ghPermissions = mirrorRolePermissions(params.authorPermission);
   let ghToken: string | undefined;
   if (ghPermissions) {
     ghToken = await acquireNewToken({ permissions: ghPermissions });

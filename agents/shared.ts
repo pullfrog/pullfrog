@@ -134,6 +134,12 @@ export interface AgentResult {
 }
 
 /**
+ * the last stretch before `deadlineAt` belongs to submitting: nothing optional starts in it,
+ * and running lenses are interrupted when it begins (#1532, #1524).
+ */
+export const DEADLINE_RESERVE_MS = 5 * 60_000;
+
+/**
  * Context passed to agent.run() and threaded through the post-run loop.
  *
  * design rule: this is the single object that flows through the harness and
@@ -145,6 +151,8 @@ export interface AgentResult {
  */
 export interface AgentRunContext {
   payload: ResolvedPayload;
+  /** epoch ms at which main.ts's run timer fires; undefined under `--notimeout`. */
+  deadlineAt?: number | undefined;
   resolvedModel?: string | undefined;
   mcpServerUrl: string;
   tmpdir: string;

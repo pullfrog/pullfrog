@@ -169,11 +169,20 @@ export async function finalizeSuccessRun(input: {
     await approveAfterFix(input.toolContext).catch((error) => {
       log.debug(`fix auto-approval failed: ${error}`);
     });
+  }
+
+  // opt-in branch-protection check-runs. `runSucceeded` mirrors the run's
+  // own outcome so a harness-returned `{success: false}` posts `pullfrog`
+  // = failure, same as the catch path. own best-effort guard internally.
+  await reportStatusChecks(input.toolContext, { runSucceeded: input.result.success });
+
+  if (input.result.success) {
     // bounded, experimental autonomous merge of any PR Pullfrog approved
     // (contributor PRs included, not just its own). runs after approveAfterFix so
     // it can consume the verdict that call (or create_pull_request_review) just
     // recorded. enables GitHub native auto-merge (or direct-merges an already-
-    // mergeable PR); best-effort, never flips the outcome.
+    // mergeable PR); best-effort, never flips the outcome. runs after our own checks
+    // are finalized, or their `in_progress` alone makes the PR `unstable` (#1533).
     await autoMergeAfterApprove(input.toolContext).catch((error) => {
       // 409 = the direct-merge fallback lost a TOCTOU race (a commit landed
       // mid-merge) — the expected "don't merge" outcome, stays quiet. anything
@@ -185,11 +194,6 @@ export async function finalizeSuccessRun(input: {
       else log.warning(`auto-merge failed: ${error}`);
     });
   }
-
-  // opt-in branch-protection check-runs. `runSucceeded` mirrors the run's
-  // own outcome so a harness-returned `{success: false}` posts `pullfrog`
-  // = failure, same as the catch path. own best-effort guard internally.
-  await reportStatusChecks(input.toolContext, { runSucceeded: input.result.success });
 }
 
 /**

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { type } from "arktype";
 import { ensureRepoState, type RepoAccess, repoKey } from "../toolState.ts";
 import { log } from "../utils/cli.ts";
-import { $git } from "../utils/gitAuth.ts";
+import { $git, WORKING_TREE_GIT_ENV } from "../utils/gitAuth.ts";
 import { configureRepoGit } from "../utils/setup.ts";
 import { $ } from "../utils/shell.ts";
 import { resolveRepoCtx } from "./resolveRepoCtx.ts";
@@ -130,7 +130,10 @@ export function CheckoutRepoTool(ctx: ToolContext) {
           token: rc.gitToken,
           cwd: dir,
         });
-        $("git", ["checkout", "-B", defaultBranch, "FETCH_HEAD"], { cwd: dir });
+        $("git", ["checkout", "-B", defaultBranch, "FETCH_HEAD"], {
+          cwd: dir,
+          env: WORKING_TREE_GIT_ENV,
+        });
 
         await configureRepoGit({
           dir,

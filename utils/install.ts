@@ -53,9 +53,10 @@ interface NpmRegistryData {
  * `npm` resolves the runner's `externals/node24/bin/npm` first (the bootstrap
  * prepends that dir), and self-hosted pools ship it as a shim over a missing
  * `lib/cli.js` — the same partial tree #1084 hit for `npx`. `normalizeEnv` has
- * uppercased npx's `npm_execpath` by the time any install runs.
+ * uppercased npx's `npm_execpath` by the time any install runs. Every npm the CLI
+ * spawns goes through this, not only the harness install (#1490).
  */
-function resolveNpm(): { command: string; args: string[] } {
+export function resolveNpm(): { command: string; args: string[] } {
   const npmCli = process.env.NPM_EXECPATH;
   if (npmCli?.endsWith("npm-cli.js")) return { command: process.execPath, args: [npmCli] };
   return { command: "npm", args: [] };

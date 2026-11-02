@@ -37,57 +37,7 @@
               "author": {
                 "login": "cursor"
               }
-            },
-            "reactionGroups": [
-              {
-                "content": "THUMBS_UP",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "THUMBS_DOWN",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "LAUGH",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "HOORAY",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "CONFUSED",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "HEART",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "ROCKET",
-                "reactors": {
-                  "nodes": []
-                }
-              },
-              {
-                "content": "EYES",
-                "reactors": {
-                  "nodes": []
-                }
-              }
-            ]
+            }
           }
         ]
       }

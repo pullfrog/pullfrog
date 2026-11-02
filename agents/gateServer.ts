@@ -59,9 +59,7 @@ export async function startGateServer(ctx: AgentRunContext): Promise<GateServerH
             .end(JSON.stringify({ block: true, reason }));
           return;
         }
-        const reflectionPrompt = reflectionDelivered
-          ? undefined
-          : buildReflectionPrompt(ctx.toolState);
+        const reflectionPrompt = reflectionDelivered ? undefined : buildReflectionPrompt(ctx);
         if (reflectionPrompt) {
           reflectionDelivered = true;
           const reason = reflectionPrompt;

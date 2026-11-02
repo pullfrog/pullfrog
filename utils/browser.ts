@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ToolState } from "../toolState.ts";
 import { log } from "./cli.ts";
+import { resolveNpm } from "./install.ts";
 import { filterEnv } from "./secrets.ts";
 import { getDevDependencyVersion } from "./version.ts";
 
@@ -64,10 +65,12 @@ export function ensureBrowserDaemon(toolState: ToolState): string | undefined {
 
   const agentBrowserVersion = getDevDependencyVersion("agent-browser");
   log.info(`installing agent-browser@${agentBrowserVersion}...`);
-  const install = spawnSync("npm", ["install", "-g", `agent-browser@${agentBrowserVersion}`], {
-    stdio: "pipe",
-    encoding: "utf-8",
-  });
+  const npm = resolveNpm();
+  const install = spawnSync(
+    npm.command,
+    [...npm.args, "install", "-g", `agent-browser@${agentBrowserVersion}`],
+    { stdio: "pipe", encoding: "utf-8" }
+  );
   if (install.status !== 0) {
     const error = `agent-browser install failed: ${(install.stderr || install.stdout || "unknown error").trim()}`;
     log.error(error);

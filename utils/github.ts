@@ -576,6 +576,11 @@ function getGitHubUsageSummary(): UsageSummary {
   };
 }
 
+/** when this run's GraphQL budget resets, as GitHub last reported it, or null before any reply. */
+export function getGraphqlRateLimitResetMs(): number | null {
+  return usageByResource.graphql.rateLimitResetMs;
+}
+
 export async function writeGitHubUsageSummaryToFile(path: string): Promise<void> {
   const summary = getGitHubUsageSummary();
   const tmpPath = join(dirname(path), `.usage-summary-${process.pid}.tmp`);

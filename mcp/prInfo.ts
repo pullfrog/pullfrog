@@ -80,6 +80,8 @@ export function PullRequestInfoTool(ctx: ToolContext) {
         maintainerCanModify: data.maintainer_can_modify,
         base: data.base.ref,
         head: data.head.ref,
+        baseSha: data.base.sha,
+        headSha: data.head.sha,
         isFork,
         author: data.user?.login,
         assignees: data.assignees?.map((a) => a.login),

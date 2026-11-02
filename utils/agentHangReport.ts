@@ -1,5 +1,5 @@
 import { renderFailure } from "./failureBody.ts";
-import { PROVIDER_BILLING_EXHAUSTED_LABEL } from "./providerErrors.ts";
+import { PROVIDER_BILLING_EXHAUSTED_LABEL, PROVIDER_USAGE_LIMIT_LABEL } from "./providerErrors.ts";
 
 const MAX_STDERR_BYTES = 3000;
 
@@ -68,6 +68,15 @@ export function formatAgentHangBody(input: {
         "The provider kept refusing the request, so Pullfrog stopped the run. Top up the account, then re-trigger.",
       details,
       links: billingUrl ? [{ label: "Top up", url: billingUrl }] : [],
+    });
+  }
+  // a capped subscription window: re-triggering before it resets only burns another run (#1575)
+  if (diagnostic.lastProviderError === PROVIDER_USAGE_LIMIT_LABEL) {
+    return renderFailure({
+      headline: "Your model provider's usage limit is reached.",
+      detail:
+        "The provider kept refusing the request until the limit resets, so Pullfrog stopped the run. Re-trigger once it resets, or pick another model.",
+      details,
     });
   }
   if (diagnostic.lastProviderError) {

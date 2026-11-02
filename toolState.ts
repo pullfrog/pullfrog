@@ -51,7 +51,7 @@ export interface RepoToolState {
   /** working directory: primary = `process.cwd()`; secondary = `ctx.tmpdir/xrepo/<name>` */
   dir: string;
   access: RepoAccess;
-  // default branch name. for the primary this comes from ctx.repo.data; for
+  // default branch name. for the primary this comes from ctx.repo; for
   // secondaries it's captured by checkout_repo and drives the restricted-mode
   // default-branch push guard.
   defaultBranch?: string;
@@ -77,7 +77,7 @@ export interface RepoToolState {
   // issue or PR number (same number space in GitHub)
   issueNumber?: number;
   // PR HEAD sha at checkout time — used to detect new commits pushed during a review
-  checkoutSha?: string;
+  checkoutSha?: string | undefined;
   // commentable lines per file at checkoutSha — captured during checkout_pr so
   // review-time inline-comment validation matches the diff GitHub will anchor
   // to (commit_id=checkoutSha). without this, a PR update between checkout and

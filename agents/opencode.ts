@@ -86,7 +86,13 @@ import { opencode1 } from "./opencode1.ts";
 import { opencode2 } from "./opencode2.ts";
 import { opencodeGeneration } from "./opencodeGeneration.ts";
 import { PULLFROG_OPENCODE_GATE_PLUGIN_FILENAME } from "./opencodePlugin.ts";
-import type { OpencodeSession, RunState, Sandbox, ServerHandle } from "./opencodeSession.ts";
+import {
+  type OpencodeSession,
+  type RunState,
+  type Sandbox,
+  type ServerHandle,
+  withServerStderr,
+} from "./opencodeSession.ts";
 import {
   autoSelectModel,
   azureProvider,
@@ -98,12 +104,13 @@ import {
   openRouterProvider,
   providerGatewayOverride,
 } from "./opencodeShared.ts";
-import { buildReflectionPrompt, runPostRunRetryLoop } from "./postRun.ts";
+import { runPostRunRetryLoop } from "./postRun.ts";
 import { REVIEWER_AGENT_NAME } from "./reviewer.ts";
 import {
   type AgentResult,
   type AgentRunContext,
   agent,
+  DEADLINE_RESERVE_MS,
   MAX_STDERR_LINES,
   mergeAgentUsage,
 } from "./shared.ts";
@@ -125,6 +132,9 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): O
       external_directory: "allow",
       skill: "allow",
     },
+    // per-step snapshots run an unbounded synchronous diff over everything `checkout_pr`
+    // changed, pinning the server for minutes (#1486). nothing reads them. V2 maps it to `snapshots`.
+    snapshot: false,
     mcp: {
       // tool timeout (vs the MCP SDK's 60s default). `checkout_pr` runs a
       // multi-minute `git fetch` on large repos (remotion); a 60s client abort
@@ -330,18 +340,6 @@ function bootOpencodeServer(params: {
 }
 
 /**
- * Append the server's own stderr to a fatal harness error.
- *
- * opencode answers anything it cannot type as a bare 500 `UnknownError` plus a log
- * `ref` we have no way to resolve, so `--print-logs` (see `bootOpencodeServer`) is
- * what puts the underlying cause within reach at all.
- */
-function withServerStderr(message: string, recentStderr: readonly string[]): string {
-  const tail = recentStderr.join("\n").trim();
-  return tail ? `${message}\nopencode server stderr:\n${tail}` : message;
-}
-
-/**
  * Name why the server died under a live run. Our own kills untrack it first, so
  * a SIGKILL arriving here is almost always the kernel's OOM killer, and the
  * memory the job may use is what the customer needs to act on it.
@@ -410,10 +408,13 @@ function startInnerActivityWatchdog(params: {
   timeoutMs: number;
   abortTurn: () => void;
   onActivityTimeout: AgentRunContext["onActivityTimeout"];
+  /** runs on every tick, whatever the turn's own state. */
+  onTick: () => void;
 }): { stop: () => void; armForTurn: () => void; firedThisTurn: () => boolean } {
   let fired = false;
   let everFired = false;
   const id = setInterval(() => {
+    params.onTick();
     if (fired) return;
     const idleMs = performance.now() - params.state.lastEventAt;
     const compiledMs = params.state.diagnostic.sawModelOutput
@@ -473,6 +474,40 @@ function startInnerActivityWatchdog(params: {
     },
     firedThisTurn: () => fired,
   };
+}
+
+/** a `reviewfrog` lens's budget: leaves 4,608 of 4,615 finished lenses untouched (#1524). */
+const LENS_BUDGET_MS = 20 * 60_000;
+
+/**
+ * Interrupt a lens past its budget, or any subagent still running inside the run's last minutes. The
+ * `task` call waiting on it then fails, so the orchestrator submits with what it has instead of idling
+ * until the run timer fails everything. The clock is the child session's, not the call's, because a
+ * resume by session id would otherwise start a fresh budget.
+ */
+function enforceLensBudgets(ctx: AgentRunContext, session: OpencodeSession): void {
+  // read per tick, not at import: `unsafe_overrides` lands in the env after modules load
+  const budgetMs = watchdogBudgetMs(LENS_BUDGET_MS, "PULLFROG_E2E_LENS_BUDGET_MS");
+  const nearDeadline =
+    ctx.deadlineAt !== undefined && ctx.deadlineAt - Date.now() < DEADLINE_RESERVE_MS;
+  for (const dispatch of session.state.taskDispatchByCallID.values()) {
+    if (!dispatch.child) continue;
+    const elapsedMs = performance.now() - dispatch.child.startedAt;
+    const overBudget = dispatch.subagentType === REVIEWER_AGENT_NAME && elapsedMs > budgetMs;
+    if (!overBudget && !nearDeadline) continue;
+    const why = overBudget ? "over budget" : "the run is near its time limit";
+    // re-sent every tick until the `task` call ends: V1's abort reports success even before the child starts
+    session.interrupt(dispatch.child.sessionID).then(
+      () => {
+        if (dispatch.interrupted) return;
+        dispatch.interrupted = true;
+        log.info(
+          `» interrupted subagent ${dispatch.label} after ${Math.round(elapsedMs / 1000)}s: ${why}`
+        );
+      },
+      (err) => log.debug(`» could not interrupt subagent ${dispatch.label}: ${String(err)}`)
+    );
+  }
 }
 
 // ── agent entrypoint ───────────────────────────────────────────────────────────
@@ -567,6 +602,9 @@ export const opencode = agent({
       external_directory: {
         "*": "deny",
         "/tmp/*": "allow",
+        // the run's own files follow $TMPDIR, often $RUNNER_TEMP on self-hosted runners (#1515).
+        // never allow $TMPDIR itself: $RUNNER_TEMP holds the runner's GITHUB_ENV/GITHUB_PATH files.
+        [`${ctx.tmpdir}/*`]: "allow",
         // where a truncated tool result's full text is saved. V1 appends this allow itself; V2 does not.
         [join(homeEnv.XDG_DATA_HOME, "opencode", "tool-output", "*")]: "allow",
         [opencodePluginDir]: "deny",
@@ -754,6 +792,7 @@ async function runTurns(ctx: AgentRunContext, session: OpencodeSession): Promise
     timeoutMs: AGENT_ACTIVITY_TIMEOUT_MS,
     abortTurn: () => turnController.abort(),
     onActivityTimeout: ctx.onActivityTimeout,
+    onTick: () => enforceLensBudgets(ctx, session),
   });
 
   // one salvage per run. the stall is provider-side, so a second attempt in
@@ -837,7 +876,6 @@ async function runTurns(ctx: AgentRunContext, session: OpencodeSession): Promise
       ctx,
       initialResult: initial,
       initialUsage: initial.usage,
-      reflectionPrompt: buildReflectionPrompt(ctx.toolState),
       resume: async (c) => runTurn(c.prompt),
     });
 

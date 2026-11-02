@@ -159,6 +159,7 @@ export {
   SubscriptionCredentialError,
   subscriptionIdentity,
 } from "../utils/subscriptionProbe.ts";
+export { getThumbsUpCommentIds } from "../utils/thumbsUp.ts";
 export {
   isValidTimeString,
   parseTimeString,

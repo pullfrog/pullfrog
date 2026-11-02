@@ -629,7 +629,7 @@ describe("DeleteBranchTool - default-branch guard", () => {
   function makeCtx(defaultBranch: string): ToolContext {
     return {
       payload: { push: "enabled" },
-      repo: { data: { default_branch: defaultBranch } },
+      repo: { defaultBranch },
       gitToken: "test-token",
     } as unknown as ToolContext;
   }

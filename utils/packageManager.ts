@@ -3,6 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { isValid, satisfies } from "verkit";
 import { log } from "./cli.ts";
+import { resolveNpm } from "./install.ts";
 import { filterEnvForUntrustedCode } from "./secrets.ts";
 import { spawn } from "./subprocess.ts";
 
@@ -271,11 +272,12 @@ async function installFallback(
 ): Promise<string | null> {
   if (name === "npm") return null;
   log.info(`» installing ${installSpec} via npm install -g (corepack does not manage ${name})`);
+  const npm = resolveNpm();
   const args =
     name === "deno"
       ? ["-c", "curl -fsSL https://deno.land/install.sh | sh"]
-      : ["install", "-g", installSpec];
-  const cmd = name === "deno" ? "sh" : "npm";
+      : [...npm.args, "install", "-g", installSpec];
+  const cmd = name === "deno" ? "sh" : npm.command;
   const result = await spawn({
     cmd,
     args,

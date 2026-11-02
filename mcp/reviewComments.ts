@@ -5,9 +5,12 @@ import { type } from "arktype";
 import * as yes from "yes";
 import { resolveBodyAssets } from "../utils/body.ts";
 import { stripExistingFooter } from "../utils/buildPullfrogFooter.ts";
+import { getGraphqlRateLimitResetMs } from "../utils/github.ts";
 import { isPullfrog, mentionableText, mentionHandles } from "../utils/isPullfrog.ts";
+import { retryTransientOctokit } from "../utils/isTransientNetworkError.ts";
 import { log } from "../utils/log.ts";
 import { isOutsideAuthor } from "../utils/payload.ts";
+import { getThumbsUpCommentIds } from "../utils/thumbsUp.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
 
@@ -17,6 +20,7 @@ const COMMENTS_PER_THREAD = 50;
 // GraphQL query to fetch all review threads for a PR with full comment history.
 // paginated: a first-100 cap silently dropped every thread past page one on
 // exactly the long-lived PRs where prior-review context matters most (#1193).
+// no per-comment connection may be nested here: reactors made each page 51 points (#1509).
 export const REVIEW_THREADS_QUERY = `
 query ($owner: String!, $name: String!, $prNumber: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
@@ -33,6 +37,7 @@ query ($owner: String!, $name: String!, $prNumber: Int!, $cursor: String) {
           isOutdated
           comments(first: ${COMMENTS_PER_THREAD}) {
             nodes {
+              id
               fullDatabaseId
               body
               bodyHTML
@@ -47,14 +52,6 @@ query ($owner: String!, $name: String!, $prNumber: Int!, $cursor: String) {
                 databaseId
                 author { login }
               }
-              reactionGroups {
-                content
-                reactors(first: 10) {
-                  nodes {
-                    ... on Actor { login }
-                  }
-                }
-              }
             }
           }
         }
@@ -65,6 +62,7 @@ query ($owner: String!, $name: String!, $prNumber: Int!, $cursor: String) {
 `;
 
 export type ReviewThreadComment = {
+  id: string;
   fullDatabaseId: string | null;
   body: string;
   bodyHTML: string;
@@ -79,10 +77,6 @@ export type ReviewThreadComment = {
     databaseId: number | null;
     author: { login: string } | null;
   } | null;
-  reactionGroups: Array<{
-    content: string;
-    reactors: { nodes: Array<{ login: string } | null> | null } | null;
-  }> | null;
 };
 
 export type ReviewThread = {
@@ -309,19 +303,6 @@ export const GetReviewComments = type({
   ),
 });
 
-function hasThumbsUpFrom(comment: ReviewThreadComment, username: string): boolean {
-  if (!comment.reactionGroups) return false;
-  const thumbsUp = comment.reactionGroups.find((g) => g.content === "THUMBS_UP");
-  if (!thumbsUp?.reactors?.nodes) return false;
-  const needle = username.toLowerCase();
-  return thumbsUp.reactors.nodes.some((r) => r?.login?.toLowerCase() === needle);
-}
-
-function threadHasThumbsUpFrom(thread: ReviewThread, username: string): boolean {
-  const comments = thread.comments?.nodes ?? [];
-  return comments.some((c) => c && hasThumbsUpFrom(c, username));
-}
-
 /**
  * formats thread blocks into markdown with TOC and line numbers.
  * extracted for testability.
@@ -517,6 +498,8 @@ const fetchAllReviewThreads = yes.query({
     return threads;
   },
   ttl: 60_000,
+  // inside the shared in-flight request, so one 5xx does not fail every parallel caller (#1582)
+  retry: retryTransientOctokit,
   name: "reviewThreads",
 });
 
@@ -532,6 +515,7 @@ const fetchPrFiles = yes.query({
       per_page: 100,
     }),
   ttl: 60_000,
+  retry: retryTransientOctokit,
   name: "prFiles",
 });
 
@@ -587,8 +571,14 @@ async function getReviewThreads(input: GetReviewDataInput) {
   });
 
   if (input.approvedBy) {
-    const username = input.approvedBy;
-    return threadsForReview.filter((thread) => threadHasThumbsUpFrom(thread, username));
+    const comments = threadsForReview.flatMap((thread) => thread.comments?.nodes ?? []);
+    const approved = await getThumbsUpCommentIds(
+      { octokit: input.octokit },
+      { commentIds: comments.flatMap((c) => (c ? [c.id] : [])), username: input.approvedBy }
+    );
+    return threadsForReview.filter((thread) =>
+      thread.comments?.nodes?.some((c) => c && approved.has(c.id))
+    );
   }
 
   if (!input.addressScope) return threadsForReview;
@@ -805,6 +795,15 @@ export async function getReviewData(input: GetReviewDataInput): Promise<
   });
   try {
     return await Promise.race([fetchReviewData(input, stage), deadline]);
+  } catch (error) {
+    // `@octokit/plugin-throttling`'s refusal; without this an agent retried it 22 times in a second (#1509)
+    if (!(error instanceof Error) || error.message !== "GraphQL Rate Limit Exceeded") throw error;
+    const resetMs = getGraphqlRateLimitResetMs();
+    const until = resetMs ? ` until ${new Date(resetMs).toISOString()}` : "";
+    throw new Error(
+      `GitHub's GraphQL budget for this installation is exhausted${until}. prior-review context is unavailable for this run — do not retry; proceed without it and say in the review that prior threads could not be read.`,
+      { cause: error }
+    );
   } finally {
     clearTimeout(timer);
   }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Octokit, RestEndpointMethodTypes } from "@octokit/rest";
 import { type } from "arktype";
 import * as yes from "yes";
@@ -14,7 +15,12 @@ import {
   parseIncrementalDiffEntries,
 } from "../utils/diffCoverage.ts";
 import { GENERATED } from "../utils/generatedFiles.ts";
-import { $git, $gitFetchWithDeepen, DEEPEN_RETRY_DEPTH } from "../utils/gitAuth.ts";
+import {
+  $git,
+  $gitFetchWithDeepen,
+  DEEPEN_RETRY_DEPTH,
+  WORKING_TREE_GIT_ENV,
+} from "../utils/gitAuth.ts";
 import { executeLifecycleHook } from "../utils/lifecycle.ts";
 import { computeIncrementalDiff } from "../utils/rangeDiff.ts";
 import { $ } from "../utils/shell.ts";
@@ -207,74 +213,24 @@ export type PrData = {
   maintainerCanModify: boolean;
 };
 
-type EnsureBeforeShaParams = {
+type FetchBeforeShaParams = {
   sha: string;
-  octokit: Octokit;
-  owner: string;
-  repo: string;
   gitToken: string;
   refreshGitToken?: ((stale: string) => Promise<string>) | undefined;
   isShallow: boolean;
-  isFork: boolean;
   signal: AbortSignal;
 };
 
-type CreateTempBranchParams = {
-  octokit: Octokit;
-  owner: string;
-  repo: string;
-  ref: string;
-  sha: string;
-};
-
-async function createTempBranch(params: CreateTempBranchParams) {
-  const response = await params.octokit.rest.git.createRef({
-    owner: params.owner,
-    repo: params.repo,
-    ref: `refs/heads/${params.ref}`,
-    sha: params.sha,
-  });
-  return {
-    data: response.data,
-    async [Symbol.asyncDispose]() {
-      try {
-        await params.octokit.rest.git.deleteRef({
-          owner: params.owner,
-          repo: params.repo,
-          ref: `heads/${params.ref}`,
-        });
-        log.debug(`» deleted temp branch ${params.ref}`);
-      } catch (e) {
-        log.debug(
-          `» failed to delete temp branch ${params.ref}: ${e instanceof Error ? e.message : String(e)}`
-        );
-      }
-    },
-  };
-}
-
-async function ensureBeforeShaReachable(params: EnsureBeforeShaParams): Promise<boolean> {
+/**
+ * land `before_sha` locally by bare SHA, which GitHub serves for any commit in the repo
+ * network, forks included. returns why it could not, or undefined once it is present. it
+ * used to go through a temp branch, whose `createRef` the run token is refused whenever
+ * the old head's workflow files differ, so the incremental diff silently never computed (#1534).
+ */
+async function fetchBeforeSha(params: FetchBeforeShaParams): Promise<string | undefined> {
+  if (hasLocalCommit(params.sha)) return undefined;
+  const short = params.sha.slice(0, 7);
   try {
-    $("git", ["cat-file", "-t", params.sha], { log: false });
-    log.debug(`» before_sha ${params.sha.slice(0, 7)} is reachable`);
-    return true;
-  } catch {
-    // not available locally — create a temporary branch to fetch it
-  }
-  // never for a fork: a base-repo branch at the fork's commit runs that code in the base
-  // repo's push workflows, with its secrets
-  if (params.isFork) return false;
-
-  const tempBranch = `pullfrog/tmp/${params.sha.slice(0, 12)}`;
-  try {
-    log.debug(`» before_sha ${params.sha.slice(0, 7)} not reachable, creating temp branch...`);
-    await using _ref = await createTempBranch({
-      octokit: params.octokit,
-      owner: params.owner,
-      repo: params.repo,
-      sha: params.sha,
-      ref: tempBranch,
-    });
     // NOT `--depth=1`: that lands `beforeSha` as a brand-new shallow root with
     // zero ancestry, which is strictly worse than not fetching it — `cat-file`
     // then succeeds, so nothing retries, while every `merge-base` against it
@@ -287,16 +243,16 @@ async function ensureBeforeShaReachable(params: EnsureBeforeShaParams): Promise<
         "--no-tags",
         ...(params.isShallow ? [`--depth=${DEEPEN_RETRY_DEPTH}`] : []),
         "origin",
-        tempBranch,
+        params.sha,
       ],
       { token: params.gitToken, refreshGitToken: params.refreshGitToken, signal: params.signal },
-      `before_sha temp branch ${tempBranch}`
+      `before_sha ${short}`
     );
-    log.debug(`» fetched before_sha via temp branch ${tempBranch}`);
-    return true;
+    return undefined;
   } catch (e) {
-    log.debug(`» failed to fetch before_sha: ${e instanceof Error ? e.message : String(e)}`);
-    return false;
+    const reason = `before_sha \`${short}\` could not be fetched: ${e instanceof Error ? e.message : String(e)}`;
+    log.warning(`» ${reason}`);
+    return reason;
   }
 }
 
@@ -419,6 +375,19 @@ async function abortIfPullRequestMoved(args: {
 }
 
 /**
+ * pin `pr-N` to the head the API reported. `pull/N/head` can be missing for an open PR (#1523)
+ * or lag `head.sha` for over a day (#1527), and GitHub serves any commit in the repo network by
+ * SHA, a fork's included. the ref is still fetched first, as every checkout always has.
+ */
+async function fetchPrHeadBySha(pr: PrData, params: CheckoutPrBranchParams): Promise<void> {
+  await $gitFetchWithDeepen(
+    ["--no-tags", "origin", `+${pr.headSha}:refs/heads/pr-${pr.number}`],
+    { token: params.gitToken, refreshGitToken: params.refreshGitToken, signal: params.signal },
+    `PR #${pr.number} head ${pr.headSha.slice(0, 7)}`
+  );
+}
+
+/**
  * Shared helper to checkout a PR branch and configure fork remotes.
  * Assumes origin remote is already configured with authentication.
  * Updates the primary repo state's issueNumber, checkoutSha, and pushUrl (for fork PRs).
@@ -426,7 +395,7 @@ async function abortIfPullRequestMoved(args: {
 export async function checkoutPrBranch(
   pr: PrData,
   params: CheckoutPrBranchParams
-): Promise<{ hookWarning?: string | undefined }> {
+): Promise<{ hookWarning?: string | undefined; beforeShaUnavailable?: string | undefined }> {
   const { octokit, owner, name, gitToken, refreshGitToken, toolState, beforeSha, signal } = params;
 
   // SECURITY: PR ref names come from GitHub and are attacker-controlled on
@@ -460,8 +429,10 @@ export async function checkoutPrBranch(
   const isShallow =
     $("git", ["rev-parse", "--is-shallow-repository"], { log: false }).trim() === "true";
 
-  repoState.checkoutSha = $("git", ["rev-parse", "HEAD"], { log: false }).trim();
-  const alreadyOnBranch = repoState.checkoutSha === pr.headSha;
+  const alreadyOnBranch = $("git", ["rev-parse", "HEAD"], { log: false }).trim() === pr.headSha;
+  // `checkoutSha` is the head the safety net treats as reviewed, so checkout never sets it before
+  // the fetch: a failed fetch left it at the runner's default-branch commit, a loop (#1523)
+  repoState.checkoutSha = alreadyOnBranch ? pr.headSha : undefined;
 
   // fetch base branch so origin/<base> exists for diff operations.
   // wrap with deepen-retry: on shallow clones (the actions/checkout default
@@ -480,12 +451,15 @@ export async function checkoutPrBranch(
   // normal PR-triggered runs won't match here — actions/checkout lands on a synthesized
   // merge commit whose SHA differs from pr.headSha.
   //
-  // so the fetch+checkout block below will almost always execute, and the fetched HEAD
-  // might differ from pr.headSha. the repo state's checkoutSha is set after to capture the actual SHA.
+  // so the fetch+checkout block below will almost always execute. it pins pr-N to pr.headSha,
+  // so the repo state's checkoutSha is pr.headSha whenever a checkout succeeded.
   if (!alreadyOnBranch) {
     // checkout base branch first to avoid "refusing to fetch into current branch" error
     // -B creates or resets the branch to match origin/baseBranch
-    $("git", ["checkout", "-B", pr.baseRef, `origin/${pr.baseRef}`], { log: false });
+    $("git", ["checkout", "-B", pr.baseRef, `origin/${pr.baseRef}`], {
+      log: false,
+      env: WORKING_TREE_GIT_ENV,
+    });
 
     // fetch PR branch using pull/{n}/head refspec (works for both fork and same-repo PRs).
     // two transient classes wrap this fetch:
@@ -508,10 +482,14 @@ export async function checkoutPrBranch(
           // no amount of retrying will populate the expected ref — surface a
           // clean abort error instead of burning the full retry budget.
           const msg = e instanceof Error ? e.message : String(e);
-          if (PULL_REF_MISSING_PATTERN.test(msg)) {
-            await abortIfPullRequestMoved({ octokit, owner, repo: name, pr });
+          if (!PULL_REF_MISSING_PATTERN.test(msg)) throw e;
+          await abortIfPullRequestMoved({ octokit, owner, repo: name, pr });
+          // the commit exists even when the ref does not (#1523); a miss there keeps the #591 retry
+          try {
+            await fetchPrHeadBySha(pr, params);
+          } catch {
+            throw e;
           }
-          throw e;
         }
       },
       retry: (error, attempt) =>
@@ -521,26 +499,30 @@ export async function checkoutPrBranch(
       name: `pull/${pr.number}/head fetch`,
     })();
 
+    const fetchedSha = $("git", ["rev-parse", localBranch], { log: false }).trim();
+    if (fetchedSha !== pr.headSha) {
+      // never review a revision that is not the PR head: fail loudly rather than check it out
+      log.warning(
+        `» pull/${pr.number}/head is at ${fetchedSha.slice(0, 7)} but the PR head is ${pr.headSha.slice(0, 7)}; fetching the head by SHA`
+      );
+      await fetchPrHeadBySha(pr, params).catch((e: unknown) => {
+        throw new Error(
+          `pull/${pr.number}/head is stale (${fetchedSha.slice(0, 7)}, PR head ${pr.headSha.slice(0, 7)}) and fetching the head by SHA failed: ${e instanceof Error ? e.message : String(e)}`,
+          { cause: e }
+        );
+      });
+    }
+
     // checkout the branch
-    $("git", ["checkout", localBranch], { log: false });
+    $("git", ["checkout", localBranch], { log: false, env: WORKING_TREE_GIT_ENV });
     log.debug(`» checked out PR #${pr.number}`);
-    // make sure checkoutSha is set to the actual checked-out SHA (which might be different from pr.headSha)
-    repoState.checkoutSha = $("git", ["rev-parse", "HEAD"], { log: false }).trim();
+    repoState.checkoutSha = pr.headSha;
   }
 
-  const beforeShaReachable = beforeSha
-    ? await ensureBeforeShaReachable({
-        sha: beforeSha,
-        octokit,
-        owner,
-        repo: name,
-        gitToken,
-        refreshGitToken,
-        isShallow,
-        isFork,
-        signal,
-      })
-    : false;
+  const beforeShaUnavailable = beforeSha
+    ? await fetchBeforeSha({ sha: beforeSha, gitToken, refreshGitToken, isShallow, signal })
+    : undefined;
+  const reachableBeforeSha = beforeSha && !beforeShaUnavailable ? beforeSha : undefined;
 
   // compute deepen depth for shallow clones. actions/checkout uses depth=1
   // by default, which breaks rebase/log because git can't find the merge base.
@@ -550,22 +532,22 @@ export async function checkoutPrBranch(
     let deepenDepth = 0;
     try {
       // ahead_by = PR commits past merge base, behind_by = base commits past merge base.
-      // --deepen extends ALL shallow roots equally (can't deepen a single branch),
-      // so we need the max across both the PR head and before_sha to ensure all
+      // one --deepen applies one depth to every shallow root it is given, so we need
+      // the max across both the PR head and before_sha to ensure all
       // three points (base, head, before_sha) reach the merge base in a single deepen call.
       const [prComparison, beforeShaComparison] = await Promise.all([
         octokit.rest.repos.compareCommits({
           owner,
           repo: name,
           base: pr.baseRef,
-          head: repoState.checkoutSha,
+          head: pr.headSha,
         }),
-        beforeSha && beforeShaReachable
+        reachableBeforeSha
           ? octokit.rest.repos.compareCommits({
               owner,
               repo: name,
               base: pr.baseRef,
-              head: beforeSha,
+              head: reachableBeforeSha,
             })
           : undefined,
       ]);
@@ -590,10 +572,21 @@ export async function checkoutPrBranch(
     // deepen after both branches are fetched so the merge base is reachable from both sides
     if (deepenDepth) {
       log.debug(`» deepening by ${deepenDepth} to reach merge base...`);
-      await $git("fetch", [`--deepen=${deepenDepth}`, "--no-tags", "origin"], {
-        token: gitToken,
-        signal,
-      });
+      // scoped to the histories the merge base needs: a bare fetch inherits actions/checkout's
+      // `+refs/heads/*` and deepened every branch on the remote, past the 570s deadline (#1531).
+      // no destinations, since pr-N is checked out; the deepen only extends shallow history.
+      await $git(
+        "fetch",
+        [
+          `--deepen=${deepenDepth}`,
+          "--no-tags",
+          "origin",
+          `refs/heads/${pr.baseRef}`,
+          pr.headSha,
+          ...(reachableBeforeSha ? [reachableBeforeSha] : []),
+        ],
+        { token: gitToken, signal }
+      );
     }
   }
 
@@ -657,7 +650,7 @@ export async function checkoutPrBranch(
   };
 
   // the hook ignores the signal, so never start it past the deadline (an abort swallowed by
-  // `ensureBeforeShaReachable` reaches here with no `$git` call left to surface it)
+  // `fetchBeforeSha` reaches here with no `$git` call left to surface it)
   signal.throwIfAborted();
   // execute post-checkout lifecycle hook. soft-fail: surface the warning
   // to the agent via the tool response instead of throwing, so a flaky or
@@ -668,7 +661,7 @@ export async function checkoutPrBranch(
     shell: params.shell,
     normalizeWorkingTreeAfter: true,
   });
-  return { hookWarning: postCheckoutHook.warning };
+  return { hookWarning: postCheckoutHook.warning, beforeShaUnavailable };
 }
 
 /**
@@ -699,13 +692,17 @@ const inFlightCheckouts = new Map<number, Promise<CheckoutPrResult>>();
 const CHECKOUT_DEADLINE_MS = 570_000;
 /** covers the 5s SIGKILL escalation and a ≤10s pull-ref retry wait; 585s stays under fastmcp's 600s */
 const CHECKOUT_ABORT_GRACE_MS = 15_000;
+/** every observed prep restore landed 1-14s after the refusal it raced; spent from the deadline above */
+const PREP_SETTLE_MS = 60_000;
 
 function withCheckoutDeadline(
   run: (signal: AbortSignal) => Promise<CheckoutPrResult>,
   pullNumber: number
 ): Promise<CheckoutPrResult> {
   const exceeded = `checkout_pr #${pullNumber} exceeded ${CHECKOUT_DEADLINE_MS / 1000}s`;
-  const retry = "retry the call to start a fresh attempt.";
+  // a full-budget miss is a slow fetch, and a retry redoes the fetch it lost (#1531)
+  const retry =
+    "fetches that completed are kept, so retry once; if that also hits the deadline, stop calling checkout_pr and review from the PR's API diff.";
   const controller = new AbortController();
   const abortTimer = setTimeout(
     () => controller.abort(new Error(`${exceeded} and was cancelled; ${retry}`)),
@@ -840,7 +837,10 @@ export function CheckoutPrTool(ctx: ToolContext) {
     let incrementalEmpty = false;
     let incrementalUnavailable = false;
     let incrementalUnavailableReason: string | undefined;
-    if (primary.beforeSha) {
+    if (checkoutResult.beforeShaUnavailable) {
+      incrementalUnavailable = true;
+      incrementalUnavailableReason = checkoutResult.beforeShaUnavailable;
+    } else if (primary.beforeSha) {
       const beforeShort = primary.beforeSha.slice(0, 7);
       const incremental = computeIncrementalDiff({
         baseBranch: pr.baseRef,
@@ -1055,6 +1055,80 @@ export function CheckoutPrTool(ctx: ToolContext) {
     } satisfies CheckoutPrResult;
   };
 
+  const assertCheckoutPreconditions = async (
+    pull_number: number,
+    signal: AbortSignal
+  ): Promise<void> => {
+    // unconditional refusal: any dirty working tree blocks checkout_pr, even
+    // when HEAD is already on pr-N. no stashing, no live-HEAD escape hatch.
+    // shared-cwd subagents made "carry edits along" semantics dangerous
+    // (zed-industries/cloud, 2026-05-18) — forcing commit/discard before
+    // any PR-context op eliminates the entire carry-forward failure class.
+    const status = () => $("git", ["status", "--porcelain"], { log: false }).trim();
+    const install = ctx.toolState.dependencyInstallation;
+    let dirty = status();
+    // dirt while the background install runs is its lifecycle scripts', which it restores when it
+    // finishes: refusing at once read as someone else's work and sent agents off checkout (#1495)
+    if (dirty && install?.status === "in_progress" && install.promise) {
+      log.info(
+        `» working tree is dirty while dependencies install; waiting up to ${PREP_SETTLE_MS / 1000}s for prep to restore it`
+      );
+      await Promise.race([
+        install.promise.catch(() => {}),
+        sleep(PREP_SETTLE_MS, undefined, { signal }),
+      ]);
+      dirty = status();
+    }
+    if (dirty && install?.status === "in_progress") {
+      throw new Error(
+        `cannot checkout PR #${pull_number} yet: the background dependency install is still running, ` +
+          `and it restores the tracked files it rewrote when it finishes. call \`await_dependency_installation\`, ` +
+          `then retry checkout_pr; do not commit or discard these paths:\n${dirty}`
+      );
+    }
+    if (dirty) {
+      throw new Error(
+        `cannot checkout PR #${pull_number} while the working tree has uncommitted changes. ` +
+          `commit (then push if needed), or discard with \`git restore --staged --worktree .\` / \`git clean -fd\` before retrying. ` +
+          `this refusal is unconditional — even re-checking-out the PR you're already on is refused, ` +
+          `because shared-working-tree subagents make carry-forward edits unsafe. dirty paths:\n${dirty}`
+      );
+    }
+
+    // initial-branch invariant: the only sanctioned HEAD positions for a
+    // checkout_pr call are (a) the run-entry HEAD captured by setupGit, or
+    // (b) `pr-${pull_number}` for idempotent same-PR re-checkout (e.g.
+    // re-fetch after the PR head moved). anything else means a subagent
+    // silently parked HEAD on another PR, which is the zed-industries/cloud
+    // (2026-05-18) cross-PR clobber shape. uses the same live probe (not
+    // the repo state's issueNumber, poisonable per the PR #796 review) and
+    // discriminates branch vs detached so detached-entry runs don't get a
+    // trivial "any future detached state matches" carve-out.
+    const initialHead = primaryRepoState(ctx.toolState).initialHead;
+    if (initialHead) {
+      const currentHead = captureInitialHead(process.cwd());
+      const targetBranch = `pr-${pull_number}`;
+      const onTarget = currentHead.kind === "branch" && currentHead.name === targetBranch;
+      const onInitial = headsEqual(currentHead, initialHead);
+      if (!onTarget && !onInitial) {
+        const recoverCmd =
+          initialHead.kind === "branch"
+            ? `git checkout ${initialHead.name}`
+            : `git checkout ${initialHead.sha}`;
+        throw new Error(
+          `cannot checkout PR #${pull_number} from ${describeHead(currentHead)}. ` +
+            `the only sanctioned HEAD positions for checkout_pr are the run-entry HEAD ` +
+            `(${describeHead(initialHead)}) or the target PR's branch (\`${targetBranch}\`, idempotent re-checkout). ` +
+            `recover with \`${recoverCmd}\` first — if that would carry uncommitted ` +
+            `work along, commit or discard it (\`git restore --staged --worktree .\` / \`git clean -fd\`) before switching. ` +
+            `routing around this via the \`git\` tool's \`checkout\`/\`switch\` subcommands is not sanctioned: ` +
+            `this guard exists to prevent the shared-working-tree cross-PR clobber pattern from the ` +
+            `zed-industries/cloud (2026-05-18) incident.`
+        );
+      }
+    }
+  };
+
   return tool({
     name: "checkout_pr",
     mutates: true,
@@ -1064,7 +1138,7 @@ export function CheckoutPrTool(ctx: ToolContext) {
       "Returns diffPath pointing to the formatted diff file. " +
       "Example: `checkout_pr({ pull_number: 1234 })`. " +
       "Large repos can take several minutes — wait for the call to finish; do not treat a slow response as failure. " +
-      "If a call times out, retry it — the retry starts a fresh attempt. DO NOT touch `.git/*.lock` files: removing them kills a still-running fetch and creates an inescapable retry loop. " +
+      "If a call times out, retry it once; if the retry also times out, stop and review from the PR's API diff. DO NOT touch `.git/*.lock` files: removing them kills a still-running fetch and creates an inescapable retry loop. " +
       "Stale lock files from prior crashed runs are swept automatically by the tool itself before each fetch; you do not need to remove them by hand.",
     parameters: CheckoutPr,
     execute: execute(async ({ pull_number }) => {
@@ -1074,58 +1148,10 @@ export function CheckoutPrTool(ctx: ToolContext) {
         return inFlight;
       }
 
-      // unconditional refusal: any dirty working tree blocks checkout_pr, even
-      // when HEAD is already on pr-N. no stashing, no live-HEAD escape hatch.
-      // shared-cwd subagents made "carry edits along" semantics dangerous
-      // (zed-industries/cloud, 2026-05-18) — forcing commit/discard before
-      // any PR-context op eliminates the entire carry-forward failure class.
-      const dirty = $("git", ["status", "--porcelain"], { log: false }).trim();
-      if (dirty) {
-        throw new Error(
-          `cannot checkout PR #${pull_number} while the working tree has uncommitted changes. ` +
-            `commit (then push if needed), or discard with \`git restore --staged --worktree .\` / \`git clean -fd\` before retrying. ` +
-            `this refusal is unconditional — even re-checking-out the PR you're already on is refused, ` +
-            `because shared-working-tree subagents make carry-forward edits unsafe. dirty paths:\n${dirty}`
-        );
-      }
-
-      // initial-branch invariant: the only sanctioned HEAD positions for a
-      // checkout_pr call are (a) the run-entry HEAD captured by setupGit, or
-      // (b) `pr-${pull_number}` for idempotent same-PR re-checkout (e.g.
-      // re-fetch after the PR head moved). anything else means a subagent
-      // silently parked HEAD on another PR, which is the zed-industries/cloud
-      // (2026-05-18) cross-PR clobber shape. uses the same live probe (not
-      // the repo state's issueNumber, poisonable per the PR #796 review) and
-      // discriminates branch vs detached so detached-entry runs don't get a
-      // trivial "any future detached state matches" carve-out.
-      const initialHead = primaryRepoState(ctx.toolState).initialHead;
-      if (initialHead) {
-        const currentHead = captureInitialHead(process.cwd());
-        const targetBranch = `pr-${pull_number}`;
-        const onTarget = currentHead.kind === "branch" && currentHead.name === targetBranch;
-        const onInitial = headsEqual(currentHead, initialHead);
-        if (!onTarget && !onInitial) {
-          const recoverCmd =
-            initialHead.kind === "branch"
-              ? `git checkout ${initialHead.name}`
-              : `git checkout ${initialHead.sha}`;
-          throw new Error(
-            `cannot checkout PR #${pull_number} from ${describeHead(currentHead)}. ` +
-              `the only sanctioned HEAD positions for checkout_pr are the run-entry HEAD ` +
-              `(${describeHead(initialHead)}) or the target PR's branch (\`${targetBranch}\`, idempotent re-checkout). ` +
-              `recover with \`${recoverCmd}\` first — if that would carry uncommitted ` +
-              `work along, commit or discard it (\`git restore --staged --worktree .\` / \`git clean -fd\`) before switching. ` +
-              `routing around this via the \`git\` tool's \`checkout\`/\`switch\` subcommands is not sanctioned: ` +
-              `this guard exists to prevent the shared-working-tree cross-PR clobber pattern from the ` +
-              `zed-industries/cloud (2026-05-18) incident.`
-          );
-        }
-      }
-
-      const promise = withCheckoutDeadline(
-        (signal) => runCheckout(pull_number, signal),
-        pull_number
-      );
+      const promise = withCheckoutDeadline(async (signal) => {
+        await assertCheckoutPreconditions(pull_number, signal);
+        return runCheckout(pull_number, signal);
+      }, pull_number);
       inFlightCheckouts.set(pull_number, promise);
       try {
         return await promise;

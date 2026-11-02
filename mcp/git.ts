@@ -17,7 +17,12 @@ import {
   detectWorkingTreeChanges,
 } from "../utils/apiCommit.ts";
 import { log } from "../utils/cli.ts";
-import { $git, $gitFetchWithDeepen, TRANSIENT_AUTH_PATTERNS } from "../utils/gitAuth.ts";
+import {
+  $git,
+  $gitFetchWithDeepen,
+  TRANSIENT_AUTH_PATTERNS,
+  WORKING_TREE_GIT_ENV,
+} from "../utils/gitAuth.ts";
 import { executeLifecycleHook, type LifecycleHookFailure } from "../utils/lifecycle.ts";
 import { $ } from "../utils/shell.ts";
 import { resolveRepoCtx } from "./resolveRepoCtx.ts";
@@ -419,7 +424,7 @@ async function pushWithRetry(
 }
 
 export function PushBranchTool(ctx: ToolContext) {
-  const primaryDefaultBranch = ctx.repo.data.default_branch || "main";
+  const primaryDefaultBranch = ctx.repo.defaultBranch;
   const pushPermission = ctx.payload.push;
 
   return tool({
@@ -451,7 +456,7 @@ export function PushBranchTool(ctx: ToolContext) {
       }
       const cwd = rc.dir;
       const repoState = requireRepoState(ctx.toolState, rc.owner, rc.name);
-      // primary's default branch comes from ctx.repo.data; secondaries store it at checkout_repo.
+      // primary's default branch comes from ctx.repo; secondaries store it at checkout_repo.
       const defaultBranch =
         rc.access === "primary" ? primaryDefaultBranch : repoState.defaultBranch || "main";
 
@@ -680,7 +685,7 @@ export function CommitChangesTool(ctx: ToolContext) {
       assertPushTarget(ctx, {
         branch,
         pushDest,
-        defaultBranch: ctx.repo.data.default_branch || "main",
+        defaultBranch: ctx.repo.defaultBranch,
         // commit_changes (signed commits) only ever targets the primary repo.
         access: "primary",
       });
@@ -1182,6 +1187,7 @@ export function GitTool(ctx: ToolContext) {
       const output = $("git", [command, ...args], {
         cwd,
         log: false,
+        env: WORKING_TREE_GIT_ENV,
         onError: (r) => {
           if (r.status === 1 && emptyResult && !r.stderr.trim() && !r.stdout.trim()) {
             noResult = true;
@@ -1253,7 +1259,7 @@ const DeleteBranch = type({
 
 export function DeleteBranchTool(ctx: ToolContext) {
   const pushPermission = ctx.payload.push;
-  const defaultBranch = ctx.repo.data.default_branch || "main";
+  const defaultBranch = ctx.repo.defaultBranch;
 
   return tool({
     name: "delete_branch",

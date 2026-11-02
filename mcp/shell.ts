@@ -23,7 +23,7 @@ export const ShellParams = type({
   // REQUIRING it cost a full rejected turn every time one was omitted. #1140.
   "description?": "string",
   "timeout?": type.number.describe(
-    "Timeout in MILLISECONDS (not seconds). Default 30000 (30s), max 120000 (2m). e.g. timeout: 180000 for 3 minutes; timeout: 180 means 180ms and will kill the process almost immediately."
+    "Timeout in MILLISECONDS (not seconds). Default 30000 (30s), max 120000 (2m); timeout: 120 means 120ms. For longer commands use background: true."
   ),
   "working_directory?": "string",
   "background?": "boolean",
@@ -513,6 +513,15 @@ function getTempDir(): string {
  * to a tempfile the agent can re-read selectively (cat/tail/grep). */
 export const MAX_OUTPUT_CHARS = 5000;
 
+const SHELL_MAX_TIMEOUT_MS = 120_000;
+
+/**
+ * Added to a sandboxed tool's fastmcp `timeoutMs`. That timeout is a `Promise.race`
+ * (see `CHECKOUT_DEADLINE_MS`): tied with our own command timeout it wins by a few ms
+ * and the agent gets fastmcp's generic error instead of the captured output (#1489).
+ */
+export const SANDBOX_RESPONSE_HEADROOM_MS = 10_000;
+
 /** if `output` exceeds `MAX_OUTPUT_CHARS`, persist the full body to a
  * tempfile and return the last `MAX_OUTPUT_CHARS` prefixed with a sentinel
  * pointing at the saved path. otherwise return as-is. */
@@ -638,7 +647,7 @@ function describeGh(ctx: ToolContext): string {
 export function ShellTool(ctx: ToolContext) {
   return tool({
     name: "shell",
-    timeoutMs: 120_000,
+    timeoutMs: SHELL_MAX_TIMEOUT_MS + SANDBOX_RESPONSE_HEADROOM_MS,
     description: `Execute shell commands securely.${ctx.payload.shell === "restricted" ? " Environment is filtered to remove API keys and secrets." : ""}
 
 Example: \`shell({ command: "pnpm test", description: "run the test suite" })\`.
@@ -653,7 +662,7 @@ Output is capped at ${MAX_OUTPUT_CHARS} chars: if exceeded, only the tail is ret
 \`git\` works here, but \`.git\` is mounted read-only.${describeGh(ctx)}`,
     parameters: ShellParams,
     execute: execute(async (params) => {
-      const timeout = Math.min(params.timeout ?? 30000, 120000);
+      const timeout = Math.min(params.timeout ?? 30000, SHELL_MAX_TIMEOUT_MS);
       const cwd = params.working_directory ?? process.cwd();
       // checked here, not left to spawn: its ENOENT names the sandbox binary, not the directory.
       if (!existsSync(cwd)) throw new Error(`working_directory does not exist: ${cwd}`);

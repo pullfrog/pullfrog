@@ -1,3 +1,5 @@
+import * as yes from "yes";
+
 /**
  * Predicate for transient network errors that should be retried (vs. fail fast
  * on explicit HTTP status / validation errors that carry their own message).
@@ -33,4 +35,9 @@ export function isTransientOctokitError(error: unknown): boolean {
     return error.status >= 500;
   }
   return isTransientNetworkError(error);
+}
+
+/** the `yes` retry for an octokit call: back off on a transient failure, give up on any other. */
+export function retryTransientOctokit(error: unknown, attempt: number): number {
+  return isTransientOctokitError(error) ? yes.backoff([500, 2000], attempt) : -1;
 }

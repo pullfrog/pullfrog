@@ -6,7 +6,7 @@ import { formatPermissions, mirrorRolePermissions } from "../utils/roleMirror.ts
 import { filterEnvForUntrustedCode } from "../utils/secrets.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
-import { capOutput, runSandboxed } from "./shell.ts";
+import { capOutput, runSandboxed, SANDBOX_RESPONSE_HEADROOM_MS } from "./shell.ts";
 
 const GH_TIMEOUT_MS = 120_000;
 
@@ -52,7 +52,7 @@ export function GhTool(ctx: ToolContext) {
     // and its own `gh` token are read-only, but this `gh` reaches PR and issue
     // state changes — the shape of the 2026-05-18 cross-branch clobber the gate exists for.
     mutates: true,
-    timeoutMs: GH_TIMEOUT_MS,
+    timeoutMs: GH_TIMEOUT_MS + SANDBOX_RESPONSE_HEADROOM_MS,
     description:
       `Run the GitHub CLI against ${ctx.repo.owner}/${ctx.repo.name}. ` +
       "Pass argv as an array — there is no shell, so pipes, redirects and `&&` do not work; " +

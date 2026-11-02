@@ -25,6 +25,15 @@ import { spawn } from "./subprocess.ts";
 
 type SafeGitSubcommand = "fetch" | "push";
 
+/**
+ * env for git that rewrites the working tree. it runs with no credentials, so an LFS
+ * smudge that has to download dies mid-checkout and leaves dirt every retry refuses on
+ * (#1519); write the pointer instead, as `actions/checkout`'s default `lfs: false` does.
+ */
+export const WORKING_TREE_GIT_ENV = { GIT_LFS_SKIP_SMUDGE: "1" };
+
+const SLOW_FETCH_SECONDS = 30;
+
 type GitAuthOptions = {
   token: string;
   cwd?: string;
@@ -203,6 +212,7 @@ export async function $git(
 
   log.debug(`git ${fullArgs.join(" ")}`);
 
+  const startedAt = Date.now();
   try {
     const result = await spawn({
       cmd: gitPath,
@@ -250,6 +260,11 @@ export async function $git(
       stderr: result.stderr.trim(),
     };
   } finally {
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    // the one line that names which fetch ate a checkout's deadline (#1531); args never hold the token
+    if (subcommand === "fetch" && seconds > SLOW_FETCH_SECONDS) {
+      log.info(`» git fetch ${args.join(" ")} took ${seconds}s`);
+    }
     authServer.revoke(code);
     try {
       unlinkSync(scriptPath);

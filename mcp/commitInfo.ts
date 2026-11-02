@@ -7,7 +7,7 @@ import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
 
 export const CommitInfo = type({
-  sha: type.string.describe("the commit SHA (full or abbreviated) to fetch"),
+  sha: type.string.describe("the commit SHA, branch, or tag to fetch"),
 });
 
 export function CommitInfoTool(ctx: ToolContext) {
@@ -36,7 +36,8 @@ export function CommitInfoTool(ctx: ToolContext) {
           "PULLFROG_TEMP_DIR not set - get_commit_info must run in pullfrog action context"
         );
       }
-      const diffFile = join(tempDir, `commit-${sha.slice(0, 7)}.diff`);
+      // named from the resolved SHA: the input may be a branch like `chore/x` (#1577)
+      const diffFile = join(tempDir, `commit-${data.sha.slice(0, 7)}.diff`);
       writeFileSync(diffFile, formatResult.content);
       log.debug(`wrote commit diff to ${diffFile} (${formatResult.content.length} bytes)`);
 

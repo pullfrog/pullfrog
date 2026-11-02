@@ -158,7 +158,9 @@ function readModels(params: { cliPath: string; tmpdir: string }): Set<string> {
   const result = spawnSync(params.cliPath, args, {
     encoding: "utf-8",
     timeout: 30_000,
-    env,
+    // `models` exits mid plugin-dependency install, leaving its flock under XDG_STATE_HOME; shared
+    // with the server, that lock held `session.create` until it went stale at 60s (#1513).
+    env: { ...env, XDG_STATE_HOME: join(params.tmpdir, ".local", "state-introspection") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.status !== 0) {

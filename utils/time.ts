@@ -57,3 +57,16 @@ export function resolveTimeoutMs(input: string | undefined): number | null {
   if (parsed === null || parsed <= 0 || parsed > TIMEOUT_MAX_MS) return null;
   return parsed;
 }
+
+/**
+ * the run timer, or undefined under --notimeout. resolveTimeoutMs rejects unparseable / zero /
+ * setTimeout-overflow inputs so a bad string can't silently resolve to an instant timeout: those
+ * fall back to the 1h default, flagged `invalid` for the caller to warn — users who want runtime
+ * measured in weeks should use --notimeout.
+ */
+export function resolveRunTimeout(input: string | undefined) {
+  if (input === TIMEOUT_DISABLED) return undefined;
+  const ms = input ? resolveTimeoutMs(input) : null;
+  if (input && ms !== null) return { ms, label: input, invalid: false };
+  return { ms: 3_600_000, label: "1h", invalid: Boolean(input) };
+}

@@ -1,11 +1,10 @@
-import type { Octokit } from "@octokit/rest";
 import * as yes from "yes";
 import { installProviders, type RouterTier } from "../models.ts";
 import packageJson from "../package.json" with { type: "json" };
 import type { CommercialRefusal } from "./billingErrors.ts";
 import { log } from "./cli.ts";
 import { mintIdToken, type OctokitWithPlugins, parseRepoContext } from "./github.ts";
-import { isTransientOctokitError } from "./isTransientNetworkError.ts";
+import { retryTransientOctokit } from "./isTransientNetworkError.ts";
 import {
   type AccountPlan,
   fetchRunContext,
@@ -18,11 +17,7 @@ import { getHarnessPins } from "./version.ts";
 
 export interface RunContextData {
   credentialAccess?: CredentialAccess | undefined;
-  repo: {
-    owner: string;
-    name: string;
-    data: Awaited<ReturnType<Octokit["repos"]["get"]>>["data"];
-  };
+  repo: { owner: string; name: string };
   repoSettings: RepoSettings;
   apiToken: string;
   oss: boolean;
@@ -46,7 +41,6 @@ export interface RunContextData {
 }
 
 interface ResolveRunContextDataParams {
-  octokit: OctokitWithPlugins;
   token: string;
   /** the dispatch payload's run type, read before the payload is resolved
    * because run-context is fetched first and needs it to pick this trigger's
@@ -113,36 +107,19 @@ export async function resolveRunContextData(
     // OIDC not available (local dev, non-actions environment, fork PRs)
   }
 
-  // the action octokit has no retry plugin (only a 401 re-mint), and this runs
-  // BEFORE the clean-error surface in main.ts — so a transient GitHub 5xx here
-  // would reject the Promise.all and hard-crash the run at startup (while its
-  // sibling fetchRunContext degrades to defaults). retry the transient blip.
-  // see #999.
-  const [repoResponse, runContext] = await Promise.all([
-    yes.query({
-      run: () => params.octokit.repos.get({ owner: repoContext.owner, repo: repoContext.name }),
-      name: "repos.get",
-      retry: (error, attempt) =>
-        isTransientOctokitError(error) ? yes.backoff([100, 500], attempt) : -1,
-    })(),
-    fetchRunContext({
-      token: params.token,
-      repoContext,
-      oidcToken,
-      runType: params.runType,
-      plainPrompt: params.plainPrompt,
-      routedTier: params.routedTier,
-    }),
-  ]);
+  const runContext = await fetchRunContext({
+    token: params.token,
+    repoContext,
+    oidcToken,
+    runType: params.runType,
+    plainPrompt: params.plainPrompt,
+    routedTier: params.routedTier,
+  });
 
   if (runContext.apiToken) maskSecret(runContext.apiToken);
   if (runContext.modelRegistry) installServedRegistry(runContext.modelRegistry);
   return {
-    repo: {
-      owner: repoContext.owner,
-      name: repoContext.name,
-      data: repoResponse.data,
-    },
+    repo: { owner: repoContext.owner, name: repoContext.name },
     repoSettings: runContext.settings,
     apiToken: runContext.apiToken,
     oss: runContext.oss,
@@ -160,4 +137,24 @@ export async function resolveRunContextData(
     trialFallback: runContext.trialFallback,
     trialCreditsLeftUsd: runContext.trialCreditsLeftUsd,
   };
+}
+
+/** the run's primary repo as the tools see it. */
+export type RunRepo = RunContextData["repo"] & { defaultBranch: string };
+
+/**
+ * read on the installation token, never the job `GITHUB_TOKEN`: that shares a per-repo hourly
+ * budget with the customer's CI, and a 403 on it here failed runs before they began (#1584).
+ * the default branch guards restricted pushes and `delete_branch`, so it is never guessed.
+ */
+export async function getDefaultBranch(params: {
+  octokit: OctokitWithPlugins;
+  repo: RunContextData["repo"];
+}): Promise<string> {
+  const response = await yes.query({
+    run: () => params.octokit.repos.get({ owner: params.repo.owner, repo: params.repo.name }),
+    name: "repos.get",
+    retry: retryTransientOctokit,
+  })();
+  return response.data.default_branch;
 }

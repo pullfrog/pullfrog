@@ -39,7 +39,7 @@ const MAX_BUFFER_BYTES = 32 * 1024 * 1024;
  * `handleToolError`, to the model). Comfortably above a real git diagnostic,
  * far below anything that would blow a context window.
  */
-const MAX_ERROR_DETAIL_CHARS = 20_000;
+export const MAX_ERROR_DETAIL_CHARS = 20_000;
 
 /**
  * Execute a shell command safely using spawnSync with argument arrays.

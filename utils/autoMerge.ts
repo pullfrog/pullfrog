@@ -3,7 +3,7 @@ import { addFooter } from "../mcp/comment.ts";
 import type { ToolContext } from "../mcp/server.ts";
 import { log } from "./cli.ts";
 import { isPullfrog } from "./isPullfrog.ts";
-import { isTransientOctokitError } from "./isTransientNetworkError.ts";
+import { retryTransientOctokit } from "./isTransientNetworkError.ts";
 import { countOutstandingPullfrogThreads } from "./outstandingThreads.ts";
 
 /** narrow view of a PR review — the only fields the blocking-verdict logic reads. */
@@ -47,9 +47,15 @@ const ENABLE_AUTO_MERGE = /* GraphQL */ `
 /**
  * GitHub 422 `Pull request is in clean status` — nothing left for native
  * auto-merge to wait on, so the PR is immediately mergeable → merge directly.
+ * `unstable status` is the same for every required check: only checks that are
+ * not required are pending or failing, and GitHub allows the merge (#1533).
  */
 const isAlreadyMergeable = (error: unknown): boolean =>
-  error instanceof Error && /clean status/i.test(error.message);
+  error instanceof Error && /(clean|unstable) status/i.test(error.message);
+
+/** the enable call's refusal on a base branch with no protection rules. */
+const isUnprotectedBase = (error: unknown): boolean =>
+  error instanceof Error && /protected branch rules not configured/i.test(error.message);
 
 /**
  * GitHub rejects `enablePullRequestAutoMerge` when `expectedHeadOid` no longer
@@ -125,6 +131,13 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
       })
       .catch((err) => log.debug(`autoMerge comment failed: ${err}`));
 
+  const refuseUnprotected = async (): Promise<void> => {
+    skip("base branch not protected — refusing CI-ungated merge");
+    await comment(
+      "> ⚠️ Approved, but not merged: the base branch has no branch protection. Add a rule with at least one required status check so Pullfrog can hand off to auto-merge."
+    );
+  };
+
   const pr = await ctx.octokit.rest.pulls.get({
     owner: ctx.repo.owner,
     repo: ctx.repo.name,
@@ -152,9 +165,9 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
   // hand off to GitHub. enable native auto-merge (waits for required checks +
   // reviews, honors branch protection, expectedHeadOid rejects the enable if the
   // head moved since our read (guards the read→enable window, not the eventual
-  // merged head)). a 422 `clean status` means nothing is left to wait on → merge
-  // now. any other enable failure (e.g. a push-restricted branch that also blocks
-  // the app) surfaces at warn via the caller's `.catch`.
+  // merged head)). a 422 `clean status` or `unstable status` means nothing required is
+  // left to wait on → merge now. any other enable failure (e.g. a push-restricted
+  // branch that also blocks the app) surfaces at warn via the caller's `.catch`.
   try {
     await yes.mutation({
       run: () =>
@@ -163,8 +176,7 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
           headSha,
         }),
       name: "enablePullRequestAutoMerge",
-      retry: (error, attempt) =>
-        isTransientOctokitError(error) ? yes.backoff([500, 2000], attempt) : -1,
+      retry: retryTransientOctokit,
     })();
     log.info(`autoMerge: pr=#${pullNumber} @ ${headSha.slice(0, 7)} → native auto-merge enabled`);
     await comment(
@@ -173,6 +185,7 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
     return;
   } catch (error) {
     if (isHeadChanged(error)) return skip("head moved during enable");
+    if (isUnprotectedBase(error)) return refuseUnprotected();
     if (isAutoMergeDisallowed(error)) {
       await comment(
         "> ⚠️ Approved, but auto-merge is off for this repo. Enable `Allow auto-merge` in Settings > General > Pull Requests."
@@ -182,7 +195,7 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
     if (!isAlreadyMergeable(error)) throw error;
   }
 
-  // `clean status` = immediately mergeable, which is EITHER a protected branch
+  // `clean`/`unstable` status = immediately mergeable, which is EITHER a protected branch
   // whose requirements are already met (safe) OR an UNPROTECTED branch with no CI
   // gate at all. a direct merge on the latter would be CI-ungated — the regression
   // native auto-merge exists to avoid, and exactly what the UI/docs promise
@@ -192,7 +205,8 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
   const base = await ctx.octokit.rest.repos
     .getBranch({ owner: ctx.repo.owner, repo: ctx.repo.name, branch: pr.data.base.ref })
     .catch(() => null);
-  if (!base?.data.protected) return skip("base branch not protected — refusing CI-ungated merge");
+  if (!base) return skip("base branch read failed — refusing to merge unverified");
+  if (!base.data.protected) return refuseUnprotected();
 
   // `sha` pins the merge to the reviewed head — GitHub 409s (absorbed by the
   // caller's `.catch`) if a commit landed in the read→merge window, so a TOCTOU

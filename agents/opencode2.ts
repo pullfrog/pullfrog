@@ -40,6 +40,7 @@ import {
   PULLFROG_OPENCODE_GATE_PLUGIN_FILENAME,
 } from "./opencodePlugin.ts";
 import {
+  bindSubagentSession,
   createRunState,
   declaredRung,
   emptyTurn,
@@ -55,6 +56,7 @@ import {
   type Sandbox,
   stallCause,
   stallError,
+  withServerStderr,
 } from "./opencodeSession.ts";
 import type { AgentResult, AgentUsage } from "./shared.ts";
 
@@ -86,6 +88,7 @@ const EVENT_TYPES = [
   "session.tool.input.started",
   "session.tool.input.delta",
   "session.tool.called",
+  "session.tool.progress",
   "session.tool.success",
   "session.tool.failed",
   "session.step.ended",
@@ -169,6 +172,10 @@ async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
   return {
     state: ctx,
     prompt: (text, signal) => runPromptTurn(ctx, { text, signal }),
+    interrupt: async (sessionID) => {
+      const resp = await ctx.client.session.interrupt({ sessionID });
+      if (!resp.interrupted) throw new Error("nothing running to interrupt");
+    },
     close: async () => {
       await mirrorCredentials(ctx);
       eventsController.abort();
@@ -346,6 +353,13 @@ function onModelEvent(ctx: RunnerContext, event: Event): void {
       }
       return;
     }
+    case "session.tool.progress": {
+      // the subagent tool reports its child session as progress before prompting it.
+      const child = event.data.metadata.sessionID;
+      if (typeof child === "string")
+        bindSubagentSession(ctx, { callID: event.data.id, sessionID: child });
+      return;
+    }
     case "session.tool.success":
     case "session.tool.failed":
       recordToolCall(ctx, {
@@ -454,7 +468,9 @@ async function runPromptTurn(
       })
     );
   }
-  if (requestError) return fail(`opencode prompt failed: ${requestError}`);
+  if (requestError) {
+    return fail(withServerStderr(`opencode prompt failed: ${requestError}`, ctx.serverStderr));
+  }
   const idle = await lastIdle(ctx);
   if (idle?.outcome === "failed") {
     return fail(

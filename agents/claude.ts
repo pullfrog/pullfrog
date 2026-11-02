@@ -118,7 +118,9 @@ async function installClaudeCli(): Promise<string> {
 const CLAUDE_EXEC_TOOLS = ["Bash", "PowerShell", "Monitor", "REPL", "Workflow"] as const;
 /** not exec, but each reaches off the runner under a claude.ai login: `DesignSync`, `Artifact` and
  * `ShareOnboardingGuide` upload local files, outside the `Read` denies; `SendMessage`/`ListAgents`,
- * `PushNotification` and `RemoteTrigger` reach the account's other sessions, devices and routines. */
+ * `PushNotification` and `RemoteTrigger` reach the account's other sessions, devices and routines.
+ * the session schedulers can only keep a one-shot `claude -p` alive past its final result, into the
+ * activity watchdog (#1583). */
 const CLAUDE_DENIED_TOOLS = [
   ...CLAUDE_EXEC_TOOLS,
   "DesignSync",
@@ -128,6 +130,10 @@ const CLAUDE_DENIED_TOOLS = [
   "ListAgents",
   "PushNotification",
   "RemoteTrigger",
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
 ];
 const CLAUDE_DENY_RULES = [
   ...CLAUDE_DENIED_TOOLS,
@@ -472,6 +478,9 @@ export async function runClaude(params: RunParams): Promise<ClaudeRunResult> {
   // because those runs genuinely consumed tokens and operators need
   // billing visibility for them.
   let syntheticStopFailure = false;
+  // a success result with nothing after it: the session is done, so an idle CLI is not a hang (#1583).
+  // one process can emit several results, and a later turn that stalls mid-stream still fails.
+  let settled = false;
   let accumulatedTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   // Claude CLI reports a single end-of-run `total_cost_usd` on the result
   // event. per-message events don't carry cost, so there's nothing to sum —
@@ -504,6 +513,7 @@ export async function runClaude(params: RunParams): Promise<ClaudeRunResult> {
       log.debug(withLabel(label, `» ${params.label} system event`));
     },
     assistant: (event: ClaudeAssistantEvent) => {
+      settled = false;
       const content = event.message?.content;
       if (!content) return;
 
@@ -590,6 +600,7 @@ export async function runClaude(params: RunParams): Promise<ClaudeRunResult> {
       }
     },
     user: (event: ClaudeUserEvent) => {
+      settled = false;
       const content = event.message?.content;
       if (!content) return;
 
@@ -650,6 +661,7 @@ export async function runClaude(params: RunParams): Promise<ClaudeRunResult> {
       }
 
       if (subtype === "success") {
+        settled = true;
         // extract detailed usage from result event (most accurate source).
         // note: `input` here is non-cached input tokens only, matching the
         // semantics of OpenCode's step_finish.tokens.input — the logTokenTable
@@ -919,6 +931,10 @@ export async function runClaude(params: RunParams): Promise<ClaudeRunResult> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const isActivityTimeout =
       error instanceof SpawnTimeoutError && error.code === SPAWN_ACTIVITY_TIMEOUT_CODE;
+    if (isActivityTimeout && settled && !resultErrorSubtype) {
+      log.info(`» ${params.label} idle after a successful result — treating as complete`);
+      return { success: true, output: finalOutput, usage: buildUsage(), sessionId };
+    }
 
     const stderrContext = recentStderr.slice(-10).join("\n");
     const diagnosis = lastProviderError

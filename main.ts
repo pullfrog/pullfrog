@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { detect } from "package-manager-detector";
 import { agents } from "./agents/index.ts";
 import { opencodeGeneration } from "./agents/opencodeGeneration.ts";
+import { hasDeliveredReview } from "./agents/postRun.ts";
 import { subagentDeniedToolNames } from "./agents/subagentToolGates.ts";
 import { findDanglingPromptToolRefs } from "./external.ts";
 import { reportProgress } from "./mcp/comment.ts";
@@ -83,7 +84,7 @@ import {
 import { resolveTrialFallback, runProxyResolution } from "./utils/proxy.ts";
 import { fetchPreviousSnapshot, persistSummary, seedSummaryFile } from "./utils/prSummary.ts";
 import { handleAgentResult } from "./utils/run.ts";
-import { resolveRunContextData } from "./utils/runContextData.ts";
+import { getDefaultBranch, resolveRunContextData } from "./utils/runContextData.ts";
 import { ossEffortFloor } from "./utils/runEffort.ts";
 import { renderRunError } from "./utils/runErrorRenderer.ts";
 import {
@@ -96,7 +97,7 @@ import { setEnvAllowlist } from "./utils/secrets.ts";
 import { createTempDirectory, setupGit, wipeRunnerLeakSurface } from "./utils/setup.ts";
 import { reportStatusChecks } from "./utils/statusChecks.ts";
 import { killTrackedChildren } from "./utils/subprocess.ts";
-import { resolveTimeoutMs, TIMEOUT_DISABLED } from "./utils/time.ts";
+import { resolveRunTimeout } from "./utils/time.ts";
 import { Timer } from "./utils/timer.ts";
 import { createTodoTracker } from "./utils/todoTracking.ts";
 import {
@@ -161,11 +162,9 @@ export async function main(): Promise<MainResult> {
   // resolve and fingerprint git binary before any agent code runs
   resolveGit();
 
-  // get job token for initial API calls
+  // the job token is only run-context's bearer; GitHub reads use the installation token (#1584)
   const jobToken = getJobToken();
-  const initialOctokit = createOctokit(jobToken);
   const runContext = await resolveRunContextData({
-    octokit: initialOctokit,
     token: jobToken,
     runType: typeof resolvedPromptInput === "string" ? undefined : resolvedPromptInput.type,
     plainPrompt: typeof resolvedPromptInput === "string",
@@ -349,6 +348,26 @@ export async function main(): Promise<MainResult> {
     );
   }
 
+  // probe the sandbox ONCE, here, rather than lazily inside the first
+  // `spawnShell`. on an unprivileged Kubernetes/ARC runner every PID-namespace
+  // method fails, so every `pullfrog_shell` call throws — but detection used to
+  // happen minutes in, the tool stayed registered, and the prompt kept telling
+  // the agent it was the only sanctioned way to run anything. 192 runs / 757
+  // dead tool calls in 24h, all green, with agents submitting reviews whose
+  // tests they had decided to run and could not (#1093). resolving it to
+  // `disabled` up front makes the tool set and the prompt agree with reality,
+  // and gives the operator one line they can act on. it runs before the mint so
+  // a run left without a shell is not handed a `gh` token it cannot use (#1517).
+  if (payload.shell !== "disabled" && process.env.CI === "true" && getSandboxMethod() === "none") {
+    payload.shell = "disabled";
+    log.warning(
+      "» shell commands and the `gh` tool are disabled for this run: this runner provides no PID-namespace isolation " +
+        "(unprivileged unshare, sudo unshare and userns-nested unshare all failed). " +
+        "on a self-hosted Kubernetes/ARC runner, allow user-namespace creation in the pod's seccomp " +
+        "profile — see https://docs.pullfrog.com/security#self-hosted-runners"
+    );
+  }
+
   // resolve tokens first — acquireNewToken needs OIDC env vars for token exchange
   await using tokenRef = await resolveTokens({
     push: payload.push,
@@ -365,25 +384,6 @@ export async function main(): Promise<MainResult> {
   // dangling references in the user's .git/config. see wipeRunnerLeakSurface
   // for the leak inventory and threat model.
   wipeRunnerLeakSurface();
-
-  // probe the sandbox ONCE, here, rather than lazily inside the first
-  // `spawnShell`. on an unprivileged Kubernetes/ARC runner every PID-namespace
-  // method fails, so every `pullfrog_shell` call throws — but detection used to
-  // happen minutes in, the tool stayed registered, and the prompt kept telling
-  // the agent it was the only sanctioned way to run anything. 192 runs / 757
-  // dead tool calls in 24h, all green, with agents submitting reviews whose
-  // tests they had decided to run and could not (#1093). resolving it to
-  // `disabled` up front makes the tool set and the prompt agree with reality,
-  // and gives the operator one line they can act on.
-  if (payload.shell !== "disabled" && process.env.CI === "true" && getSandboxMethod() === "none") {
-    payload.shell = "disabled";
-    log.warning(
-      "» shell commands are disabled for this run: this runner provides no PID-namespace isolation " +
-        "(unprivileged unshare, sudo unshare and userns-nested unshare all failed). " +
-        "on a self-hosted Kubernetes/ARC runner, allow user-namespace creation in the pod's seccomp " +
-        "profile — see https://docs.pullfrog.com/security#self-hosted-runners"
-    );
-  }
 
   // clear the OIDC request env so the agent can't mint installation tokens itself.
   // mid-run token refresh uses the `oidcCredentials` snapshot above, not process.env,
@@ -693,10 +693,15 @@ export async function main(): Promise<MainResult> {
 
     const outputSchema = resolveOutputSchema();
 
+    const repo = {
+      ...runContext.repo,
+      defaultBranch: await getDefaultBranch({ octokit, repo: runContext.repo }),
+    };
+
     // mcpServerUrl and tmpdir are set after server starts
     toolContext = {
       agentId,
-      repo: runContext.repo,
+      repo,
       payload,
       octokit,
       // live getter so raw-token consumers (asset fetches, plan/summary-comment
@@ -843,7 +848,7 @@ export async function main(): Promise<MainResult> {
 
     const instructions = resolveInstructions({
       payload,
-      repo: runContext.repo,
+      repo,
       modes,
       agentId,
       outputSchema,
@@ -982,8 +987,18 @@ export async function main(): Promise<MainResult> {
       log.info("» inner activity safety net stood down — turn recovered");
     };
 
+    // timeout enforcement: default is 1 hour, but can be overridden via flags in the prompt:
+    // - --timeout=2h (or any duration like "--timeout=30m", "--timeout=1h30m") to set a custom timeout
+    // - --notimeout to disable timeout entirely
+    const runTimeout = resolveRunTimeout(payload.timeout);
+    if (runTimeout?.invalid) {
+      log.warning(`invalid timeout "${payload.timeout}" (use --notimeout to disable), using 1h`);
+    }
+    const deadlineAt = runTimeout && Date.now() + runTimeout.ms;
+
     const agentPromise = agent.run({
       payload,
+      deadlineAt,
       resolvedModel,
       mcpServerUrl: mcpHttpServer.url,
       tmpdir,
@@ -1026,35 +1041,27 @@ export async function main(): Promise<MainResult> {
     // only keeps node from treating a post-race rejection as unobserved.
     agentPromise.catch(() => {});
 
-    // timeout enforcement: default is 1 hour, but can be overridden via flags in the prompt:
-    // - --timeout=2h (or any duration like "--timeout=30m", "--timeout=1h30m") to set a custom timeout
-    // - --notimeout to disable timeout entirely
     let result: Awaited<typeof agentPromise>;
-    if (payload.timeout === TIMEOUT_DISABLED) {
-      result = await Promise.race([agentPromise, activityTimeout.promise]);
-    } else {
-      // resolveTimeoutMs rejects unparseable / zero / setTimeout-overflow inputs
-      // so a bad string can't silently resolve to an instant timeout. fall back
-      // to the 1h default with a warning — users who want runtime measured in
-      // weeks should use --notimeout.
-      const usable = resolveTimeoutMs(payload.timeout);
-      if (payload.timeout && usable === null) {
-        log.warning(`invalid timeout "${payload.timeout}" (use --notimeout to disable), using 1h`);
+    const timeoutError = new Error(`agent run timed out after ${runTimeout?.label}`);
+    let timeoutId: NodeJS.Timeout | undefined;
+    // never settles under --notimeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      if (deadlineAt !== undefined) {
+        timeoutId = setTimeout(() => reject(timeoutError), deadlineAt - Date.now());
       }
-      const timeoutMs = usable ?? 3600000;
-      const actualTimeout = usable !== null ? payload.timeout : "1h";
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(new Error(`agent run timed out after ${actualTimeout}`));
-        }, timeoutMs);
-      });
-      timeoutPromise.catch(() => {}); // prevent unhandled rejection if agent wins race
-      try {
-        result = await Promise.race([agentPromise, timeoutPromise, activityTimeout.promise]);
-      } finally {
-        clearTimeout(timeoutId);
-      }
+    });
+    timeoutPromise.catch(() => {}); // prevent unhandled rejection if agent wins race
+    try {
+      result = await Promise.race([agentPromise, timeoutPromise, activityTimeout.promise]);
+    } catch (error) {
+      // the review is the run's deliverable, so a timer that fires after it posted only cut off
+      // reflection or wrap-up — failing the run would contradict the review on the PR (#1532).
+      if (error !== timeoutError || !hasDeliveredReview(toolState)) throw error;
+      log.warning(`» ${timeoutError.message} after the review was posted — finalizing as success`);
+      killTrackedChildren();
+      result = { success: true };
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     // accumulate top-level agent usage

@@ -78,6 +78,8 @@ export interface OpencodeSession {
   state: RunState;
   /** run one prompt turn to completion. */
   prompt: (text: string, signal: AbortSignal) => Promise<AgentResult>;
+  /** stop one session's in-flight work. a subagent's dispatching call then fails. */
+  interrupt: (sessionID: string) => Promise<void>;
   /** stop the event stream. the caller closes the server. */
   close: () => Promise<void>;
 }
@@ -99,7 +101,19 @@ export interface RunState {
   /** last meaningful-progress timestamp, the inner watchdog's clock. */
   lastEventAt: number;
   /** subagent dispatches in flight, keyed by the dispatching tool call's id. */
-  taskDispatchByCallID: Map<string, { label: string; startedAt: number }>;
+  taskDispatchByCallID: Map<
+    string,
+    {
+      label: string;
+      startedAt: number;
+      subagentType: string | undefined;
+      child?: { sessionID: string; startedAt: number };
+      /** an interrupt has landed and been logged. */
+      interrupted?: boolean;
+    }
+  >;
+  /** first dispatch time per child session, so a lens resumed by its session id keeps its spent budget. */
+  childStartedAt: Map<string, number>;
   /** orchestrator tool calls already bookkept, so a replay never fires side effects twice. */
   loggedToolCallIDs: Set<string>;
   /**
@@ -110,6 +124,7 @@ export interface RunState {
    */
   mcpToolCalls: number;
   serverExitCause: ServerHandle["exitCause"];
+  serverStderr: ServerHandle["recentStderr"];
   diagnostic: AgentDiagnostic;
 }
 
@@ -129,9 +144,11 @@ export function createRunState(launch: OpencodeLaunch, sessionID: string): RunSt
     eventCount: 0,
     lastEventAt: performance.now(),
     taskDispatchByCallID: new Map(),
+    childStartedAt: new Map(),
     loggedToolCallIDs: new Set(),
     mcpToolCalls: 0,
     serverExitCause: launch.server.exitCause,
+    serverStderr: launch.server.recentStderr,
     diagnostic: launch.diagnostic,
   };
 }
@@ -154,11 +171,27 @@ export function recordSubagentDispatch(
 ): void {
   if (state.taskDispatchByCallID.has(params.callID)) return;
   const label = state.labeler.recordTaskDispatch(params.input);
-  state.taskDispatchByCallID.set(params.callID, { label, startedAt: performance.now() });
+  state.taskDispatchByCallID.set(params.callID, {
+    label,
+    startedAt: performance.now(),
+    subagentType: params.input.subagent_type,
+  });
   log.info(
     `» dispatching subagent: ${label}` +
       (params.input.subagent_type ? ` (subagent_type=${params.input.subagent_type})` : "")
   );
+}
+
+/** bind an in-flight dispatch to the child session doing its work: the lens budget's clock and handle. */
+export function bindSubagentSession(
+  state: RunState,
+  params: { callID: string; sessionID: string }
+): void {
+  const dispatch = state.taskDispatchByCallID.get(params.callID);
+  if (!dispatch || dispatch.child) return;
+  const startedAt = state.childStartedAt.get(params.sessionID) ?? dispatch.startedAt;
+  state.childStartedAt.set(params.sessionID, startedAt);
+  dispatch.child = { sessionID: params.sessionID, startedAt };
 }
 
 /**
@@ -282,6 +315,18 @@ export function logTurnEnd(
  */
 export function stallCause(state: RunState): string | undefined {
   return state.serverExitCause() ?? state.diagnostic.lastProviderError;
+}
+
+/**
+ * Append the server's own stderr to a fatal harness error.
+ *
+ * opencode answers anything it cannot type as a bare 500 `UnknownError` plus a log
+ * `ref` we have no way to resolve, so `--print-logs` (see `bootOpencodeServer`) is
+ * what puts the underlying cause within reach at all.
+ */
+export function withServerStderr(message: string, recentStderr: readonly string[]): string {
+  const tail = recentStderr.join("\n").trim();
+  return tail ? `${message}\nopencode server stderr:\n${tail}` : message;
 }
 
 /** prefixed `activity timeout` so `renderRunError` routes the stall through the hang renderer. */

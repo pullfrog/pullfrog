@@ -57,7 +57,7 @@ import {
 import { ThinkingTimer } from "../utils/timer.ts";
 import type { TodoTracker } from "../utils/todoTracking.ts";
 import { getDevDependencyVersion } from "../utils/version.ts";
-import { buildReflectionPrompt, runPostRunRetryLoop } from "./postRun.ts";
+import { runPostRunRetryLoop } from "./postRun.ts";
 import {
   type AgentResult,
   type AgentRunContext,
@@ -969,7 +969,6 @@ export const codex = agent({
       ctx,
       initialResult: initial,
       initialUsage: initial.usage,
-      reflectionPrompt: buildReflectionPrompt(ctx.toolState),
       // a resume needs the thread codex recorded. without one there is nothing
       // to continue, and `resume --last` could pick another run's session off CI,
       // where CODEX_HOME is the shared ~/.local/share/codex (in CI it is per run).

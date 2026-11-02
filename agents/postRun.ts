@@ -14,6 +14,7 @@ import {
   type AgentRunContext,
   type AgentUsage,
   buildCommitPrompt,
+  DEADLINE_RESERVE_MS,
   getGitStatus,
   hasPostRunIssues,
   MAX_POST_RUN_RETRIES,
@@ -63,6 +64,15 @@ export function getUnsubmittedReview(
     return delivered ? null : "IncrementalReview";
   }
   return null;
+}
+
+/** whether a review run's deliverable is already on the PR, whatever the agent is still doing. */
+export function hasDeliveredReview(toolState: ToolState): boolean {
+  const mode = toolState.selectedMode;
+  return (
+    (mode === "Review" || mode === "IncrementalReview") &&
+    getUnsubmittedReview(toolState, true) === null
+  );
 }
 
 /**
@@ -358,7 +368,8 @@ function buildXrepoLearningsReflectionPrompt(filePath: string): string {
  * returns undefined when reflection should be skipped (neither file seeded, or
  * a reflection-skip mode like IncrementalReview).
  */
-export function buildReflectionPrompt(toolState: ToolState): string | undefined {
+export function buildReflectionPrompt(ctx: AgentRunContext): string | undefined {
+  const toolState = ctx.toolState;
   if (!shouldRunReflection(toolState.selectedMode) || toolState.learningsLocked) return undefined;
   const parts: string[] = [];
   if (toolState.learningsFilePath) {
@@ -368,6 +379,14 @@ export function buildReflectionPrompt(toolState: ToolState): string | undefined 
     parts.push(buildXrepoLearningsReflectionPrompt(toolState.xrepoLearningsFilePath));
   }
   if (parts.length === 0) return undefined;
+  // the run timer races the whole harness, so a reflection it cuts off fails a finished run (#1532).
+  const remainingMs = (ctx.deadlineAt ?? Number.POSITIVE_INFINITY) - Date.now();
+  if (remainingMs < DEADLINE_RESERVE_MS) {
+    log.info(
+      `» post-run reflection skipped: ${Math.round(remainingMs / 1000)}s left before the run time limit`
+    );
+    return undefined;
+  }
   return parts.join("\n\n---\n\n");
 }
 
@@ -439,9 +458,9 @@ function buildLearningsReflectionPrompt(filePath: string): string {
  * consulted before each retry — harnesses that can't re-enter the session
  * (e.g. claude without a sessionId) return false here.
  *
- * an optional `reflectionPrompt` fires exactly once, after the gates first
- * observe a clean state. it's a one-shot nudge (e.g. "update learnings if
- * relevant"), not a gate, so it does not consume the gate-retry budget. if
+ * the reflection prompt (`buildReflectionPrompt`, built when it is due) fires
+ * exactly once, after the gates first observe a clean state. it's a one-shot
+ * nudge (e.g. "update learnings if relevant"), not a gate, so it does not consume the gate-retry budget. if
  * the reflection turn dirties the tree, the loop picks that up on the next
  * iteration via the normal dirty-tree gate.
  *
@@ -455,13 +474,12 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
   initialUsage: AgentUsage | undefined;
   resume: (context: { prompt: string; previousResult: R }) => Promise<R>;
   canResume?: ((result: R) => boolean) | undefined;
-  reflectionPrompt?: string | undefined;
 }): Promise<AgentResult> {
   let result = params.initialResult;
   let aggregatedUsage = params.initialUsage;
   let finalIssues: PostRunIssues = {};
   let gateResumeCount = 0;
-  let pendingReflection = params.reflectionPrompt;
+  let reflectionDelivered = false;
   // nudge for an untouched summary file fires AT MOST ONCE per run. once
   // delivered, subsequent collectPostRunIssues calls skip the check — the
   // agent may have legitimately decided no edit is warranted, and
@@ -479,8 +497,10 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
     if (!hasPostRunIssues(issues)) {
       // gates are clean. if a reflection prompt is pending, deliver it once
       // and loop back to re-check — the reflection may have touched the tree.
-      if (!pendingReflection) break;
+      if (reflectionDelivered) break;
       if (params.canResume && !params.canResume(result)) break;
+      const reflectionPrompt = buildReflectionPrompt(params.ctx);
+      if (!reflectionPrompt) break;
       log.info("» post-run reflection: nudging agent to update learnings if relevant");
       const preReflection = result;
       // reflection is a meta-turn for editing the learnings file. it must not
@@ -491,12 +511,12 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
       // set_output (defense one); we also snapshot + restore as defense two.
       const preReflectionOutput = params.ctx.toolState.output;
       const reflectionResult = await params.resume({
-        prompt: pendingReflection,
+        prompt: reflectionPrompt,
         previousResult: result,
       });
       params.ctx.toolState.output = preReflectionOutput;
       aggregatedUsage = mergeAgentUsage(aggregatedUsage, reflectionResult.usage);
-      pendingReflection = undefined;
+      reflectionDelivered = true;
       if (!reflectionResult.success) {
         // reflection is a best-effort nudge. its failure must not flip a
         // successful run to failed — the gated work is already done. keep

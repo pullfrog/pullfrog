@@ -1176,6 +1176,24 @@ export async function createAndSubmitWithFooter(
       });
       log.debug(`» deleted leftover pending review ${pending.data.id} after failure`);
     } catch (cleanupErr) {
+      // only one of submit and delete can win on a draft: a 422 here means the submit
+      // published it despite its own error (a 5xx after ~11s), so adopt it (#1487).
+      if (getHttpStatus(cleanupErr) === 422) {
+        const posted = await ctx.octokit.rest.pulls
+          .getReview({
+            owner: params.owner,
+            repo: params.repo,
+            pull_number: params.pull_number,
+            review_id: pending.data.id,
+          })
+          .catch(() => undefined);
+        if (posted && posted.data.state !== "PENDING") {
+          log.info(
+            `» review ${pending.data.id} was published despite the submit error; adopting it`
+          );
+          return posted;
+        }
+      }
       log.debug(
         `» failed to delete pending review ${pending.data.id}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`
       );

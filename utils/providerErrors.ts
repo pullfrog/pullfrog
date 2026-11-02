@@ -96,6 +96,10 @@ const PROVIDER_ERROR_PATTERNS: ProviderErrorPattern[] = [
   // the Codex CLI's wording for the same capped plan: `You’ve hit your usage limit. … try
   // again at 7:58 AM.` Claude's `hit your session limit` names its window and stays out.
   { regex: /\bhit your usage limit\b/i, label: PROVIDER_USAGE_LIMIT_LABEL },
+  // the message opencode synthesizes for a Go cap's 429 and publishes only on `session.status`:
+  // `weekly usage limit reached. It will reset in 4 days. …` (#1575). the window name varies.
+  { regex: /usage limit reached\. It will reset in/i, label: PROVIDER_USAGE_LIMIT_LABEL },
+  { regex: /Free usage exceeded, subscribe to Go/i, label: PROVIDER_BILLING_EXHAUSTED_LABEL },
   // the OpenRouter shapes `isRouterKeylimitExhaustedError` matches. on a Router
   // run those mean the PULLFROG wallet is empty and `renderRunError` returns a
   // `BillingError` before ever reaching this list; on a BYOK run the very same
