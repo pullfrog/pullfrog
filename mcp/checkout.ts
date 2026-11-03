@@ -973,6 +973,9 @@ export function CheckoutPrTool(ctx: ToolContext) {
         `read the authoritative diff TOC and relevant raw diff lines FIRST; only then use impactPath as a supplemental, explicitly incomplete lead list. ` +
         `impactPath never establishes review coverage and an empty artifact is not evidence of no wider impact.`
       : "";
+    const codenavInstructions = ctx.payload.codenav
+      ? ` before judging a change to a TypeScript/JavaScript or Python function, method or type, list its call sites with \`codenav callers <file>:<line> <name>\` (or \`refs\`) in the shell: it follows imports and types, so it finds ones a name search misses.`
+      : "";
 
     // commit metadata relative to the PR base (e.g. main). use origin/<base>
     // because the local base ref may not exist after a shallow fetch. cap
@@ -1050,6 +1053,7 @@ export function CheckoutPrTool(ctx: ToolContext) {
         `the local branch is 'localBranch' (pr-{number}), not the remote branch name. ` +
         `when pushing, omit branchName to use the current branch. do not use remoteBranch as a local branch name.` +
         impactInstructions +
+        codenavInstructions +
         hookWarningInstructions +
         commitLogInstructions,
     } satisfies CheckoutPrResult;
