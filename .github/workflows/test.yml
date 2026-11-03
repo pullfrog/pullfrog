@@ -121,6 +121,7 @@ jobs:
           [
             byok-missing-key-error,
             git-permissions,
+            githookprocexfil,
             githooks,
             pkg-json-scripts,
             push-disabled,

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "../utils/cli.ts";
+import { buildSandboxedCommand } from "../utils/sandbox.ts";
 import { filterEnvForUntrustedCode } from "../utils/secrets.ts";
 import { spawn } from "../utils/subprocess.ts";
 import type {
@@ -99,12 +100,16 @@ async function installTool(name: string): Promise<string | null> {
 
   log.info(`» installing ${name}...`);
   const [cmd, ...args] = installCmd;
-  const result = await spawn({
-    cmd,
-    args,
-    env: filterEnvForUntrustedCode(),
-    onStderr: (chunk) => process.stderr.write(chunk),
-  });
+  // sandbox tool provisioning too: a repo pip.conf can repoint the index at an
+  // attacker sdist whose setup.py runs during `pip install poetry`.
+  const env = filterEnvForUntrustedCode();
+  const sandboxed = buildSandboxedCommand({ cmd, args, env });
+  const onStderr = (chunk: string) => process.stderr.write(chunk);
+  const result = await spawn(
+    sandboxed
+      ? { cmd: sandboxed.bin, args: sandboxed.args, env: sandboxed.env, onStderr }
+      : { cmd, args, env, onStderr }
+  );
 
   if (result.exitCode !== 0) {
     return result.stderr || `failed to install ${name}`;
@@ -190,11 +195,16 @@ export const installPythonDependencies: PrepDefinition = {
     const [cmd, ...args] = config.installCmd;
     const fullCommand = `${cmd} ${args.join(" ")}`;
     log.info(`» running: ${fullCommand}`);
-    const result = await spawn({
-      cmd,
-      args,
-      env: filterEnvForUntrustedCode(),
-    });
+    // setup.py / build backends / local path deps execute arbitrary code, so run
+    // the install in a fresh PID namespace (no action /proc to read) with filtered
+    // env. python has no --ignore-scripts, so this is the only lever here.
+    const env = filterEnvForUntrustedCode();
+    const sandboxed = buildSandboxedCommand({ cmd, args, env });
+    const result = await spawn(
+      sandboxed
+        ? { cmd: sandboxed.bin, args: sandboxed.args, env: sandboxed.env }
+        : { cmd, args, env }
+    );
 
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
     if (output) {

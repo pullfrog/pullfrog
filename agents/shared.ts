@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import type { AgentId } from "../external.ts";
 import type { ToolState } from "../toolState.ts";
 import { log } from "../utils/cli.ts";
@@ -16,17 +15,6 @@ export const MAX_STDERR_LINES = 20;
  * or a failing stop hook before giving up.
  */
 export const MAX_POST_RUN_RETRIES = 3;
-
-export function getGitStatus(): string {
-  try {
-    return execFileSync("git", ["status", "--porcelain"], {
-      encoding: "utf-8",
-      timeout: 10_000,
-    }).trim();
-  } catch {
-    return "";
-  }
-}
 
 export function buildCommitPrompt(status: string): string {
   return [

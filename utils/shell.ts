@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { basename } from "node:path";
+import { getSandboxMethod, spawnGitSandboxedSync } from "./sandbox.ts";
 import { type EnvMode, resolveEnv } from "./secrets.ts";
 
 interface ShellOptions {
@@ -59,15 +61,37 @@ export function $(cmd: string, args: string[], options?: ShellOptions): string {
   const encoding = options?.encoding ?? "utf-8";
   const env = resolveEnv(options?.env);
 
+  // route git through the PID+mount-namespace sandbox: a repo-planted hook /
+  // filter / config (core.fsmonitor, core.hooksPath, filter.*.clean, diff.external)
+  // that fires on the MCP server's own git call then runs in a FRESH PID namespace —
+  // it cannot read the action process's /proc/<pid>/environ (OIDC mint ticket, job
+  // token, customer `env:` secrets) and sees only the already-filtered env. where no
+  // namespace is available (local dev, CI=false, a runner without unshare) there is
+  // no shell for the agent to plant such config either, so fall back to a plain spawn.
+  // non-git commands keep the plain path. $git() (authenticated fetch/push) does not
+  // go through here — see action/utils/gitAuth.ts.
+  //
   // CRITICAL: use "ignore" for stdin instead of "inherit" to avoid breaking MCP transport
   // when running inside an MCP server, stdin is used for JSON-RPC protocol
-  const result = spawnSync(cmd, args, {
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding,
-    cwd: options?.cwd,
-    env,
-    maxBuffer: MAX_BUFFER_BYTES,
-  });
+  const sandboxMethod = getSandboxMethod();
+  const result =
+    basename(cmd) === "git" && sandboxMethod !== "none"
+      ? spawnGitSandboxedSync({
+          cmd,
+          args,
+          env,
+          cwd: options?.cwd,
+          encoding,
+          maxBuffer: MAX_BUFFER_BYTES,
+          method: sandboxMethod,
+        })
+      : spawnSync(cmd, args, {
+          stdio: ["ignore", "pipe", "pipe"],
+          encoding,
+          cwd: options?.cwd,
+          env,
+          maxBuffer: MAX_BUFFER_BYTES,
+        });
 
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";

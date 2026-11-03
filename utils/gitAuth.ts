@@ -228,6 +228,11 @@ export async function $git(
         // both are needed — they are independent systems.
         GIT_CONFIG_COUNT: "0",
         GIT_CONFIG_PARAMETERS: "",
+        // transport allowlist (overrides config): refuses non-https transports, so a
+        // planted `~/.gitconfig` url.*.insteadOf → ext:: / remote-helper / ssh can't
+        // exec on this unsandboxed fetch. all callers use github.com https. see
+        // wiki/askpass.md "-c hardening".
+        GIT_ALLOW_PROTOCOL: "https",
       },
       activityTimeout: 0,
       signal: options.signal,

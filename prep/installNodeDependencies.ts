@@ -4,6 +4,7 @@ import { detect } from "package-manager-detector";
 import { resolveCommand } from "package-manager-detector/commands";
 import { log } from "../utils/cli.ts";
 import { provisionPackageManager, resolvePackageManagerSpec } from "../utils/packageManager.ts";
+import { buildSandboxedCommand } from "../utils/sandbox.ts";
 import { filterEnvForUntrustedCode } from "../utils/secrets.ts";
 import { spawn } from "../utils/subprocess.ts";
 import type { NodePackageManager, NodePrepResult, PrepDefinition, PrepOptions } from "./types.ts";
@@ -123,11 +124,22 @@ export const installNodeDependencies: PrepDefinition = {
 
     const fullCommand = `${resolved.command} ${resolved.args.join(" ")}`;
     log.info(`» running: ${fullCommand}`);
-    const result = await spawn({
+    // the installer executes arbitrary repo postinstall scripts, so run it inside
+    // the PID+mount-namespace sandbox: those scripts land in a fresh PID namespace
+    // (cannot read the action process's /proc/<pid>/environ) and see only the
+    // already-filtered env. no namespace available → run directly (there is no
+    // agent shell to plant malicious scripts in that case either).
+    const env = filterEnvForUntrustedCode();
+    const sandboxed = buildSandboxedCommand({
       cmd: resolved.command,
       args: resolved.args,
-      env: filterEnvForUntrustedCode(),
+      env,
     });
+    const result = await spawn(
+      sandboxed
+        ? { cmd: sandboxed.bin, args: sandboxed.args, env: sandboxed.env }
+        : { cmd: resolved.command, args: resolved.args, env }
+    );
 
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
     if (output) {

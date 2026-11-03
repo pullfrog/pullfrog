@@ -12,7 +12,6 @@ import { findDanglingPromptToolRefs } from "./external.ts";
 import { reportProgress } from "./mcp/comment.ts";
 import { startInstallation } from "./mcp/dependencies.ts";
 import { startMcpHttpServer, type ToolContext } from "./mcp/server.ts";
-import { getSandboxMethod } from "./mcp/shell.ts";
 import { computeModes } from "./modes.ts";
 import { initToolState, primaryRepoState } from "./toolState.ts";
 import {
@@ -93,6 +92,7 @@ import {
   writeRunErrorOutputs,
 } from "./utils/runLifecycle.ts";
 import { logRunStartup } from "./utils/runStartupLog.ts";
+import { getSandboxMethod } from "./utils/sandbox.ts";
 import { setEnvAllowlist } from "./utils/secrets.ts";
 import { createTempDirectory, setupGit, wipeRunnerLeakSurface } from "./utils/setup.ts";
 import { reportStatusChecks } from "./utils/statusChecks.ts";

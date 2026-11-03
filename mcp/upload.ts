@@ -5,9 +5,9 @@ import { type } from "arktype";
 import { fileTypeFromBuffer } from "file-type";
 import { apiFetch } from "../utils/apiFetch.ts";
 import { log } from "../utils/cli.ts";
+import { resolveRepoRoot } from "../utils/sandbox.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
-import { resolveRepoRoot } from "./shell.ts";
 
 const UploadFileParams = type({
   path: type.string.describe("absolute path to file to upload"),

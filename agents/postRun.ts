@@ -3,6 +3,7 @@ import { LIFECYCLE_HOOK_TIMEOUT_MS } from "../lifecycle.ts";
 import { NON_COMMITTING_MODES } from "../modes.ts";
 import type { ToolState } from "../toolState.ts";
 import { log } from "../utils/cli.ts";
+import { $ } from "../utils/shell.ts";
 import {
   SPAWN_ACTIVITY_TIMEOUT_CODE,
   SPAWN_TIMEOUT_CODE,
@@ -15,13 +16,25 @@ import {
   type AgentUsage,
   buildCommitPrompt,
   DEADLINE_RESERVE_MS,
-  getGitStatus,
   hasPostRunIssues,
   MAX_POST_RUN_RETRIES,
   mergeAgentUsage,
   type PostRunIssues,
   type StopHookFailure,
 } from "./shared.ts";
+
+/** post-run working-tree status. routed through `$()` so it is sandboxed with a
+ * filtered env in CI — a planted `~/.gitconfig` core.fsmonitor / hooksPath / filter
+ * then fires in a fresh PID namespace, not the action process. `$()` throws on
+ * non-zero → the catch returns "". kept here (action-runtime) rather than in the
+ * broadly-shared `shared.ts` so the shell sandbox stays out of the root TS program. */
+export function getGitStatus(): string {
+  try {
+    return $("git", ["status", "--porcelain"], { log: false });
+  } catch {
+    return "";
+  }
+}
 
 /**
  * derive "agent picked a review mode but never produced visible output" from

@@ -95,7 +95,7 @@ export const GIT_NATIVE_READ_DENY_CLAUDE: string[] = CLAUDE_READ_TOOLS.map(
 // files, so the no_new_privs shell seal does not stop a shell rewrite (no root
 // needed); and the native FS tools run outside the shell sandbox entirely. So
 // two independent seals, mirroring `.git`: a sandbox read-only bind on every
-// asset (MCP shell, both agents — see buildFsMounts in action/mcp/shell.ts) and
+// asset (MCP shell, both agents — see buildFsMounts in action/utils/sandbox.ts) and
 // a native-tool deny (Claude settings deny / OpenCode external_directory deny).
 // Nothing legitimately writes these at runtime: the action process writes them
 // once before the agent starts, OUTSIDE the sandbox, so the binds never block
