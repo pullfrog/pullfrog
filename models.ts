@@ -920,6 +920,17 @@ export const bundledProviders = {
         // see the big-pickle note above (#1077).
         isFree: true,
       },
+      // Zen's FREE stealth preview (listed 2026-11-02), the tenth promo. Zen's
+      // docs: free-period data may be retained and used to improve the model.
+      "pulse-alpha": {
+        displayName: "Pulse Alpha",
+        description: "Stealth preview; data may be used to improve it",
+        resolve: "opencode/pulse-alpha-free",
+        effort: ["low", "high", "max"],
+        // free to run, still gated on the provider's own OPENCODE_API_KEY —
+        // see the big-pickle note above (#1077).
+        isFree: true,
+      },
       // Zen's live free MiMo, and the second free row in a menu that big-pickle
       // was alone in since `mimo-v2-pro-free` lost its model.
       mimo: {
