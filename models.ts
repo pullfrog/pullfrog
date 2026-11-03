@@ -384,24 +384,18 @@ export const bundledProviders = {
         preferred: true,
       },
       // V4.1-Flash (2026-09-10) retired `deepseek-v4-flash`; DeepSeek's /models
-      // now lists the unversioned `deepseek-flash`, so the direct resolve is the
-      // rolling id at the same price. OpenRouter treats V4.1 as its own id
-      // (`deepseek/deepseek-v4.1-flash`, $0.15/$0.6, cache $0.003) and its
-      // `~deepseek/deepseek-v4-flash-latest` pointer still served 0731 on
-      // 2026-09-11, so this is a pinned id rather than the pointer and the next
-      // Flash release is a catalog edit (the bump cron flags it). this target is
-      // the funded OSS default: priced on the measured OSS token mix at x1.34
-      // the pointer's $0.0531/run on the DeepSeek-hosted endpoint — see
-      // wiki/oss-model-allowlist.md. the bare `deepseek-v4-flash` on OpenRouter
-      // is still the April preview, so that route can never use it. both routes
-      // publish `low, high, max`; the OSS effort floor pins `high` by name.
+      // now lists the unversioned `deepseek-flash`, upgraded in place (1017 on
+      // 2026-10-17). OpenRouter forks every snapshot into its own dated id, so the
+      // OpenRouter target is NOT pinned: the served registry follows models.dev's
+      // canonical id for `deepseek-flash` onto the matching OpenRouter id. this
+      // target is the funded OSS default — see wiki/oss-model-allowlist.md. the
+      // OSS effort floor pins `high` by name.
       "deepseek-flash": {
         displayName: "DeepSeek Flash",
         resolve: "deepseek/deepseek-flash",
         effort: ["low", "high", "max"],
         openRouterEffort: ["none", "low", "high", "max"],
-        openRouterResolve: "openrouter/deepseek/deepseek-v4.1-flash",
-        pinned: true,
+        openRouterResolve: "openrouter/deepseek/deepseek-v4.1-flash-1017",
       },
       // legacy aliases — deepseek retires these on 2026-07-24; transparently
       // upgrade existing users to the v4 family via the fallback chain.
@@ -1345,15 +1339,12 @@ export const bundledProviders = {
         effort: ["none", "low", "high", "max"],
         openRouterResolve: "openrouter/deepseek/deepseek-v4-pro-0813",
       },
-      // the V4.1 id, not the bare one — see `deepseek/deepseek-flash` for why
-      // OpenRouter's unversioned `deepseek-v4-flash` is the stale April preview
-      // and why the `~deepseek/*-latest` pointer is no longer the target.
+      // follows DeepSeek's current snapshot — see `deepseek/deepseek-flash`.
       "deepseek-flash": {
         displayName: "DeepSeek Flash",
-        resolve: "openrouter/deepseek/deepseek-v4.1-flash",
+        resolve: "openrouter/deepseek/deepseek-v4.1-flash-1017",
         effort: ["none", "low", "high", "max"],
-        openRouterResolve: "openrouter/deepseek/deepseek-v4.1-flash",
-        pinned: true,
+        openRouterResolve: "openrouter/deepseek/deepseek-v4.1-flash-1017",
       },
       // legacy alias — deepseek retires this on 2026-07-24; transparently
       // upgrade existing users to the v4 family via the fallback chain.
@@ -1375,15 +1366,25 @@ export const bundledProviders = {
         openRouterResolve: "openrouter/moonshotai/kimi-k3.1-pro",
       },
       // slug pins the m2 line for DB stability; resolve tracks the current m2.7.
+      // stored picks moved to M3.1 Flash on 2026-10-30, a quarter of m2.7's
+      // price and newer: the family carries on there rather than on M2.
       "minimax-m2.5": {
         displayName: "MiniMax M2",
         resolve: "openrouter/minimax/minimax-m2.7",
         openRouterResolve: "openrouter/minimax/minimax-m2.7",
+        fallback: "openrouter/minimax-flash",
       },
       "minimax-m3": {
         displayName: "MiniMax M3",
         resolve: "openrouter/minimax/minimax-m3",
         openRouterResolve: "openrouter/minimax/minimax-m3",
+      },
+      // the cheap rung beside M3 (0.075/0.30, cache 0.0075, against M3's 0.30/1.20).
+      "minimax-flash": {
+        displayName: "MiniMax Flash",
+        resolve: "openrouter/minimax/minimax-m3.1-flash",
+        effort: ["low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/minimax/minimax-m3.1-flash",
       },
       // OpenRouter gates Meta models on an ACCOUNT-level 18+ confirmation
       // (openrouter.ai/settings/preferences). Pullfrog's account has it, so the
@@ -2091,16 +2092,17 @@ function checkLadders(): void {
 // missed these, leaving the application page selling one model the program had
 // stopped defaulting to, for two allowlist edits running.
 // ordered by Artificial Analysis Intelligence Index, highest first (2026-10-06:
-// Muse Spark 1.3 48, DeepSeek V4.1 Flash 39, GPT-6 Luna 38, MiniMax below
-// M3's 29), so every surface that lists the menu reads best-first.
+// Muse Spark 1.3 48, DeepSeek V4.1 Flash 39, GPT-6 Luna 38; 2026-10-30:
+// MiniMax M3.1 Flash 42), so every surface that lists the menu reads best-first.
 export const OSS_MODEL_ALLOWLIST: readonly string[] = [
   // opt-in: 0.86x the old default on the measured mix, and Meta trains on the
   // traffic — fine for public code on headless runs, the human decided
   // 2026-09-11. unmeasured on a real run; not the default until it is.
   "meta/muse-spark-contributor",
+  // replaced MiniMax M2 (M2.7, 3-4x the default) on 2026-10-30; no OSS repo held M2.
+  "openrouter/minimax-flash",
   "deepseek/deepseek-flash",
   "openai/gpt-luna",
-  "openrouter/minimax-m2.5",
 ];
 
 /** the pick the console badges. DERIVED from the efficient tier rather than
