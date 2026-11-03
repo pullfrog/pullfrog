@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  isServiceUnavailableError,
   OpenCode,
   type OpenCodeClient,
   type OpenCodeEvent,
@@ -108,6 +109,8 @@ const STREAM_SETTLE_MS = 10_000;
 
 /** about 45s (120 jittered polls) for the local MCP server to connect. */
 const MCP_CONNECT_SCHEDULE = yes.schedule(() => 500, 120);
+/** about a minute: each refused attempt has already waited the server's 5s for plugins. */
+const PLUGIN_ACTIVATION_SCHEDULE = yes.schedule(() => 250, 12);
 const MCP_REGISTRY_SETTLE_MS = 300;
 
 interface RunnerContext extends RunState {
@@ -187,10 +190,18 @@ async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
 /**
  * A V1-shaped or broken plugin is skipped with a warning below our log level, which would
  * leave native shell and subagent mutations ungated, so the run refuses instead.
- * `plugin.list` reports the registry mid-activation; `agent.list` waits for it to finish.
+ * `plugin.list` reports the registry mid-activation; `agent.list` waits for it to finish, but
+ * for 5s at most before refusing, and a runner busy installing the repo's dependencies takes longer.
  */
 async function requireGate(client: OpenCodeClient, location: { directory: string }) {
-  await client.agent.list({ location });
+  await yes.query({
+    name: "opencode plugin activation",
+    run: () => client.agent.list({ location }),
+    retry: (error, attempt) =>
+      isServiceUnavailableError(error) && error.service === "plugin"
+        ? yes.backoff(PLUGIN_ACTIVATION_SCHEDULE, attempt)
+        : -1,
+  })();
   const plugins = await client.plugin.list({ location });
   // a plugin that failed to load is listed by its file, without an id.
   const gate = plugins.data.find(
