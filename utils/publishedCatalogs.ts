@@ -9,8 +9,11 @@ export type ModelsDevCatalog = Record<
     models: Record<
       string,
       {
+        name?: string;
         canonical_model_id?: string;
         status?: string;
+        tool_call?: boolean;
+        cost?: { input?: number; output?: number };
         reasoning_options?: ReasoningOptions;
       }
     >;
@@ -75,6 +78,9 @@ export const ZEN_UNDEPLOYED: readonly string[] = [
 
 /** where a dead free Zen model's stored picks land */
 const FREE_ZEN_FALLBACK = "opencode/big-pickle";
+
+/** free Zen lines declined on their terms or their output, never listed on their own. see wiki/models-catalog.md */
+const DECLINED_FREE_ZEN = ["nemotron-", "ling-", "ring-"];
 
 /** the Go relay rejects `reasoning_effort` although models.dev lists rungs for it */
 const KEEP_BUNDLED_LADDER = new Set(["opencode-go/glm-flash"]);
@@ -152,6 +158,54 @@ function publishedLadder(
   return { ladder: model.reasoning_options?.find((o) => o.type === "effort")?.values };
 }
 
+type ModelsDevModel = ModelsDevCatalog[string]["models"][string];
+
+const isZeroCost = (model: ModelsDevModel) => model.cost?.input === 0 && model.cost?.output === 0;
+
+/** a free Zen id that only discounts a model Zen also sells, which the paid alias already covers */
+function isFreeTwin(ctx: Ctx, model: ModelsDevModel): boolean {
+  const canonical = model.canonical_model_id;
+  if (!canonical) return false;
+  return Object.values(ctx.catalogs.modelsDev.opencode?.models ?? {}).some(
+    (other) => other.canonical_model_id === canonical && !isZeroCost(other)
+  );
+}
+
+/**
+ * every free Zen promo models.dev lists that the registry doesn't, keyed by its own id: a runner
+ * that keeps its bundled registry passes an unknown slug through raw, so the slug must be Zen's id.
+ * a dead one is kept, falling back to Big Pickle, so a pick stored while it lived still resolves.
+ */
+function freeZenPromos(ctx: Ctx): Record<string, ModelDef> {
+  const zen = ctx.providers.opencode?.models ?? {};
+  const listed = new Set(Object.values(zen).map((def) => def.resolve));
+  const promos = Object.entries(ctx.catalogs.modelsDev.opencode?.models ?? {}).flatMap(
+    ([id, model]): [string, ModelDef][] => {
+      const resolve = `opencode/${id}`;
+      if (
+        !id.endsWith("-free") ||
+        listed.has(resolve) ||
+        zen[id] ||
+        !isZeroCost(model) ||
+        !model.tool_call ||
+        DECLINED_FREE_ZEN.some((prefix) => id.startsWith(prefix)) ||
+        isFreeTwin(ctx, model)
+      ) {
+        return [];
+      }
+      const def: ModelDef = {
+        displayName: (model.name ?? id).replace(/ Free$/, ""),
+        description: "Free on Zen for a limited time; data may be used to improve it",
+        resolve,
+        isFree: true,
+      };
+      const dead = model.status === "deprecated" || !isServed(ctx, resolve);
+      return [[id, dead ? { ...def, fallback: FREE_ZEN_FALLBACK } : def]];
+    }
+  );
+  return Object.fromEntries(promos);
+}
+
 /** a free Zen model models.dev deprecates or Zen stops serving, while Big Pickle is still served */
 function isDeadFreeZen(ctx: Ctx, slug: string, def: ModelDef): boolean {
   if (!def.isFree || def.fallback || !slug.startsWith("opencode/") || slug === FREE_ZEN_FALLBACK) {
@@ -196,23 +250,28 @@ function withPublished(ctx: Ctx, slug: string, def: ModelDef): ModelDef {
 /**
  * The registry as the published catalogs describe it today. A route copy of a vendor model takes
  * the one id its route serves under that model's canonical id, `openRouterResolve` likewise; each
- * route's effort ladder is the one it publishes; and a dead free Zen model falls back to Big
- * Pickle. Whatever the catalogs can't settle unambiguously keeps the value written in
- * `action/models.ts`, as does every `pinned` entry's id. See wiki/model-resolution.md.
+ * route's effort ladder is the one it publishes; a free Zen model the registry lacks is listed;
+ * and a dead free Zen model falls back to Big Pickle. Whatever the catalogs can't settle
+ * unambiguously keeps the value written in `action/models.ts`, as does every `pinned` entry's id.
+ * See wiki/model-resolution.md.
  */
 export function applyPublishedCatalogs(params: Ctx): Record<string, ProviderConfig> {
   return Object.fromEntries(
-    Object.entries(params.providers).map(([key, config]) => [
-      key,
-      {
-        ...config,
-        models: Object.fromEntries(
-          Object.entries(config.models).map(([id, def]) => [
-            id,
-            withPublished(params, `${key}/${id}`, def),
-          ])
-        ),
-      },
-    ])
+    Object.entries(params.providers).map(([key, config]) => {
+      const models =
+        key === "opencode" ? { ...config.models, ...freeZenPromos(params) } : config.models;
+      return [
+        key,
+        {
+          ...config,
+          models: Object.fromEntries(
+            Object.entries(models).map(([id, def]) => [
+              id,
+              withPublished(params, `${key}/${id}`, def),
+            ])
+          ),
+        },
+      ];
+    })
   );
 }
