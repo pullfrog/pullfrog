@@ -702,7 +702,9 @@ export const opencode = agent({
     // SDK hands our override a global `Request`, which the esbuild-bundled undici
     // realm can't consume directly ("Failed to parse URL from [object Request]"),
     // so we re-state its fields explicitly. `duplex: "half"` is required by the
-    // fetch spec whenever a stream body is sent.
+    // fetch spec whenever a stream body is sent. the caller's own signal goes
+    // through: a throwaway Request's follows it only until the Request is
+    // garbage-collected, which silently drops a watchdog abort of a long V2 wait.
     const fetchWithoutTimeout: typeof fetch = (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init);
       return undiciFetch(request.url, {
@@ -710,7 +712,7 @@ export const opencode = agent({
         headers: [...request.headers],
         body: request.body,
         duplex: "half",
-        signal: request.signal,
+        signal: init?.signal ?? request.signal,
         dispatcher,
       });
     };
