@@ -144,7 +144,8 @@ export function $(cmd: string, args: string[], options?: ShellOptions): string {
     // ls-files --error-unmatch). Falling back to "Unknown error" robbed the
     // agent of any signal and forced an extra MCP round-trip. see #766.
     // capped because this string reaches the model verbatim via handleToolError.
-    const detail = [stderr, stdout]
+    // a spawn that never started (ENOENT) has no output, only `result.error`.
+    const detail = [stderr, stdout, result.error?.message ?? ""]
       .map((s) => s.trim())
       .filter(Boolean)
       .join("\n")

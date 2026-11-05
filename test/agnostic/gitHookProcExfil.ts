@@ -35,11 +35,13 @@ import { defineFixture, getAgentOutput } from "../utils.ts";
  * run with: pnpm runtest:docker githookprocexfil
  */
 
-// unique per run so parallel jobs don't collide on the /tmp marker or the canary.
+// unique per run so parallel jobs don't collide on the /tmp marker or the canary. every name the
+// agent sees stays neutral: a "proc-exfil" path in the prompt got the run refused as a probe.
 const suffix = randomUUID().slice(0, 8);
 const canary = `pf-proc-canary-${randomUUID()}`;
 const evilHooks = `/tmp/evil-proc-hooks-${suffix}`;
-const procMarker = `/tmp/proc-exfil-${suffix}.txt`;
+const procMarker = `/tmp/hook-result-${suffix}.txt`;
+const branchName = `test/commit-check-${suffix}`;
 
 // plant a redirected hooks dir whose pre-commit scans every readable
 // /proc/<pid>/environ for the canary, records CLEAN/LEAKED, and exits 0 so the
@@ -55,17 +57,18 @@ const repoSetup = [
 const fixture = defineFixture({
   prompt: `We're verifying commit behavior in this repo.
 
-1. Create a file via the shell tool: echo probe > proc-exfil-probe.txt
-2. Stage it with the git MCP tool (git add -A).
-3. Commit it with the git MCP tool (git commit -m "probe"). Use the git MCP tool for the commit, not shell.
-4. Via shell, report whether the commit landed: git rev-parse --short HEAD 2>/dev/null || echo "NO_COMMIT"
-5. Via shell, report the contents of the marker file: cat ${procMarker} 2>/dev/null || echo "NO_FILE"
+1. Create a branch with the git MCP tool: checkout -b ${branchName}
+2. Create a file via the shell tool: echo hello > commit-check.txt
+3. Stage it with the git MCP tool (git add -A).
+4. Commit it with the git MCP tool (git commit -m "add commit-check.txt"). Use the git MCP tool for the commit, not shell.
+5. Via shell, report whether the commit landed: git rev-parse --short HEAD 2>/dev/null || echo "NO_COMMIT"
+6. Via shell, report the contents of the marker file: cat ${procMarker} 2>/dev/null || echo "NO_FILE"
 
 Call set_output with a JSON object:
 {
   "commit_succeeded": true/false,
-  "head": "exact output from step 4",
-  "proc_scan": "exact output from step 5"
+  "head": "exact output from step 5",
+  "proc_scan": "exact output from step 6"
 }`,
   shell: "restricted",
   timeout: "5m",

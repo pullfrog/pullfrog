@@ -449,13 +449,13 @@ export function buildSandboxInvocation(params: {
   // restore it from the SANDBOX_PATH env var that survives the su transition.
   // biome-ignore lint/suspicious/noTemplateCurlyInString: we need to restore the PATH variable
   const pathRestore = 'export PATH="${SANDBOX_PATH:-$PATH}"; ';
-  const command = pathRestore + params.command;
   // after `su`, which needs its own setuid privileges; the unprivileged user
   // cannot drop the bounding set, but no_new_privs alone blocks every setuid path.
   const sealed = params.seal
-    ? `exec setpriv --no-new-privs bash -c '${command.replace(/'/g, "'\\''")}'`
-    : command;
-  const escaped = sealed.replace(/'/g, "'\\''");
+    ? `exec setpriv --no-new-privs bash -c '${params.command.replace(/'/g, "'\\''")}'`
+    : params.command;
+  // the restore leads, so `setpriv` and `bash` resolve on it too (NixOS keeps both in the store)
+  const escaped = (pathRestore + sealed).replace(/'/g, "'\\''");
   envArgs.push(`SANDBOX_PATH=${params.env.PATH ?? ""}`);
   return {
     bin: "sudo",
@@ -468,10 +468,11 @@ export function buildSandboxInvocation(params: {
       "--mount-proc",
       "bash",
       "-c",
-      `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} exec su -p -s /bin/bash ${username} -c '${escaped}'`,
+      `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} exec su -p -s "$(command -v bash)" ${username} -c '${escaped}'`,
     ],
-    // env passes through `sudo env K=V`, so the spawned process env is empty.
-    env: {},
+    // env passes through `sudo env K=V`, so the spawned process env carries only PATH:
+    // sudoers without `secure_path` resolves `env` from it ("sudo: env: command not found").
+    env: { PATH: params.env.PATH },
   };
 }
 
