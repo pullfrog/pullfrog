@@ -962,7 +962,7 @@ export const bundledProviders = {
   // base URL (`https://opencode.ai/zen/go/v1`) but authenticated with the SAME
   // `OPENCODE_API_KEY`. it carries the open-weight coding models plus a couple
   // of frontier ones, four of which are served ONLY here — Zen's `/v1/models`
-  // does not list qwen3.7-plus, mimo-v2.6-pro, longcat-2.0 or hy3. (it listed
+  // does not list qwen3.7-plus, mimo-v2.6-pro, longcat-2.0 or hy3/hy4. (it listed
   // no glm-5.3* either until 2026-09, which is why `opencode/glm` trailed on
   // 5.2, and no qwen3.8-* until late 2026-09.) so for a Go subscriber this
   // provider is not a duplicate route to Zen, it is the only route to a large
@@ -1086,14 +1086,22 @@ export const bundledProviders = {
         resolve: "opencode-go/longcat-2.0",
         openRouterResolve: "openrouter/meituan/longcat-2.0",
       },
-      // Tencent — Go-only, and the cheapest model on the plan by an order of
-      // magnitude (0.0175/0.0725). Hy3 succeeds the Hunyuan 2.0 line, so the
+      // Tencent — Go-only (0.14/0.58). Hy3 succeeds the Hunyuan 2.0 line, so the
       // generation is part of the product name the way Kimi K2/K3 is.
       hy3: {
         displayName: "Hy3",
         resolve: "opencode-go/hy3",
         effort: ["none", "low", "high"],
         openRouterResolve: "openrouter/tencent/hy3",
+      },
+      // a sibling, not a bump of `hy3`: Hy4 (GA 2026-11-04) costs 4-6x as much on
+      // Go (0.834/2.501), so moving `hy3` would reprice every repo pinned to it.
+      hy4: {
+        displayName: "Hy4",
+        resolve: "opencode-go/hy4",
+        effort: ["none", "high"],
+        openRouterEffort: ["none", "low", "high"],
+        openRouterResolve: "openrouter/tencent/hy4",
       },
       // xAI and OpenAI — the two non-open models on the plan. same list price as
       // Zen, but a Go subscription covers them where Zen meters them.
