@@ -81,7 +81,12 @@ import { isTrackedChild, trackChild, untrackChild } from "../utils/subprocess.ts
 import { getDevDependencyVersion } from "../utils/version.ts";
 import { resolveVertexOpenCodeModel } from "../utils/vertex.ts";
 import { dirtyTrackedPaths, restoreDirtiedSince } from "../utils/worktree.ts";
-import { GIT_NATIVE_READ_DENY_OPENCODE, GIT_NATIVE_WRITE_DENY_OPENCODE } from "./nativeFsDenies.ts";
+import {
+  AGENT_BIN_DIR_RELPATH,
+  GIT_NATIVE_READ_DENY_OPENCODE,
+  GIT_NATIVE_WRITE_DENY_OPENCODE,
+  OPENCODE_BIN_DIR_RELPATH,
+} from "./nativeFsDenies.ts";
 import { opencode1 } from "./opencode1.ts";
 import { opencode2 } from "./opencode2.ts";
 import { opencodeGeneration } from "./opencodeGeneration.ts";
@@ -609,6 +614,16 @@ export const opencode = agent({
         [join(homeEnv.XDG_DATA_HOME, "opencode", "tool-output", "*")]: "allow",
         [opencodePluginDir]: "deny",
         [`${opencodePluginDir}/*`]: "deny",
+        // on the agent's PATH, so its own edit tool must not plant there either
+        ...Object.fromEntries(
+          [AGENT_BIN_DIR_RELPATH, OPENCODE_BIN_DIR_RELPATH].flatMap((rel) => {
+            const dir = join(ctx.tmpdir, rel);
+            return [
+              [dir, "deny"],
+              [`${dir}/*`, "deny"],
+            ];
+          })
+        ),
       },
       read: { "*": "allow", ...GIT_NATIVE_READ_DENY_OPENCODE },
       edit: { "*": "allow", ...GIT_NATIVE_WRITE_DENY_OPENCODE },

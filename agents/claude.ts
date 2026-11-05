@@ -60,6 +60,7 @@ import {
 } from "./claudePretoolGate.ts";
 import { startGateServer } from "./gateServer.ts";
 import {
+  AGENT_BIN_DIR_RELPATH,
   CLAUDE_HOOK_ASSET_RELPATHS,
   GIT_NATIVE_READ_DENY_CLAUDE,
   GIT_NATIVE_WRITE_DENY_CLAUDE,
@@ -1060,6 +1061,9 @@ function buildClaudeSettings(params: ManagedSettingsParams): Record<string, unkn
     const abs = join(params.ctx.tmpdir, rel);
     return [`Edit(${abs})`, `Edit(/${abs})`];
   });
+  // first on the agent's PATH, so its own write tool must not plant there either
+  const agentBin = join(params.ctx.tmpdir, AGENT_BIN_DIR_RELPATH);
+  hookDeny.push(`Edit(${agentBin}/**)`, `Edit(/${agentBin}/**)`);
   // single builder for both the PreToolUse gate hook and the native tool deny —
   // both fields are consumed here (and identically in the flag-settings path via
   // writePretoolGateAssets), keeping CLAUDE_DENY_RULES the single source.

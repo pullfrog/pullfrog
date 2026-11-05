@@ -11,6 +11,8 @@ import { log } from "../utils/log.ts";
 import { formatPermissions, shellTokenPermissions } from "../utils/roleMirror.ts";
 import {
   buildSandboxInvocation,
+  CHECKOUT_MOVED,
+  checkoutMoved,
   detectSandboxMethod,
   getUsernsProbeError,
 } from "../utils/sandbox.ts";
@@ -271,7 +273,7 @@ Output is capped at ${MAX_OUTPUT_CHARS} chars: if exceeded, only the tail is ret
       const seal = ctx.payload.shell !== "enabled";
 
       if (params.command.includes("agent-browser")) {
-        const daemonError = ensureBrowserDaemon(ctx.toolState);
+        const daemonError = await ensureBrowserDaemon(ctx.toolState);
         if (daemonError) {
           return {
             output: `browser daemon unavailable: ${daemonError}`,
@@ -320,6 +322,12 @@ Output is capped at ${MAX_OUTPUT_CHARS} chars: if exceeded, only the tail is ret
       }
 
       const result = await runSandboxed({ command: params.command, env, cwd, timeout, seal });
+
+      // a harness runs its own `git` at that path, unasked, so this cannot wait for the next tool call
+      if (checkoutMoved()) {
+        log.error(`${CHECKOUT_MOVED}. stopping this run.`);
+        process.kill(process.pid, "SIGTERM");
+      }
 
       if (result.exitCode !== 0) {
         log.info(`shell command failed with exit code ${result.exitCode}: ${params.command}`);

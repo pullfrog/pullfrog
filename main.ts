@@ -92,7 +92,7 @@ import {
   writeRunErrorOutputs,
 } from "./utils/runLifecycle.ts";
 import { logRunStartup } from "./utils/runStartupLog.ts";
-import { getSandboxMethod } from "./utils/sandbox.ts";
+import { getSandboxMethod, narrowProcessPath, recordGitDir } from "./utils/sandbox.ts";
 import { setEnvAllowlist } from "./utils/secrets.ts";
 import { createTempDirectory, setupGit, wipeRunnerLeakSurface } from "./utils/setup.ts";
 import { reportStatusChecks } from "./utils/statusChecks.ts";
@@ -368,6 +368,8 @@ export async function main(): Promise<MainResult> {
         "profile — see https://docs.pullfrog.com/security#self-hosted-runners"
     );
   }
+  // `enabled` gives the agent the environment this protects, and needs the customer's PATH natively
+  if (payload.shell !== "enabled") narrowProcessPath(tmpdir);
 
   // resolve tokens first — acquireNewToken needs OIDC env vars for token exchange
   await using tokenRef = await resolveTokens({
@@ -637,6 +639,7 @@ export async function main(): Promise<MainResult> {
       botLogin: runContext.repoSettings.botLogin,
       botUserId: runContext.repoSettings.botUserId,
     });
+    if (payload.shell !== "enabled") recordGitDir();
     timer.checkpoint("git");
 
     // pin the project's package manager via corepack BEFORE the setup hook

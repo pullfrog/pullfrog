@@ -1,9 +1,9 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, symlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ToolState } from "../toolState.ts";
 import { log } from "./cli.ts";
-import { resolveNpm } from "./install.ts";
+import { installFromNpmTarball } from "./install.ts";
 import { filterEnv } from "./secrets.ts";
 import { getDevDependencyVersion } from "./version.ts";
 
@@ -40,6 +40,9 @@ function buildEnv(): Record<string, string> {
   return env;
 }
 
+/** shared by concurrent shell calls, which must not install or start it twice. */
+let starting: Promise<string | undefined> | undefined;
+
 /**
  * ensure the agent-browser daemon is running by issuing a real command.
  *
@@ -58,44 +61,39 @@ function buildEnv(): Record<string, string> {
  * we run `open about:blank` as the seed command to trigger this.
  * idempotent — only runs once.
  */
-export function ensureBrowserDaemon(toolState: ToolState): string | undefined {
-  if (toolState.browserDaemon) {
-    return toolState.browserDaemon.error;
-  }
+export function ensureBrowserDaemon(toolState: ToolState): Promise<string | undefined> {
+  starting ??= startBrowserDaemon(toolState);
+  return starting;
+}
 
+async function startBrowserDaemon(toolState: ToolState): Promise<string | undefined> {
   const agentBrowserVersion = getDevDependencyVersion("agent-browser");
   log.info(`installing agent-browser@${agentBrowserVersion}...`);
-  const npm = resolveNpm();
-  const install = spawnSync(
-    npm.command,
-    [...npm.args, "install", "-g", `agent-browser@${agentBrowserVersion}`],
-    { stdio: "pipe", encoding: "utf-8" }
-  );
-  if (install.status !== 0) {
-    const error = `agent-browser install failed: ${(install.stderr || install.stdout || "unknown error").trim()}`;
+  let cli: string;
+  try {
+    // this runs on the agent's demand, when the npm it would use is the agent's to rewrite. a tarball
+    // needs no npm, and lands where the agent cannot reach what this process then runs.
+    cli = await installFromNpmTarball({
+      packageName: "agent-browser",
+      version: agentBrowserVersion,
+      executablePath: "bin/agent-browser.js",
+    });
+  } catch (cause) {
+    const error = `agent-browser install failed: ${cause instanceof Error ? cause.message : String(cause)}`;
     log.error(error);
     toolState.browserDaemon = { error };
     return error;
   }
   log.info("agent-browser installed");
 
-  let binDir: string;
-  try {
-    const binPath = execFileSync("which", ["agent-browser"], { encoding: "utf-8" }).trim();
-    binDir = dirname(binPath);
-    log.info(`agent-browser binary: ${binPath}`);
-  } catch {
-    const error = "agent-browser binary not found in PATH after install";
-    log.error(error);
-    toolState.browserDaemon = { error };
-    return error;
-  }
+  const binDir = dirname(cli);
+  if (!existsSync(join(binDir, "agent-browser"))) symlinkSync(cli, join(binDir, "agent-browser"));
 
   const env = buildEnv();
 
   // `open about:blank` triggers daemon auto-start and returns once the daemon + browser are ready
   log.info("starting browser daemon...");
-  const seed = spawnSync("agent-browser", ["open", "about:blank"], {
+  const seed = spawnSync(join(binDir, "agent-browser"), ["open", "about:blank"], {
     env,
     stdio: "pipe",
     encoding: "utf-8",
@@ -103,7 +101,7 @@ export function ensureBrowserDaemon(toolState: ToolState): string | undefined {
   });
 
   if (seed.status !== 0) {
-    const output = (seed.stderr || seed.stdout || "unknown error").trim();
+    const output = (seed.stderr || seed.stdout || seed.error?.message || "unknown error").trim();
     const error = `agent-browser open about:blank failed (exit=${seed.status}): ${output}`;
     log.error(error);
     toolState.browserDaemon = { error };
@@ -116,15 +114,14 @@ export function ensureBrowserDaemon(toolState: ToolState): string | undefined {
 }
 
 export function closeBrowserDaemon(toolState: ToolState): void {
-  if (!toolState.browserDaemon?.binDir) {
-    delete toolState.browserDaemon;
-    return;
-  }
+  const binDir = toolState.browserDaemon?.binDir;
   delete toolState.browserDaemon;
+  starting = undefined;
+  if (!binDir) return;
 
   try {
     log.info("closing browser daemon...");
-    spawnSync("agent-browser", ["close"], {
+    spawnSync(join(binDir, "agent-browser"), ["close"], {
       env: filterEnv(),
       stdio: "pipe",
       timeout: 10_000,

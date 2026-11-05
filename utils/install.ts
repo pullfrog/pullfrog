@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
+import { AGENT_BIN_DIR_RELPATH } from "../agents/nativeFsDenies.ts";
 import { log } from "./cli.ts";
 
 export interface InstallFromNpmTarballParams {
@@ -76,8 +77,12 @@ export async function installFromNpmTarball(params: InstallFromNpmTarballParams)
   // `npm install --production` against the previous package's manifest — which
   // prunes the earlier CLI's own dependencies. main.ts installs opencode for
   // model introspection on every run, so this collides with whichever harness
-  // then installs.
-  const packageRoot = join(tempDir, `npm-${params.packageName.replace(/[^a-z0-9]+/gi, "-")}`);
+  // then installs. sealed, since these run outside the sandbox, some of them again mid-run.
+  const packageRoot = join(
+    tempDir,
+    AGENT_BIN_DIR_RELPATH,
+    `npm-${params.packageName.replace(/[^a-z0-9]+/gi, "-")}`
+  );
   const extractedDir = join(packageRoot, "package");
   const cliPath = join(extractedDir, params.executablePath);
 

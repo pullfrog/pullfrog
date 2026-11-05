@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { isValid, satisfies } from "verkit";
 import { log } from "./cli.ts";
 import { resolveNpm } from "./install.ts";
-import { buildSandboxedCommand } from "./sandbox.ts";
+import { buildSandboxedCommand, prependSandboxedPath } from "./sandbox.ts";
 import { filterEnvForUntrustedCode } from "./secrets.ts";
 import { spawn } from "./subprocess.ts";
 
@@ -237,7 +237,7 @@ export async function ensurePackageManager(params: EnsurePackageManagerParams): 
 
   // shim dir first so `pnpm` resolves to the pinned binary and shadows any
   // `pnpm` a later `npm i -g pnpm` drops into the node bin dir.
-  process.env.PATH = `${params.binDir}${delimiter}${process.env.PATH ?? ""}`;
+  prependSandboxedPath(params.binDir);
 
   const prepare = await runCorepack(["prepare", `${spec.name}@${spec.version}`, "--activate"]);
   if (prepare.exitCode !== 0) {
@@ -289,8 +289,7 @@ async function installFallback(
   });
   if (result.exitCode !== 0) return result.stderr || `failed to install ${name}`;
   if (name === "deno") {
-    const denoPath = join(process.env.HOME || "", ".deno", "bin");
-    process.env.PATH = `${denoPath}:${process.env.PATH}`;
+    prependSandboxedPath(join(process.env.HOME || "", ".deno", "bin"));
   }
   log.info(`» installed ${name}`);
   return null;

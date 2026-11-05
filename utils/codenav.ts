@@ -11,10 +11,11 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { delimiter, dirname, extname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./cli.ts";
 import { packageManagerBinDir } from "./packageManager.ts";
+import { prependSandboxedPath } from "./sandbox.ts";
 
 /**
  * the pm-bin dir is on PATH and read-only inside the sandbox (shimMount), so the agent cannot swap in
@@ -36,9 +37,7 @@ export function installCodenav(tmpdir: string): void {
     `#!/bin/sh\nCODENAV_CACHE=${quote(cache)} exec node --disable-warning=ExperimentalWarning ${quote(cli)} "$@"\n`
   );
   chmodSync(shim, 0o755);
-  if (!process.env.PATH?.split(delimiter).includes(binDir)) {
-    process.env.PATH = `${binDir}${delimiter}${process.env.PATH ?? ""}`;
-  }
+  prependSandboxedPath(binDir);
   log.info("» codenav on PATH");
 }
 

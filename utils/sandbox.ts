@@ -3,10 +3,22 @@
 // (action/utils/shell.ts `$`). changes here should be reflected in
 // wiki/security.md and docs/security.mdx.
 import { type SpawnSyncReturns, spawnSync } from "node:child_process";
-import { lstatSync, readlinkSync, statSync } from "node:fs";
-import { userInfo } from "node:os";
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
+import { devNull, userInfo } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
-import { HOOK_ASSET_TMPDIR_RELPATHS } from "../agents/nativeFsDenies.ts";
+import {
+  AGENT_BIN_DIR_RELPATH,
+  HOOK_ASSET_TMPDIR_RELPATHS,
+  OPENCODE_BIN_DIR_RELPATH,
+} from "../agents/nativeFsDenies.ts";
 import { log } from "./log.ts";
 
 export type SandboxMethod = "unshare" | "sudo-unshare" | "userns-unshare" | "none";
@@ -91,6 +103,57 @@ export function trustedBinary(name: string): string {
     .find((candidate) => isRootControlled(candidate));
   if (!path) throw new Error(`no \`${name}\` on PATH in a directory only root can write`);
   return path;
+}
+
+/** the full PATH, restored for sandboxed commands, and the narrowed one it was swapped for. */
+let fullPath: string | undefined;
+let narrowedPath: string | undefined;
+
+/**
+ * from here on this process, and everything it starts outside the namespace, finds tools only where
+ * the sandboxed command cannot write. a harness finds `git` and `rg` by name, Claude's gate and the
+ * askpass script find `node`, and an install finds `tar`, all with the secrets in reach, so a planted
+ * file in a writable PATH directory would run with them. sandboxed commands get the full PATH back
+ * in `buildSandboxInvocation`, so they can still install there, as `pip install` does on most runners.
+ *
+ * `agent-bin` holds what may otherwise live only in such a directory, and every CLI we install. `node`
+ * is a copy: a symlink follows whatever later replaces the original, and a hard link shares its inode,
+ * leaving only the kernel's refusal to write to a running binary. `npm` and `npx` serve installs that
+ * finish before the agent starts and a repo's own MCP servers, whose commands are not ours to pin. this
+ * runs before the first sandboxed command, which could otherwise create these paths itself.
+ */
+export function narrowProcessPath(tempDir: string): void {
+  if (process.env.CI !== "true" || process.platform !== "linux") return;
+  const bin = join(tempDir, AGENT_BIN_DIR_RELPATH);
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(join(tempDir, OPENCODE_BIN_DIR_RELPATH), { recursive: true });
+  copyFileSync(process.execPath, join(bin, "node"));
+  const nodeDir = dirname(process.execPath);
+  for (const name of ["npm", "npx"]) {
+    if (existsSync(join(nodeDir, name))) symlinkSync(join(nodeDir, name), join(bin, name));
+  }
+  fullPath ??= process.env.PATH;
+  narrowedPath = [bin, ...getRootControlledDirs()].join(delimiter);
+  process.env.PATH = narrowedPath;
+  // the same door by config: a harness's own `git` would run a hook a planted ~/.gitconfig names.
+  // the sandbox's environment does not carry this, so a sandboxed git still reads the customer's.
+  process.env.GIT_CONFIG_GLOBAL = devNull;
+  // and by rc file: a `bash -c` on a socket stdin sources ~/.bashrc unless it is nested, and Claude
+  // starts its gate that way on every tool call.
+  process.env.SHLVL = "2";
+}
+
+/** the PATH a sandboxed command runs with: `path` with the narrowed part put back to the full one. */
+function sandboxedPath(path: string): string {
+  return narrowedPath && fullPath ? path.replace(narrowedPath, () => fullPath ?? "") : path;
+}
+
+/** `dir` first on sandboxed commands' PATH alone, for a tool only they run. */
+export function prependSandboxedPath(dir: string): void {
+  const path = fullPath ?? process.env.PATH ?? "";
+  if (path.split(delimiter).includes(dir)) return;
+  if (fullPath) fullPath = `${dir}${delimiter}${path}`;
+  else process.env.PATH = `${dir}${delimiter}${path}`;
 }
 
 /** run `method`'s exact invocation, so a probe cannot pass where the real spawn would fail. */
@@ -270,6 +333,10 @@ const SOCKET_CLEANUP = [
 //      comes from the PID namespace + filtered env, not a read-only .git. a
 //      planted hook/filter still fires there, but in a fresh PID namespace with
 //      no action PID to read and no secret in its env.
+//   4. every directory from the tmpdir down to a sealed path, bound onto itself
+//      (`sealedParentMounts`), then `cd "$PWD"`. the shell starts in the cwd
+//      it inherited, which stays on the mount underneath anything bound over it
+//      or above it, so without the `cd` a relative path walks past these binds.
 //
 // these mounts run as root inside the namespace (before `exec su -p` drops
 // to runner). after the drop, runner has no CAP_SYS_ADMIN in the host, so
@@ -291,6 +358,7 @@ const SOCKET_CLEANUP = [
 // repo root once at startup via $GITHUB_WORKSPACE or `git rev-parse`.
 function buildFsMounts(options: { gitWritable: boolean; shimWritable: boolean }): string {
   return [
+    sealedParentMounts(),
     `mkdir -p /var/lib/pullfrog 2>/dev/null;`,
     `mount -t tmpfs tmpfs /var/lib/pullfrog 2>/dev/null;`,
     `[ -n "$RUNNER_TEMP" ] && [ -d "$RUNNER_TEMP/_runner_file_commands" ] && mount -t tmpfs tmpfs "$RUNNER_TEMP/_runner_file_commands" 2>/dev/null;`,
@@ -309,6 +377,7 @@ function buildFsMounts(options: { gitWritable: boolean; shimWritable: boolean })
     // `RUNNER_` is an allowed prefix.
     options.shimWritable ? "" : shimMount(),
     hookMounts(),
+    `cd "$PWD" 2>/dev/null;`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -323,11 +392,7 @@ function buildFsMounts(options: { gitWritable: boolean; shimWritable: boolean })
  * action process writes them OUTSIDE this namespace, so our own writes are
  * unaffected. native FS tools are denied separately (claude settings deny,
  * opencode external_directory deny) since they run outside this sandbox.
- *
- * this leaf ro-bind does NOT stop the agent renaming an owned ancestor dir
- * (tmpdir, `.config/opencode`) and planting a tampered asset — a known, open
- * gap (see wiki/security.md "Scope and Limitations"); the direct rewrite is
- * sealed, the rename variant is not. */
+ * `sealedParentMounts` stops the agent renaming an owned ancestor dir away. */
 function hookMounts(): string {
   const tempDir = process.env.PULLFROG_TEMP_DIR;
   if (!tempDir) return "";
@@ -335,6 +400,34 @@ function hookMounts(): string {
     const path = join(tempDir, rel).replace(/'/g, "'\\''");
     return `[ -e '${path}' ] && mount --bind '${path}' '${path}' 2>/dev/null && mount -o remount,bind,ro '${path}' 2>/dev/null;`;
   }).join(" ");
+}
+
+const SHIM_DIR_RELPATH = "pm-bin";
+
+/**
+ * a read-only bind does not stop the sealed command renaming a directory above it: the mount goes
+ * with the rename, and the action process, in the other namespace, then finds whatever was put at
+ * the old path. a mountpoint cannot be renamed or removed (EBUSY), so every directory down to a
+ * sealed path is bound onto itself, parents first, from the first one whose parent only root can
+ * write: the tmpdir under /tmp, higher where $TMPDIR is $RUNNER_TEMP. --rbind keeps what is mounted
+ * below, and a userns refuses a plain bind of a tree holding locked mounts.
+ */
+function sealedParentMounts(): string {
+  const tempDir = process.env.PULLFROG_TEMP_DIR;
+  if (!tempDir) return "";
+  const parents = [SHIM_DIR_RELPATH, ...HOOK_ASSET_TMPDIR_RELPATHS].flatMap((rel) => {
+    const parts = rel.split("/");
+    return parts.map((_, depth) => join(tempDir, ...parts.slice(0, depth)));
+  });
+  for (let dir = tempDir; dirname(dir) !== "/" && !isRootControlled(dirname(dir)); ) {
+    dir = dirname(dir);
+    parents.push(dir);
+  }
+  return [...new Set(parents)]
+    .sort((a, b) => a.length - b.length)
+    .map(shQuote)
+    .map((dir) => `[ -d ${dir} ] && mount --rbind ${dir} ${dir} 2>/dev/null;`)
+    .join(" ");
 }
 
 /** the `.git` read-only bind. resolves the repo root only here: `resolveRepoRoot` memoizes
@@ -346,14 +439,44 @@ function gitReadOnlyMount(): string {
   // repoDir paths in practice are GHA workspace paths (no quotes), but the
   // escape keeps us correct against arbitrary user-configured workspaces.
   const escaped = resolveRepoRoot().replace(/'/g, "'\\''");
-  return `[ -e '${escaped}/.git' ] && mount --bind '${escaped}/.git' '${escaped}/.git' 2>/dev/null && mount -o remount,bind,ro '${escaped}/.git' 2>/dev/null;`;
+  const bind = `[ -e '${escaped}/.git' ] && mount --bind '${escaped}/.git' '${escaped}/.git' 2>/dev/null && mount -o remount,bind,ro '${escaped}/.git' 2>/dev/null;`;
+  if (!gitDirId) return bind;
+  // after the bind, which pins whatever it found: once a directory is mounted, a rename takes the mount with it
+  return `${bind} [ "$(stat -L -c %d:%i '${escaped}/.git' 2>/dev/null)" = ${gitDirId} ] || { echo ${shQuote(CHECKOUT_MOVED)} >&2; exit 1; };`;
+}
+
+export const CHECKOUT_MOVED =
+  "the checkout or a directory above it was moved during this run, so its .git can no longer be trusted";
+
+let gitDirId: string | undefined;
+
+function readGitDirId(): string | undefined {
+  const gitDir = join(resolveRepoRoot(), ".git");
+  const result = spawnSync("stat", ["-L", "-c", "%d:%i", gitDir], { encoding: "utf-8" });
+  return result.status === 0 ? result.stdout.trim() : undefined;
+}
+
+/** called once the checkout exists, ahead of the setup hook and installs, which run repo code. */
+export function recordGitDir(): void {
+  gitDirId ??= readGitDirId();
+}
+
+/**
+ * the `.git` bind goes with a rename of any directory above it, leaving the next shell free to write
+ * the real one, and whatever is then put at the old path is what `$git` and a harness's own `git`
+ * find. binding those directories too would stop the rename, but it makes the checkout its own mount,
+ * and pnpm then moves its store into the checkout (wiki/security.md). so what uses `.git` next refuses
+ * one that is no longer the one recorded.
+ */
+export function checkoutMoved(): boolean {
+  return gitDirId !== undefined && readGitDirId() !== gitDirId;
 }
 
 /** read-only bind for the corepack shim dir, or "" when this run has no tmpdir. */
 function shimMount(): string {
   const tempDir = process.env.PULLFROG_TEMP_DIR;
   if (!tempDir) return "";
-  const dir = join(tempDir, "pm-bin").replace(/'/g, "'\\''");
+  const dir = join(tempDir, SHIM_DIR_RELPATH).replace(/'/g, "'\\''");
   return `[ -d '${dir}' ] && mount --bind '${dir}' '${dir}' 2>/dev/null && mount -o remount,bind,ro '${dir}' 2>/dev/null;`;
 }
 
@@ -428,7 +551,7 @@ export function buildSandboxInvocation(params: {
     `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${buildFsMounts({ gitWritable: params.gitWritable, shimWritable: params.shimWritable ?? false })}`;
   // the command's own PATH comes back only inside the seal
   const command = params.env.PATH
-    ? `export PATH=${shQuote(params.env.PATH)}; ${params.command}`
+    ? `export PATH=${shQuote(sandboxedPath(params.env.PATH))}; ${params.command}`
     : params.command;
   const sealedBash = `${shQuote(bash)} -c ${shQuote(command)}`;
 
@@ -577,7 +700,14 @@ export function buildSandboxedCommand(params: {
   shimWritable?: boolean;
 }): { cmd: string; args: string[]; env: Record<string, string | undefined> } {
   const method = detectSandboxMethod();
-  if (method === "none") return { cmd: params.cmd, args: params.args, env: params.env };
+  if (method === "none") {
+    const path = params.env.PATH;
+    return {
+      cmd: params.cmd,
+      args: params.args,
+      env: path ? { ...params.env, PATH: sandboxedPath(path) } : params.env,
+    };
+  }
   const invocation = buildSandboxInvocation({
     command: execCommand(params.cmd, params.args),
     seal: true,

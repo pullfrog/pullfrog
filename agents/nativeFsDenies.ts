@@ -112,9 +112,17 @@ export const CLAUDE_HOOK_ASSET_RELPATHS: readonly string[] = [
  * the whole dir so both bundled plugins and any future one are covered. */
 export const OPENCODE_PLUGIN_DIR_RELPATH = ".config/opencode/plugin" as const;
 
+/** where OpenCode keeps the `rg` it downloads and runs, in both generations. relative to tmpdir. */
+export const OPENCODE_BIN_DIR_RELPATH = ".cache/opencode/bin" as const;
+
+/** the tools of every process outside the sandbox, first on its PATH (`narrowProcessPath` in action/utils/sandbox.ts). */
+export const AGENT_BIN_DIR_RELPATH = "agent-bin" as const;
+
 /** every hook asset, tmpdir-relative — the read-only-bind set for the MCP
  * shell, which both agents share. dir entries bind recursively like `.git`. */
 export const HOOK_ASSET_TMPDIR_RELPATHS: readonly string[] = [
   ...CLAUDE_HOOK_ASSET_RELPATHS,
   OPENCODE_PLUGIN_DIR_RELPATH,
+  OPENCODE_BIN_DIR_RELPATH,
+  AGENT_BIN_DIR_RELPATH,
 ];

@@ -19,6 +19,7 @@ import { readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "./cli.ts";
 import type { GitAuthServer } from "./gitAuthServer.ts";
+import { CHECKOUT_MOVED, checkoutMoved } from "./sandbox.ts";
 import { filterEnv } from "./secrets.ts";
 import { $ } from "./shell.ts";
 import { spawn } from "./subprocess.ts";
@@ -187,6 +188,7 @@ export async function $git(
   args: string[],
   options: GitAuthOptions
 ): Promise<GitResult> {
+  if (checkoutMoved()) throw new Error(CHECKOUT_MOVED);
   const gitPath = verifyGitBinary();
 
   if (!authServer) {

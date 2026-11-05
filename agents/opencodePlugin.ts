@@ -49,8 +49,12 @@
  * release that introduces a coincidentally-named event type won't collide.
  */
 
+import { join } from "node:path";
 import { formatMcpToolRef } from "../external.ts";
 import { OPENAI_COMPATIBLE_PROVIDER } from "../models.ts";
+import { openCodeHomeEnv } from "../utils/openCodeModels.ts";
+import { resolveRepoRoot } from "../utils/sandbox.ts";
+import { HOOK_ASSET_TMPDIR_RELPATHS } from "./nativeFsDenies.ts";
 import type { AgentRunContext } from "./shared.ts";
 
 export const PULLFROG_BUS_EVENT_TYPE = "pullfrog_bus_event" as const;
@@ -178,9 +182,9 @@ export function buildOpencodeSubagentGateSource(ctx: AgentRunContext): string {
 // action/agents/opencodePlugin.ts in pullfrog/app for why this exists. lives
 // inside the per-run tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside
 // the user's working tree.
-
-// embedded at template-render time so the plugin source has no imports. the
-// denied set is derived from each tool's \`mutates\` flag — see
+${realPathGateSource(ctx)}
+// embedded at template-render time so the plugin source has no project imports.
+// the denied set is derived from each tool's \`mutates\` flag — see
 // action/agents/subagentToolGates.ts.
 const SUBAGENT_DENIED_TOOLS = new Set(${JSON.stringify(ctx.subagentDeniedTools)});
 
@@ -204,7 +208,7 @@ export default async function pullfrogSubagentGatePlugin() {
   return {
     "tool.execute.before": async (
       input: { tool?: string; sessionID?: string; callID?: string },
-      _output: { args?: Record<string, unknown> }
+      output: { args?: Record<string, unknown> }
     ) => {
       // input: { tool, sessionID, callID } — confirmed against
       // anomalyco/opencode packages/opencode/src/session/tools.ts which
@@ -220,6 +224,7 @@ export default async function pullfrogSubagentGatePlugin() {
       if (tool === "bash") {
         throw new Error(${JSON.stringify(bashRefusal)});
       }
+      refuseEscape(tool, output?.args);
       if (!sessionID || !tool) return;
       if (orchestratorSessionID === undefined) orchestratorSessionID = sessionID;
       if (sessionID === orchestratorSessionID) return;
@@ -228,6 +233,66 @@ export default async function pullfrogSubagentGatePlugin() {
       throw new Error("subagent attempted to call denied tool '" + bare + "'. " + ${JSON.stringify(SUBAGENT_DENIAL)});
     },
   };
+}
+`;
+}
+
+/**
+ * `external_directory` and the `edit` denies judge the path a tool names, and V1 and V2 both check it
+ * lexically. the tool then follows any symlink in it, out here where the sandbox's read-only binds do
+ * not exist, so a link made from the shell would carry a read or a write past all of them. this judges
+ * where the path really leads, against the same roots. input it cannot read is refused, since V2 may
+ * still repair it into a call.
+ */
+function realPathGateSource(ctx: AgentRunContext): string {
+  const repoRoot = resolveRepoRoot();
+  const roots = [repoRoot, process.cwd(), "/tmp", ctx.tmpdir];
+  const sealed = HOOK_ASSET_TMPDIR_RELPATHS.map((rel) => join(ctx.tmpdir, rel));
+  const toolOutput = join(openCodeHomeEnv(ctx.tmpdir).XDG_DATA_HOME, "opencode", "tool-output");
+  return String.raw`
+import { readlinkSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+
+function realPath(path: string): string {
+  const parent = dirname(path);
+  if (parent === path) return path;
+  const real = join(realPath(parent), basename(path));
+  let target: string;
+  try {
+    target = readlinkSync(real);
+  } catch {
+    return real;
+  }
+  return realPath(resolve(dirname(real), target));
+}
+
+const ROOTS = ${JSON.stringify(roots)}.map(realPath);
+const SEALED = ${JSON.stringify(sealed)}.map(realPath);
+const GIT_DIR = realPath(${JSON.stringify(join(repoRoot, ".git"))});
+const TOOL_OUTPUT = realPath(${JSON.stringify(toolOutput)});
+const isInside = (root: string, path: string) => path === root || path.startsWith(root + "/");
+
+function refuseEscape(tool: string, args: any) {
+  const patch = tool === "apply_patch" || tool === "patch";
+  const writes = patch || tool === "write" || tool === "edit";
+  const search = tool === "grep" || tool === "glob";
+  if (!writes && !search && tool !== "read") return;
+  // a search with no path runs in the working directory
+  if (search && typeof args === "object" && args?.path === undefined) return;
+  const named = patch ? args?.patchText : (args?.filePath ?? args?.path);
+  if (typeof named !== "string") throw new Error(tool + " needs its arguments as an object.");
+  const paths = patch
+    ? [...named.matchAll(/^\s*\*\*\*\s*(?:Add File|Update File|Delete File|Move to):\s*(.+?)\s*$/gm)].map((match) => match[1])
+    : [named];
+  for (const path of paths) {
+    const absolute = resolve(${JSON.stringify(process.cwd())}, path.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
+    const real = realPath(absolute);
+    const allowed =
+      (ROOTS.some((root) => isInside(root, real)) || (!writes && isInside(TOOL_OUTPUT, real))) &&
+      !SEALED.some((root) => isInside(root, real)) &&
+      !(writes && isInside(GIT_DIR, real));
+    if (!allowed) throw new Error(path + " is outside what " + tool + " may reach, once symbolic links are followed.");
+  }
 }
 `;
 }
@@ -260,7 +325,7 @@ export function buildOpencode2GateSource(ctx: AgentRunContext): string {
 // blocks native shell, and state-mutating MCP tool calls from subagents. see
 // action/agents/opencodePlugin.ts in pullfrog/app. lives inside the per-run
 // tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside the user's working tree.
-
+${realPathGateSource(ctx)}
 const SUBAGENT_DENIED_TOOLS = new Set(${JSON.stringify(ctx.subagentDeniedTools)});
 
 // the orchestrator calls a tool (its \`subagent\` dispatch) before any subagent
@@ -270,7 +335,7 @@ let orchestratorSessionID: string | undefined;
 export default {
   id: ${JSON.stringify(OPENCODE_V2_GATE_PLUGIN_ID)},
   async setup(ctx: {
-    tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string }) => void) => Promise<unknown> };
+    tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string; input?: unknown }) => void) => Promise<unknown> };
     session: { hook: (name: string, fn: (event: { options: { maxTokens?: number } }) => void, options: { providerID: string }) => Promise<unknown> };
   }) {
     // V2 fails the run on a summary cut off at the output limit, and a custom endpoint's limit can be
@@ -280,6 +345,7 @@ export default {
       const tool = typeof event?.tool === "string" ? event.tool : "";
       const sessionID = typeof event?.sessionID === "string" ? event.sessionID : "";
       if (tool === "shell") throw new Error(${JSON.stringify(nativeShellRefusal(ctx, "shell"))});
+      refuseEscape(tool, event.input);
       if (!sessionID || !tool) return;
       if (orchestratorSessionID === undefined) orchestratorSessionID = sessionID;
       if (sessionID === orchestratorSessionID) return;

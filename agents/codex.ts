@@ -141,8 +141,12 @@ const CODEX_DISABLED_FEATURES = [
   "multi_agent_v2",
 ] as const;
 
-/** exec surfaces gated on `payload.shell` rather than always-off. */
-const CODEX_SHELL_FEATURES = ["shell_tool", "unified_exec"] as const;
+/**
+ * exec surfaces gated on `payload.shell` rather than always-off. `shell_snapshot` sources the user's
+ * rc files in a real shell every time codex starts, outside the sandbox, and a follow-up turn starts
+ * it again after the agent's shell could have written them.
+ */
+const CODEX_SHELL_FEATURES = ["shell_tool", "unified_exec", "shell_snapshot"] as const;
 
 function tomlBool(entries: readonly string[], value: boolean): string {
   return entries.map((name) => `${name} = ${value}`).join("\n");
@@ -218,6 +222,11 @@ function securityOverrideFlags(params: {
     // under $HOME).
     "-c",
     `sandbox_workspace_write.writable_roots=[${JSON.stringify(params.repoDir)}]`,
+    // on by default, and the run's own tools live there
+    "-c",
+    `sandbox_workspace_write.exclude_slash_tmp=${!shellEnabled}`,
+    "-c",
+    `sandbox_workspace_write.exclude_tmpdir_env_var=${!shellEnabled}`,
     "-c",
     "sandbox_workspace_write.network_access=true",
     // our own MCP server, for a third time in the same class: a repo pointing
@@ -478,6 +487,8 @@ function writeCodexConfig(params: {
     // imply. does NOT fix the Linux native-write failure — nothing here does;
     // see wiki/codex-agent.md "The Linux native-write blocker".
     `writable_roots = [${JSON.stringify(repoDir)}]`,
+    `exclude_slash_tmp = ${!shellEnabled}`,
+    `exclude_tmpdir_env_var = ${!shellEnabled}`,
     "",
     `[mcp_servers.${pullfrogMcpName}]`,
     `url = ${JSON.stringify(params.ctx.mcpServerUrl)}`,
@@ -913,6 +924,7 @@ export const codex = agent({
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
       CODEX_HOME: codexHome,
+      GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
       PWD: process.cwd(),
     };
     // codex authenticates from `CODEX_API_KEY`, NOT `OPENAI_API_KEY` —
