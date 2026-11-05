@@ -273,9 +273,11 @@ export function openCodeV2Credentials() {
 export function mirrorOpenCodeV2Credentials(credentials: CredentialEntry[]): void {
   const authPath = installedAuthPath();
   if (!authPath) return;
+  const file: OpenCodeAuthFile = JSON.parse(readFileSync(authPath, "utf8"));
   for (const credential of credentials) {
     const value = credential.value;
     if (!V2_METHOD_IDS[credential.integrationID] || value.type !== "oauth") continue;
+    if (file[credential.integrationID]?.access === value.access) continue;
     const accountId = value.metadata?.accountID;
     writeOpenCodeAuthEntry({
       opencodeDir: dirname(authPath),

@@ -19,8 +19,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { config } from "dotenv";
+import { opencodeGeneration } from "../agents/opencodeGeneration.ts";
+import { installOpencodeCli } from "../agents/opencodeShared.ts";
 import { modelAliases, resolveCliModel } from "../models.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
+import { openCodeHomeEnv, seedModelsCatalog } from "../utils/openCodeModels.ts";
 import { getDevDependencyVersion } from "../utils/version.ts";
 
 config({ path: join(import.meta.dirname, "..", ".env") });
@@ -102,18 +105,12 @@ async function plan(slug: string): Promise<Plan> {
     };
   }
 
-  const cliPath = await installFromNpmTarball({
-    packageName: "opencode-ai",
-    version: getDevDependencyVersion("opencode-ai"),
-    // v1.14+: postinstall.mjs renames the platform-specific binary to
-    // `bin/opencode.exe` for every OS — see action/agents/opencode.ts.
-    executablePath: "bin/opencode.exe",
-    installDependencies: true,
-  });
+  // without --standalone, V2 starts a detached `serve --service` daemon that outlives the command.
+  const standalone = opencodeGeneration() === 2 ? ["--standalone"] : [];
   return {
     agent: "opencode",
-    cliPath,
-    args: ["run", "--model", cliModel, PROMPT],
+    cliPath: await installOpencodeCli(),
+    args: ["run", ...standalone, "--model", cliModel, PROMPT],
   };
 }
 
@@ -247,7 +244,9 @@ async function main(): Promise<void> {
   const p = await plan(slug);
   console.log(`» agent=${p.agent} cmd=${[p.cliPath, ...p.args].join(" ")}`);
 
-  const result = await runCli(p, process.env);
+  // production's catalog and data dirs: V2 otherwise serves the snapshot built into its binary.
+  await seedModelsCatalog(homeDir);
+  const result = await runCli(p, { ...process.env, ...openCodeHomeEnv(homeDir) });
   if (result.ok) {
     console.log(`✓ ${slug} (${p.agent})`);
     process.exit(0);

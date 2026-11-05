@@ -50,6 +50,7 @@
  */
 
 import { formatMcpToolRef } from "../external.ts";
+import { OPENAI_COMPATIBLE_PROVIDER } from "../models.ts";
 import type { AgentRunContext } from "./shared.ts";
 
 export const PULLFROG_BUS_EVENT_TYPE = "pullfrog_bus_event" as const;
@@ -268,7 +269,13 @@ let orchestratorSessionID: string | undefined;
 
 export default {
   id: ${JSON.stringify(OPENCODE_V2_GATE_PLUGIN_ID)},
-  async setup(ctx: { tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string }) => void) => Promise<unknown> } }) {
+  async setup(ctx: {
+    tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string }) => void) => Promise<unknown> };
+    session: { hook: (name: string, fn: (event: { options: { maxTokens?: number } }) => void, options: { providerID: string }) => Promise<unknown> };
+  }) {
+    // V2 fails the run on a summary cut off at the output limit, and a custom endpoint's limit can be
+    // smaller than a summary. the limit is optional on that API, so a compaction just doesn't send it.
+    await ctx.session.hook("compaction", (event) => { delete event.options.maxTokens; }, { providerID: ${JSON.stringify(OPENAI_COMPATIBLE_PROVIDER)} });
     await ctx.tool.hook("execute.before", (event) => {
       const tool = typeof event?.tool === "string" ? event.tool : "";
       const sessionID = typeof event?.sessionID === "string" ? event.sessionID : "";

@@ -31,9 +31,9 @@ import {
 } from "@opencode/client";
 import * as yes from "yes";
 import { pullfrogMcpName } from "../external.ts";
-import { markActivity } from "../utils/activity.ts";
+import { AGENT_ACTIVITY_TIMEOUT_MS, markActivity } from "../utils/activity.ts";
 import { log } from "../utils/cli.ts";
-import { mirrorOpenCodeV2Credentials } from "../utils/codexHome.ts";
+import { mirrorOpenCodeV2Credentials, openCodeV2Credentials } from "../utils/codexHome.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import {
   buildOpencode2GateSource,
@@ -99,7 +99,6 @@ const EVENT_TYPES = [
   "session.execution.failed",
   "session.execution.interrupted",
   "permission.asked",
-  "credential.updated",
 ] as const;
 
 type Event = Extract<OpenCodeEvent, { type: (typeof EVENT_TYPES)[number] }>;
@@ -112,6 +111,8 @@ const MCP_CONNECT_SCHEDULE = yes.schedule(() => 500, 120);
 /** about a minute: each refused attempt has already waited the server's 5s for plugins. */
 const PLUGIN_ACTIVATION_SCHEDULE = yes.schedule(() => 250, 12);
 const MCP_REGISTRY_SETTLE_MS = 300;
+/** V2 publishes nothing when a refresh rotates a subscription, and a run can die without closing. */
+const CREDENTIAL_MIRROR_INTERVAL_MS = 5_000;
 
 interface RunnerContext extends RunState {
   client: OpenCodeClient;
@@ -124,6 +125,9 @@ interface RunnerContext extends RunState {
   toolInputs: Map<string, unknown>;
   /** resolves the turn's stream barrier on the orchestrator's execution ending. */
   executionEnded: (() => void) | undefined;
+  /** the provider's words for a retry this turn cannot outlast, which ended it. */
+  terminalRetry: string | undefined;
+  turnAbort: AbortController;
 }
 
 async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
@@ -163,6 +167,8 @@ async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
     toolNames: new Map(),
     toolInputs: new Map(),
     executionEnded: undefined,
+    terminalRetry: undefined,
+    turnAbort: new AbortController(),
   };
   const eventLoopPromise = consumeEvents(ctx, events).catch((err) => {
     if (!eventsController.signal.aborted) {
@@ -171,6 +177,10 @@ async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
       );
     }
   });
+  const mirror = openCodeV2Credentials().length
+    ? setInterval(() => void mirrorCredentials(ctx), CREDENTIAL_MIRROR_INTERVAL_MS)
+    : undefined;
+  mirror?.unref();
 
   return {
     state: ctx,
@@ -180,6 +190,7 @@ async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
       if (!resp.interrupted) throw new Error("nothing running to interrupt");
     },
     close: async () => {
+      clearInterval(mirror);
       await mirrorCredentials(ctx);
       eventsController.abort();
       await eventLoopPromise;
@@ -303,9 +314,6 @@ function dispatchEvent(ctx: RunnerContext, event: OpenCodeEvent): void {
     case "permission.asked":
       refusePermission(ctx, event.data);
       return;
-    case "credential.updated":
-      void mirrorCredentials(ctx);
-      return;
     case "session.created":
       ctx.sessions.add(event.data.sessionID);
       // binds the child to the label its dispatch queued.
@@ -319,8 +327,19 @@ function dispatchEvent(ctx: RunnerContext, event: OpenCodeEvent): void {
       ctx.executionEnded = undefined;
       return;
     case "session.step.failed":
+      onProviderError(ctx, { sessionID: event.data.sessionID, message: event.data.error.message });
+      return;
     case "session.retry.scheduled":
       onProviderError(ctx, { sessionID: event.data.sessionID, message: event.data.error.message });
+      // a capped provider asks for days, and V2 keeps retrying at 15min a time. the watchdog would only
+      // re-prompt into the same wait, so the turn ends now. `at` is capped; `retryAfterMs` is what it asked.
+      if (
+        event.data.sessionID === ctx.orchestratorSessionID &&
+        (event.data.error.retryAfterMs ?? 0) > AGENT_ACTIVITY_TIMEOUT_MS
+      ) {
+        ctx.terminalRetry = event.data.error.message;
+        ctx.turnAbort.abort();
+      }
       return;
   }
   // everything left is the model's own output: the only progress the watchdog counts.
@@ -445,6 +464,9 @@ async function runPromptTurn(
   // recovered from, and would otherwise render that stale fire's story.
   ctx.diagnostic.sawModelOutput = false;
   ctx.diagnostic.idleSec = undefined;
+  ctx.terminalRetry = undefined;
+  ctx.turnAbort = new AbortController();
+  const signal = AbortSignal.any([params.signal, ctx.turnAbort.signal]);
   const settled = new Promise<void>((resolve) => {
     ctx.executionEnded = resolve;
   });
@@ -452,13 +474,13 @@ async function runPromptTurn(
   const sessionID = ctx.orchestratorSessionID;
   let requestError: string | undefined;
   try {
-    await ctx.client.session.prompt({ sessionID, text: params.text }, { signal: params.signal });
-    await ctx.client.session.wait({ sessionID }, { signal: params.signal });
+    await ctx.client.session.prompt({ sessionID, text: params.text }, { signal });
+    await ctx.client.session.wait({ sessionID }, { signal });
   } catch (err) {
     requestError = err instanceof Error ? err.message : String(err);
   }
   // an aborted request leaves the execution running server-side; the next turn needs it stopped.
-  if (params.signal.aborted) await interrupt(ctx);
+  if (signal.aborted) await interrupt(ctx);
   await Promise.race([settled, sleep(STREAM_SETTLE_MS, undefined, { ref: false })]);
 
   const usage = await turnUsage(ctx);
@@ -471,6 +493,8 @@ async function runPromptTurn(
     usage,
   });
 
+  // a provider error, not a hang: no salvage, and the usage-limit copy rather than "re-trigger"
+  if (ctx.terminalRetry) return fail(`provider error: ${ctx.terminalRetry}`);
   if (params.signal.aborted) {
     return fail(
       stallError({

@@ -82,15 +82,23 @@ function modelsCatalogPath(tmpdir: string): string {
  * auth.json once its database exists, and `auth import` skips a credential id it already holds, so
  * the run's database is rebuilt: the credential pool can swap a chain between two captures. A no-op
  * on V1, which reads auth.json itself. see wiki/opencode-v2.md.
+ *
+ * V2 refreshes an expiring token as soon as any process starts, and a capture exits with no way to
+ * hand back the chain it rotated, which the next rebuild would discard. So it never sees one expiring.
  */
 export function syncOpenCodeCredentials(params: {
   cliPath: string;
   env: NodeJS.ProcessEnv & { OPENCODE_DB: string };
+  capture?: boolean;
 }): void {
   if (opencodeGeneration() !== 2) return;
   for (const suffix of ["", "-wal", "-shm"])
     rmSync(`${params.env.OPENCODE_DB}${suffix}`, { force: true });
-  const credentials = openCodeV2Credentials();
+  const credentials = openCodeV2Credentials().map((credential) =>
+    params.capture
+      ? { ...credential, value: { ...credential.value, expires: Date.now() + 3_600_000 } }
+      : credential
+  );
   if (credentials.length === 0) return;
   const result = spawnSync(params.cliPath, ["auth", "import", "--standalone"], {
     encoding: "utf-8",
@@ -149,7 +157,7 @@ export function getModelsCatalogFailure(): string | undefined {
 
 function readModels(params: { cliPath: string; tmpdir: string }): Set<string> {
   const env = { ...process.env, ...openCodeHomeEnv(params.tmpdir) };
-  syncOpenCodeCredentials({ cliPath: params.cliPath, env });
+  syncOpenCodeCredentials({ cliPath: params.cliPath, env, capture: true });
   // without --standalone, V2 starts a detached `serve --service` daemon that outlives the command.
   const args = opencodeGeneration() === 2 ? ["models", "--standalone"] : ["models"];
   // spawnSync, not execFileSync: we want opencode's stderr as a value rather

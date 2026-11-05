@@ -1,7 +1,7 @@
 /**
  * OpenCode agent — in-process harness, driving `opencode serve` over loopback
- * HTTP. Two OpenCode generations sit behind it: V1 (`opencode-ai` >=1.14.x, the
- * Effect-ts CLI rewrite) by default, and V2 (`@opencode/cli`) when
+ * HTTP. Two OpenCode generations sit behind it: V2 (`@opencode/cli`) by default,
+ * and V1 (`opencode-ai` >=1.14.x, the Effect-ts CLI rewrite) when
  * `opencodeGeneration()` picks it. This file is everything the two share — the
  * run's setup, the server process, the watchdog, the salvage and the post-run
  * loop; `opencode1.ts` and `opencode2.ts` are each generation's driver (session

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Rollout } from "../external.ts";
 import { log } from "../utils/cli.ts";
@@ -24,15 +24,18 @@ const V2_CONFIG_KEYS = [
   "commands",
 ];
 
+/** where V1 loads a checkout's code from: V2 skips a V1 plugin and has no custom-tool directory. */
+const V1_CODE_DIRS = ["plugin", "plugins", "tool", "tools"];
+
 let decided: OpencodeGeneration | undefined;
 
 type GenerationInput = { cwd: string; rollouts: readonly string[] };
 
 /**
- * Which OpenCode drives the run. V1 (`opencode-ai`) is the default; V2 (`@opencode/cli`) runs when
- * `PULLFROG_OPENCODE_VERSION=2` opts in, when the checkout's own OpenCode setup is written for V2, or
- * when the server assigned the run to the `opencode-v2` rollout. Decided once per run: main.ts calls
- * this with the checkout before anything installs opencode. See wiki/opencode-v2.md.
+ * Which OpenCode drives the run. V2 (`@opencode/cli`) is the default; V1 (`opencode-ai`) runs when
+ * `PULLFROG_OPENCODE_VERSION=1` pins it, when the checkout carries code only V1 can run, or when the
+ * server assigned the run to the `opencode-v1` rollout. Decided once per run: main.ts calls this with
+ * the checkout before anything installs opencode. See wiki/opencode-v2.md.
  */
 export function opencodeGeneration(
   input: GenerationInput = { cwd: process.cwd(), rollouts: [] }
@@ -56,14 +59,11 @@ function decide(input: GenerationInput): { generation: OpencodeGeneration; reaso
   if (dependsOnV2Plugin(readJsonc(join(input.cwd, ".opencode", "package.json")))) {
     return { generation: 2, reason: ".opencode/package.json depends on @opencode/plugin" };
   }
-  const rollout: Rollout = "opencode-v2";
-  if (input.rollouts.includes(rollout)) {
-    // the rollout measures our harness on V2, not how V2 reads a setup written for V1
-    const own = [...CONFIG_FILES, ".opencode"].find((path) => existsSync(join(input.cwd, path)));
-    if (!own) return { generation: 2, reason: `rollout ${rollout}` };
-    return { generation: 1, reason: `rollout ${rollout} skipped: the checkout has its own ${own}` };
-  }
-  return { generation: 1, reason: "default" };
+  const v1Code = findV1Code(input.cwd);
+  if (v1Code) return { generation: 1, reason: `the checkout's ${v1Code} needs V1` };
+  const rollback: Rollout = "opencode-v1";
+  if (input.rollouts.includes(rollback)) return { generation: 1, reason: `rollout ${rollback}` };
+  return { generation: 2, reason: "default" };
 }
 
 function v2ConfigKey(config: unknown): string | undefined {
@@ -82,6 +82,39 @@ function dependsOnV2Plugin(manifest: unknown): boolean {
   return [manifest.dependencies, manifest.devDependencies].some(
     (dependencies) => isObject(dependencies) && "@opencode/plugin" in dependencies
   );
+}
+
+/**
+ * The code in a checkout that stops running on V2, if any. Everything else in a V1 setup keeps
+ * working: V2 reads its agents, commands and skills, and migrates its config in memory.
+ */
+function findV1Code(cwd: string): string | undefined {
+  for (const file of CONFIG_FILES) {
+    const config = readJsonc(join(cwd, file));
+    if (isObject(config) && Array.isArray(config.plugin) && config.plugin.length > 0) {
+      return `${file} \`plugin\``;
+    }
+  }
+  for (const dir of V1_CODE_DIRS) {
+    const path = join(".opencode", dir);
+    const source = readSources(join(cwd, path)).find(
+      (file) => !file.text.includes("@opencode/plugin")
+    );
+    if (source) return join(path, source.name);
+  }
+  return undefined;
+}
+
+/** the `.ts` and `.js` files directly inside `dir`, as V1 discovers them. unreadable is no signal. */
+function readSources(dir: string): { name: string; text: string }[] {
+  if (!existsSync(dir)) return [];
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.[jt]s$/.test(entry.name))
+      .map((entry) => ({ name: entry.name, text: readFileSync(join(dir, entry.name), "utf-8") }));
+  } catch {
+    return [];
+  }
 }
 
 const STRING = /"(?:\\.|[^"\\])*"/.source;
