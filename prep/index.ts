@@ -22,7 +22,7 @@ export async function runPrepPhase(options: PrepOptions): Promise<PrepResult[]> 
   // prep is non-mutating by contract; snapshot so any tracked drift from
   // lifecycle scripts can be attributed to prep and restored, even when a
   // step fails partway through.
-  const preDirty = await dirtyTrackedPaths();
+  const preDirty = dirtyTrackedPaths();
 
   try {
     for (const step of prepSteps) {
@@ -46,7 +46,7 @@ export async function runPrepPhase(options: PrepOptions): Promise<PrepResult[]> 
     // #906: frozen installs run package lifecycle scripts that rewrite tracked
     // generated files (the msw worker, etc.), and the resulting dirt makes
     // `checkout_pr` refuse for the rest of the run.
-    await restoreDirtiedSince({ before: preDirty, actor: "prep" });
+    restoreDirtiedSince({ before: preDirty, actor: "prep" });
   }
 
   const totalDurationMs = performance.now() - startTime;

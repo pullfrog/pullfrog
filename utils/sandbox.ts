@@ -3,8 +3,9 @@
 // (action/utils/shell.ts `$`). changes here should be reflected in
 // wiki/security.md and docs/security.mdx.
 import { type SpawnSyncReturns, spawnSync } from "node:child_process";
+import { lstatSync, readlinkSync, statSync } from "node:fs";
 import { userInfo } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { HOOK_ASSET_TMPDIR_RELPATHS } from "../agents/nativeFsDenies.ts";
 import { log } from "./log.ts";
 
@@ -38,6 +39,77 @@ export function getSandboxMethod(): SandboxMethod {
   return detectSandboxMethod();
 }
 
+/**
+ * true when only root can change what `path` names: it, every parent and any symlink on the way
+ * are root-owned and writable by nobody else. a sticky directory still protects its root-owned
+ * entries, which is how `/nix/store` (1775) is laid out.
+ */
+function isRootControlled(path: string): boolean {
+  try {
+    const stat = lstatSync(path);
+    if (stat.uid !== 0) return false;
+    if (stat.isSymbolicLink()) {
+      return (
+        isRootControlled(dirname(path)) &&
+        isRootControlled(resolve(dirname(path), readlinkSync(path)))
+      );
+    }
+    const sticky = stat.isDirectory() && (stat.mode & 0o1000) !== 0;
+    if ((stat.mode & 0o022) !== 0 && !sticky) return false;
+    return dirname(path) === path || isRootControlled(dirname(path));
+  } catch {
+    return false;
+  }
+}
+
+let rootControlledDirs: string[] | undefined;
+
+/**
+ * the PATH directories the sandboxed command cannot write, from the PATH the run started with. a
+ * sticky parent is fine, but anyone can add a name to a sticky entry, and the setup shell looks
+ * `mount` and `su` up on these, so the entry itself must be writable by root alone.
+ */
+function getRootControlledDirs(): string[] {
+  rootControlledDirs ??= (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter(
+      (dir) => isAbsolute(dir) && isRootControlled(dir) && (statSync(dir).mode & 0o022) === 0
+    );
+  return rootControlledDirs;
+}
+
+/**
+ * the absolute path of `name`, for anything run outside the namespace once the agent may have
+ * planted a file. the sandboxed command can write PATH directories that sit ahead of `/usr/bin`
+ * (`/usr/local/bin` is 777 on a GitHub-hosted runner), so a bare name runs whatever it put there.
+ * resolving early is not enough, since the file can be replaced later: only location holds.
+ * returns the path as found, not its realpath: a multicall binary dispatches on its own name.
+ */
+export function trustedBinary(name: string): string {
+  const path = getRootControlledDirs()
+    .map((dir) => join(dir, name))
+    .find((candidate) => isRootControlled(candidate));
+  if (!path) throw new Error(`no \`${name}\` on PATH in a directory only root can write`);
+  return path;
+}
+
+/** run `method`'s exact invocation, so a probe cannot pass where the real spawn would fail. */
+function probeMethod(method: Exclude<SandboxMethod, "none">) {
+  const invocation = buildSandboxInvocation({
+    command: "true",
+    seal: true,
+    env: { PATH: process.env.PATH },
+    method,
+    // the `.git` bind would pin `resolveRepoRoot` before the workspace is settled
+    gitWritable: true,
+  });
+  return spawnSync(invocation.bin, invocation.args, {
+    env: invocation.env,
+    timeout: 10_000,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+}
+
 /** detect which sandbox method is available on this system */
 export function detectSandboxMethod(): SandboxMethod {
   if (detectedSandboxMethod !== undefined) {
@@ -52,15 +124,11 @@ export function detectSandboxMethod(): SandboxMethod {
   }
 
   // try unprivileged unshare first (works where the job already runs as root).
-  // each probe runs the `setpriv` its branch exec's, so a runner without it falls
-  // through to the actionable CI-gate error instead of failing every command.
+  // each probe runs its branch's exact invocation, so a runner missing any part of
+  // it falls through to the next method or the actionable CI-gate error instead of
+  // failing every command.
   try {
-    const result = spawnSync(
-      "unshare",
-      ["--pid", "--fork", "--mount-proc", "setpriv", ...DROP_ALL_PRIVS, "true"],
-      { timeout: 5000, stdio: "ignore" }
-    );
-    if (result.status === 0) {
+    if (probeMethod("unshare").status === 0) {
       detectedSandboxMethod = "unshare";
       log.debug("PID namespace isolation enabled (unprivileged unshare)");
       return "unshare";
@@ -71,12 +139,7 @@ export function detectSandboxMethod(): SandboxMethod {
 
   // sudo unshare (works on GHA runners)
   try {
-    const result = spawnSync(
-      "sudo",
-      ["unshare", "--pid", "--fork", "--mount-proc", "setpriv", "--no-new-privs", "true"],
-      { timeout: 5000, stdio: "ignore" }
-    );
-    if (result.status === 0) {
+    if (probeMethod("sudo-unshare").status === 0) {
       detectedSandboxMethod = "sudo-unshare";
       log.debug("PID namespace isolation enabled (sudo unshare)");
       return "sudo-unshare";
@@ -109,20 +172,7 @@ export function detectSandboxMethod(): SandboxMethod {
   // --ambient-caps) fails over to "none" + the actionable error rather than caching
   // userns-unshare and then breaking every shell command on the unrunnable setpriv.
   try {
-    const result = spawnSync(
-      "unshare",
-      [
-        "--user",
-        "--map-root-user",
-        "--pid",
-        "--fork",
-        "--mount",
-        "setpriv",
-        ...DROP_ALL_PRIVS,
-        "true",
-      ],
-      { timeout: 5000, stdio: ["ignore", "ignore", "pipe"] }
-    );
+    const result = probeMethod("userns-unshare");
     if (result.status === 0) {
       detectedSandboxMethod = "userns-unshare";
       log.debug("PID namespace isolation enabled (unprivileged userns unshare)");
@@ -134,8 +184,9 @@ export function detectSandboxMethod(): SandboxMethod {
     // spawnSync does not throw on ENOENT — it returns status null with no stderr and
     // the reason in `error`, which is the whole clue when unshare/setpriv is absent.
     usernsProbeError = result.stderr?.toString().trim() || result.error?.message;
-  } catch {
-    // no sandbox available
+  } catch (error) {
+    // no sandbox available: a required binary is missing or sits somewhere writable
+    usernsProbeError = error instanceof Error ? error.message : String(error);
   }
 
   detectedSandboxMethod = "none";
@@ -238,7 +289,7 @@ const SOCKET_CLEANUP = [
 // to payload.cwd (monorepo subdir support in main.ts). using either would
 // let the agent bypass the .git/* binds. resolveRepoRoot pins the actual
 // repo root once at startup via $GITHUB_WORKSPACE or `git rev-parse`.
-function buildFsMounts(options: { gitWritable: boolean }): string {
+function buildFsMounts(options: { gitWritable: boolean; shimWritable: boolean }): string {
   return [
     `mkdir -p /var/lib/pullfrog 2>/dev/null;`,
     `mount -t tmpfs tmpfs /var/lib/pullfrog 2>/dev/null;`,
@@ -256,7 +307,7 @@ function buildFsMounts(options: { gitWritable: boolean }): string {
     // restricted mode it expands to empty and the mount silently no-ops in the
     // one tier it exists to protect. `$RUNNER_TEMP` above is safe only because
     // `RUNNER_` is an allowed prefix.
-    shimMount(),
+    options.shimWritable ? "" : shimMount(),
     hookMounts(),
   ]
     .filter(Boolean)
@@ -364,25 +415,32 @@ export function buildSandboxInvocation(params: {
   env: Record<string, string | undefined>;
   method: Exclude<SandboxMethod, "none">;
   gitWritable: boolean;
+  shimWritable?: boolean;
 }): { bin: string; args: string[]; env: Record<string, string | undefined> } {
-  const fsMounts = buildFsMounts({ gitWritable: params.gitWritable });
+  const bash = trustedBinary("bash");
+  const setpriv = shQuote(trustedBinary("setpriv"));
+  const unshare = trustedBinary("unshare");
+  // everything ahead of the seal runs on PATH directories the command cannot write. stdin closes
+  // first because bash sources ~/.bashrc when stdin is a socket, as node's default pipe is, and
+  // `su` starts a bash of its own that cannot be handed --norc.
+  const setup =
+    `exec </dev/null; export PATH=${shQuote(getRootControlledDirs().join(delimiter))}; ` +
+    `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${buildFsMounts({ gitWritable: params.gitWritable, shimWritable: params.shimWritable ?? false })}`;
+  // the command's own PATH comes back only inside the seal
+  const command = params.env.PATH
+    ? `export PATH=${shQuote(params.env.PATH)}; ${params.command}`
+    : params.command;
+  const sealedBash = `${shQuote(bash)} -c ${shQuote(command)}`;
 
   if (params.method === "unshare") {
     // the job itself is root here, so sealing must drop capabilities, not just
     // block setuid — the same seal as the userns branch below.
-    const command = params.seal
-      ? `exec setpriv ${DROP_ALL_PRIVS.join(" ")} bash -c '${params.command.replace(/'/g, "'\\''")}'`
-      : params.command;
+    const sealed = params.seal
+      ? `exec ${setpriv} ${DROP_ALL_PRIVS.join(" ")} ${sealedBash}`
+      : command;
     return {
-      bin: "unshare",
-      args: [
-        "--pid",
-        "--fork",
-        "--mount-proc",
-        "bash",
-        "-c",
-        `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} ${command}`,
-      ],
+      bin: unshare,
+      args: ["--pid", "--fork", "--mount-proc", bash, "--norc", "-c", `${setup} ${sealed}`],
       env: params.env,
     };
   }
@@ -414,20 +472,18 @@ export function buildSandboxInvocation(params: {
     // --map-current-user is NOT a substitute for --map-root-user: mapping a non-zero
     // uid makes execve use non-root capability rules, so the setup lands with an
     // empty effective set and every mount fails.
-    const escaped = params.command.replace(/'/g, "'\\''");
     return {
-      bin: "unshare",
+      bin: unshare,
       args: [
         "--user",
         "--map-root-user",
         "--pid",
         "--fork",
         "--mount",
-        "bash",
+        bash,
+        "--norc",
         "-c",
-        `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} ` +
-          `exec setpriv ${DROP_ALL_PRIVS.join(" ")} ` +
-          `bash -c '${escaped}'`,
+        `${setup} exec ${setpriv} ${DROP_ALL_PRIVS.join(" ")} ${sealedBash}`,
       ],
       env: params.env,
     };
@@ -445,34 +501,25 @@ export function buildSandboxInvocation(params: {
   // actual command should run as the normal user to avoid ownership
   // mismatches with files created by the Node.js parent process.
   const username = userInfo().username;
-  // su -p resets PATH on many Linux systems (ALWAYS_SET_PATH in /etc/login.defs).
-  // restore it from the SANDBOX_PATH env var that survives the su transition.
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: we need to restore the PATH variable
-  const pathRestore = 'export PATH="${SANDBOX_PATH:-$PATH}"; ';
   // after `su`, which needs its own setuid privileges; the unprivileged user
   // cannot drop the bounding set, but no_new_privs alone blocks every setuid path.
-  const sealed = params.seal
-    ? `exec setpriv --no-new-privs bash -c '${params.command.replace(/'/g, "'\\''")}'`
-    : params.command;
-  // the restore leads, so `setpriv` and `bash` resolve on it too (NixOS keeps both in the store)
-  const escaped = (pathRestore + sealed).replace(/'/g, "'\\''");
-  envArgs.push(`SANDBOX_PATH=${params.env.PATH ?? ""}`);
+  const sealed = params.seal ? `exec ${setpriv} --no-new-privs ${sealedBash}` : command;
   return {
-    bin: "sudo",
+    bin: trustedBinary("sudo"),
     args: [
-      "env",
+      trustedBinary("env"),
       ...envArgs,
-      "unshare",
+      unshare,
       "--pid",
       "--fork",
       "--mount-proc",
-      "bash",
+      bash,
+      "--norc",
       "-c",
-      `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${fsMounts} exec su -p -s "$(command -v bash)" ${username} -c '${escaped}'`,
+      `${setup} exec su -p -s ${shQuote(bash)} ${username} -c ${shQuote(sealed)}`,
     ],
-    // env passes through `sudo env K=V`, so the spawned process env carries only PATH:
-    // sudoers without `secure_path` resolves `env` from it ("sudo: env: command not found").
-    env: { PATH: params.env.PATH },
+    // env passes through `sudo env K=V`, and every binary is absolute, so sudo needs no PATH.
+    env: {},
   };
 }
 
@@ -512,11 +559,12 @@ export function spawnGitSandboxedSync(params: {
 }
 
 /**
- * Build a `(bin, args, env)` for an ASYNC caller (e.g. `action/utils/subprocess.ts`
- * `spawn`) that runs `cmd args` inside the sandbox, or `null` when no PID namespace
- * is available (the caller then runs `cmd`/`args` directly — where there is no
- * namespace there is also no agent shell to plant the config the sandbox defends
- * against). The dependency installer routes its `pnpm/npm install` through this so
+ * Build the `spawn` options for an ASYNC caller (e.g. `action/utils/subprocess.ts`
+ * `spawn`) that run `cmd args` inside the sandbox, or `cmd args` themselves when no PID
+ * namespace is available (where there is no namespace there is also no agent shell to
+ * plant the config the sandbox defends against). `shimWritable` lifts the read-only bind
+ * on the corepack shim dir for `corepack enable`, the one command that writes it.
+ * The dependency installer routes its `pnpm/npm install` through this so
  * repo `postinstall` scripts run in a fresh PID namespace (cannot read the action
  * process's /proc) with the already-filtered env. `.git` stays writable: hook
  * managers (husky's `prepare`, lefthook, `pre-commit install`) write `.git/config`
@@ -526,14 +574,17 @@ export function buildSandboxedCommand(params: {
   cmd: string;
   args: string[];
   env: Record<string, string | undefined>;
-}): { bin: string; args: string[]; env: Record<string, string | undefined> } | null {
+  shimWritable?: boolean;
+}): { cmd: string; args: string[]; env: Record<string, string | undefined> } {
   const method = detectSandboxMethod();
-  if (method === "none") return null;
-  return buildSandboxInvocation({
+  if (method === "none") return { cmd: params.cmd, args: params.args, env: params.env };
+  const invocation = buildSandboxInvocation({
     command: execCommand(params.cmd, params.args),
     seal: true,
     env: params.env,
     method,
     gitWritable: true,
+    shimWritable: params.shimWritable ?? false,
   });
+  return { cmd: invocation.bin, args: invocation.args, env: invocation.env };
 }

@@ -38,6 +38,7 @@ import { formatJsonValue, log } from "../utils/cli.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { resolveRunEffort } from "../utils/runEffort.ts";
+import { trustedBinary } from "../utils/sandbox.ts";
 import { addSkill, installBundledSkills } from "../utils/skills.ts";
 import {
   DEFAULT_MAX_RETAINED_BYTES,
@@ -1147,8 +1148,8 @@ function installManagedSettings(params: ManagedSettingsParams): boolean {
     // not writable as this user — fall through to sudo.
   }
   try {
-    execFileSync("sudo", ["mkdir", "-p", MANAGED_SETTINGS_DIR]);
-    execFileSync("sudo", ["tee", MANAGED_SETTINGS_PATH], {
+    execFileSync(trustedBinary("sudo"), ["mkdir", "-p", MANAGED_SETTINGS_DIR]);
+    execFileSync(trustedBinary("sudo"), ["tee", MANAGED_SETTINGS_PATH], {
       input: content,
       stdio: ["pipe", "ignore", "pipe"],
     });

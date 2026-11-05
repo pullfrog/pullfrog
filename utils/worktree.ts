@@ -1,5 +1,5 @@
 import { log } from "./cli.ts";
-import { spawn } from "./subprocess.ts";
+import { $ } from "./shell.ts";
 
 /**
  * tracked paths with staged or unstaged modifications.
@@ -11,20 +11,12 @@ import { spawn } from "./subprocess.ts";
  * gets `exit 129 — Not a git repository` and, since this throws, kills the run:
  * that is exactly what 0.1.54 did to every customer. Pass the repo dir.
  */
-export async function dirtyTrackedPaths(params: { cwd?: string } = {}): Promise<Set<string>> {
-  const result = await spawn({
-    cmd: "git",
-    args: ["diff", "--name-only", "HEAD"],
-    env: process.env,
+export function dirtyTrackedPaths(params: { cwd?: string } = {}): Set<string> {
+  const output = $("git", ["diff", "--name-only", "HEAD"], {
     cwd: params.cwd ?? process.cwd(),
-    activityTimeout: 0,
+    log: false,
   });
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `git diff --name-only HEAD failed (exit ${result.exitCode}): ${result.stderr.trim() || "(no stderr)"}`
-    );
-  }
-  return new Set(result.stdout.split("\n").filter(Boolean));
+  return new Set(output.split("\n").filter(Boolean));
 }
 
 /**
@@ -41,28 +33,26 @@ export async function dirtyTrackedPaths(params: { cwd?: string } = {}): Promise<
  *
  * `actor` names the phase that owns the window and is what the log line blames.
  */
-export async function restoreDirtiedSince(params: {
+export function restoreDirtiedSince(params: {
   before: Set<string>;
   actor: string;
   cwd?: string;
-}): Promise<void> {
-  const dirtied = [...(await dirtyTrackedPaths({ cwd: params.cwd ?? process.cwd() }))].filter(
-    (path) => !params.before.has(path)
-  );
+}): void {
+  const cwd = params.cwd ?? process.cwd();
+  const dirtied = [...dirtyTrackedPaths({ cwd })].filter((path) => !params.before.has(path));
   if (dirtied.length === 0) return;
-  const result = await spawn({
-    cmd: "git",
-    args: ["restore", "--staged", "--worktree", "--", ...dirtied],
-    env: process.env,
-    cwd: params.cwd ?? process.cwd(),
-    activityTimeout: 0,
+  let failed = false;
+  $("git", ["restore", "--staged", "--worktree", "--", ...dirtied], {
+    cwd,
+    log: false,
+    onError: (result) => {
+      failed = true;
+      log.warning(
+        `» failed to restore ${dirtied.length} tracked file(s) modified by ${params.actor}: ${result.stderr.trim() || "(no stderr)"}`
+      );
+    },
   });
-  if (result.exitCode !== 0) {
-    log.warning(
-      `» failed to restore ${dirtied.length} tracked file(s) modified by ${params.actor}: ${result.stderr.trim() || "(no stderr)"}`
-    );
-    return;
-  }
+  if (failed) return;
   log.info(
     `» restored ${dirtied.length} tracked file(s) modified by ${params.actor}: ${dirtied.join(", ")}`
   );

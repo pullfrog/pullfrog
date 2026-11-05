@@ -83,11 +83,9 @@ const TOOL_INSTALL_COMMANDS: Record<string, string[]> = {
 };
 
 async function isCommandAvailable(command: string): Promise<boolean> {
-  const result = await spawn({
-    cmd: "which",
-    args: [command],
-    env: filterEnvForUntrustedCode(),
-  });
+  const result = await spawn(
+    buildSandboxedCommand({ cmd: "which", args: [command], env: filterEnvForUntrustedCode() })
+  );
   return result.exitCode === 0;
 }
 
@@ -102,14 +100,10 @@ async function installTool(name: string): Promise<string | null> {
   const [cmd, ...args] = installCmd;
   // sandbox tool provisioning too: a repo pip.conf can repoint the index at an
   // attacker sdist whose setup.py runs during `pip install poetry`.
-  const env = filterEnvForUntrustedCode();
-  const sandboxed = buildSandboxedCommand({ cmd, args, env });
-  const onStderr = (chunk: string) => process.stderr.write(chunk);
-  const result = await spawn(
-    sandboxed
-      ? { cmd: sandboxed.bin, args: sandboxed.args, env: sandboxed.env, onStderr }
-      : { cmd, args, env, onStderr }
-  );
+  const result = await spawn({
+    ...buildSandboxedCommand({ cmd, args, env: filterEnvForUntrustedCode() }),
+    onStderr: (chunk) => process.stderr.write(chunk),
+  });
 
   if (result.exitCode !== 0) {
     return result.stderr || `failed to install ${name}`;
@@ -198,12 +192,8 @@ export const installPythonDependencies: PrepDefinition = {
     // setup.py / build backends / local path deps execute arbitrary code, so run
     // the install in a fresh PID namespace (no action /proc to read) with filtered
     // env. python has no --ignore-scripts, so this is the only lever here.
-    const env = filterEnvForUntrustedCode();
-    const sandboxed = buildSandboxedCommand({ cmd, args, env });
     const result = await spawn(
-      sandboxed
-        ? { cmd: sandboxed.bin, args: sandboxed.args, env: sandboxed.env }
-        : { cmd, args, env }
+      buildSandboxedCommand({ cmd, args, env: filterEnvForUntrustedCode() })
     );
 
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();

@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { lstat, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { log } from "./cli.ts";
@@ -169,10 +168,15 @@ async function createBlobEntry(params: {
   } else {
     mode = stat.mode & 0o100 ? "100755" : "100644";
     const cleanSha = $("git", ["hash-object", "-w", "--", absPath], { log: false }).trim();
-    content = execFileSync("git", ["cat-file", "blob", cleanSha], {
-      cwd: params.repoRoot,
-      maxBuffer: 2 * MAX_BLOB_BYTES,
-    });
+    // base64 because `$` hands back a trimmed string, which would corrupt the bytes
+    content = Buffer.from(
+      $("git", ["cat-file", "blob", cleanSha], {
+        cwd: params.repoRoot,
+        encoding: "base64",
+        log: false,
+      }),
+      "base64"
+    );
   }
 
   const path = `${params.repoPath}/git/blobs`;

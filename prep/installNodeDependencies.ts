@@ -10,11 +10,9 @@ import { spawn } from "../utils/subprocess.ts";
 import type { NodePackageManager, NodePrepResult, PrepDefinition, PrepOptions } from "./types.ts";
 
 async function isCommandAvailable(command: string): Promise<boolean> {
-  const result = await spawn({
-    cmd: "which",
-    args: [command],
-    env: filterEnvForUntrustedCode(),
-  });
+  const result = await spawn(
+    buildSandboxedCommand({ cmd: "which", args: [command], env: filterEnvForUntrustedCode() })
+  );
   return result.exitCode === 0;
 }
 
@@ -129,16 +127,12 @@ export const installNodeDependencies: PrepDefinition = {
     // (cannot read the action process's /proc/<pid>/environ) and see only the
     // already-filtered env. no namespace available → run directly (there is no
     // agent shell to plant malicious scripts in that case either).
-    const env = filterEnvForUntrustedCode();
-    const sandboxed = buildSandboxedCommand({
-      cmd: resolved.command,
-      args: resolved.args,
-      env,
-    });
     const result = await spawn(
-      sandboxed
-        ? { cmd: sandboxed.bin, args: sandboxed.args, env: sandboxed.env }
-        : { cmd: resolved.command, args: resolved.args, env }
+      buildSandboxedCommand({
+        cmd: resolved.command,
+        args: resolved.args,
+        env: filterEnvForUntrustedCode(),
+      })
     );
 
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();

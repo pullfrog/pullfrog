@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { requireRepoState, type ToolState } from "../toolState.ts";
 import { log } from "./cli.ts";
 import type { OctokitWithPlugins } from "./github.ts";
 import { isInsideDocker } from "./globals.ts";
+import { trustedBinary } from "./sandbox.ts";
 import { saveSecretState } from "./secretCommands.ts";
 import { $ } from "./shell.ts";
 
@@ -59,7 +60,7 @@ function removeTempDirectory(path: string): boolean {
     try {
       rmSync(path, { recursive: true, force: true });
     } catch {
-      execFileSync("chmod", ["-R", "u+w", path]);
+      execFileSync(trustedBinary("chmod"), ["-R", "u+w", path], { env: {} });
       rmSync(path, { recursive: true, force: true });
     }
     log.debug(`» removed temp dir at ${path}`);
@@ -184,22 +185,6 @@ export function setupTestRepo(options: SetupOptions): void {
 }
 
 /**
- * build an env suitable for targeting a specific git repo via `cwd`.
- *
- * inherited GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE override cwd resolution,
- * which matters when this code runs as a child of `git push` (pre-push hook)
- * or inside another git subcommand. if we don't strip them, a call that
- * names `repoDir` in cwd silently operates on the outer repo instead.
- */
-function envScopedToRepo(): NodeJS.ProcessEnv {
-  const scoped = { ...process.env };
-  for (const key of Object.keys(scoped)) {
-    if (key.startsWith("GIT_")) delete scoped[key];
-  }
-  return scoped;
-}
-
-/**
  * remove any `[includeIf ...]` entries from the local git config so that
  * actions/checkout-persisted credentials don't ride alongside ASKPASS-provided
  * auth for subsequent git operations.
@@ -212,14 +197,11 @@ function envScopedToRepo(): NodeJS.ProcessEnv {
  * string-interpolated `execSync(...)` would expose.
  */
 export function removeIncludeIfEntries(repoDir: string): void {
-  const env = envScopedToRepo();
   let configOutput: string;
   try {
-    configOutput = execSync("git config --local --get-regexp -z ^includeif\\.", {
+    configOutput = $("git", ["config", "--local", "--get-regexp", "-z", "^includeif\\."], {
       cwd: repoDir,
-      encoding: "utf-8",
-      stdio: "pipe",
-      env,
+      log: false,
     });
   } catch {
     log.debug("» no includeIf credential entries to remove");
@@ -234,15 +216,11 @@ export function removeIncludeIfEntries(repoDir: string): void {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     try {
-      // execFileSync (not execSync) so the key — which can contain arbitrary
+      // `$` (not a shell string) so the key — which can contain arbitrary
       // characters including shell metacharacters and $() command substitutions
-      // — is passed as an argv element and never interpolated by a shell.
+      // — stays one quoted argument and is never interpolated by a shell.
       // this is the load-bearing side of a9aa3b2b's injection fix.
-      execFileSync("git", ["config", "--local", "--unset-all", key], {
-        cwd: repoDir,
-        stdio: "pipe",
-        env,
-      });
+      $("git", ["config", "--local", "--unset-all", key], { cwd: repoDir, log: false });
     } catch (error) {
       log.debug(
         `» failed to unset ${key}: ${error instanceof Error ? error.message : String(error)}`
@@ -318,11 +296,7 @@ export async function configureRepoGit(params: ConfigureRepoGitParams): Promise<
     // check current config - only set defaults if not configured or using generic bot
     let currentEmail = "";
     try {
-      currentEmail = execSync("git config user.email", {
-        cwd: repoDir,
-        stdio: "pipe",
-        encoding: "utf-8",
-      }).trim();
+      currentEmail = $("git", ["config", "user.email"], { cwd: repoDir, log: false });
     } catch {
       // not configured
     }
@@ -332,14 +306,8 @@ export async function configureRepoGit(params: ConfigureRepoGitParams): Promise<
 
     if (shouldSetDefaults) {
       const email = `${params.botUserId}+${params.botLogin}@users.noreply.github.com`;
-      execFileSync("git", ["config", "--local", "user.email", email], {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
-      execFileSync("git", ["config", "--local", "user.name", params.botLogin], {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
+      $("git", ["config", "--local", "user.email", email], { cwd: repoDir, log: false });
+      $("git", ["config", "--local", "user.name", params.botLogin], { cwd: repoDir, log: false });
       log.debug("» git user configured (using defaults)");
     } else {
       log.debug(`» git user already configured (${currentEmail}), skipping`);
@@ -350,10 +318,7 @@ export async function configureRepoGit(params: ConfigureRepoGitParams): Promise<
     // in enabled mode, the agent has full shell anyway.
     // in disabled mode, hooks are the primary code-execution escape vector.
     if (params.shell === "disabled") {
-      execSync("git config --local core.hooksPath /dev/null", {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
+      $("git", ["config", "--local", "core.hooksPath", "/dev/null"], { cwd: repoDir, log: false });
       log.debug("» git hooks disabled (shell=disabled)");
     }
   } catch (error) {
@@ -365,9 +330,9 @@ export async function configureRepoGit(params: ConfigureRepoGitParams): Promise<
   // 2. setup authentication
   // remove existing git auth headers that actions/checkout might have set
   try {
-    execSync("git config --local --unset-all http.https://github.com/.extraheader", {
+    $("git", ["config", "--local", "--unset-all", "http.https://github.com/.extraheader"], {
       cwd: repoDir,
-      stdio: "pipe",
+      log: false,
     });
     log.info("» removed existing authentication headers");
   } catch {

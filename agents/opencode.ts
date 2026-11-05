@@ -687,7 +687,7 @@ export const opencode = agent({
     // land after prep's restore window nothing owned them — `checkout_pr` then
     // refused for the rest of the run (#1133). the binary exposes no
     // project-plugin-root override, so snapshot here and restore below.
-    const preBootDirty = await dirtyTrackedPaths();
+    const preBootDirty = dirtyTrackedPaths();
     const server = await bootOpencodeServer({ cliPath, env, cwd: repoDir });
     // the SDK's bundled fetch tries to disable per-request timeouts via the
     // bun-only `req.timeout = false` no-op, which does nothing under node/undici
@@ -743,7 +743,7 @@ export const opencode = agent({
       // config and plugins load lazily during instance bootstrap — on the first
       // request, not at spawn — so this is the earliest point the startup writes
       // above have all landed, and it is still ahead of the first agent turn.
-      await restoreDirtiedSince({ before: preBootDirty, actor: "agent startup" });
+      restoreDirtiedSince({ before: preBootDirty, actor: "agent startup" });
       if (opened instanceof Error) {
         return {
           success: false,

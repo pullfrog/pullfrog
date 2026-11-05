@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { RestEndpointMethodTypes } from "@octokit/rest";
 import type { ToolContext } from "../mcp/server.ts";
 import { log } from "./cli.ts";
+import { trustedGit } from "./gitAuth.ts";
 import { resolveEnv } from "./secrets.ts";
 
 type PullFile = RestEndpointMethodTypes["pulls"]["listFiles"]["response"]["data"][number];
@@ -346,8 +347,10 @@ async function lookupReferences(params: LookupReferencesParams) {
   // pattern to EOF, so one absent atom made the grep quadratic (20+ min on a 644 MB tree, #1468).
   // atoms are word characters only, so they need no escaping.
   const pattern = params.candidates.map((candidate) => candidate.atom).join("|");
+  // outside the sandbox because the lookup budget has to be able to kill it, and a signal cannot
+  // reach through sudo and `unshare --fork`. `git grep` on a tree runs no hook, filter or fsmonitor.
   const child = spawn(
-    "git",
+    trustedGit(),
     [
       "grep",
       "--no-color",

@@ -65,7 +65,7 @@ function spawnShell(params: SpawnParams): ChildProcess {
         "the pod runs as root without CAP_SETFCAP, which the kernel requires to map uid 0; or the node " +
         "kernel disallows unprivileged user namespaces (Ubuntu >= 23.10, Bottlerocket, Talos). " +
         "elsewhere, check that `unshare` and `setpriv` (util-linux >= 2.31, which is what " +
-        "added --ambient-caps) are on PATH. " +
+        "added --ambient-caps) are on PATH in a directory only root can write. " +
         "see https://docs.pullfrog.com/security#self-hosted-runners"
     );
   }

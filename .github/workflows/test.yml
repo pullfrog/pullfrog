@@ -123,6 +123,7 @@ jobs:
             git-permissions,
             githookprocexfil,
             githooks,
+            launcherpathplant,
             pkg-json-scripts,
             push-disabled,
             push-enabled,

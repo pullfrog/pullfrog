@@ -57,6 +57,7 @@ import { log } from "./cli.ts";
 import { type CodexAuthBody, parseCodexAuthBody, stringifyCodexAuthBody } from "./codexOAuth.ts";
 import { decodeJwtExpMs } from "./oauthShared.ts";
 import { SUBSCRIPTION_DATA_DIR_STATE } from "./oauthWriteback.ts";
+import { trustedBinary } from "./sandbox.ts";
 import { maskSecret, saveSecretState } from "./secretCommands.ts";
 import { parseXaiAuthBody, type XaiAuthBody } from "./xaiOAuth.ts";
 
@@ -463,18 +464,29 @@ function bootstrapPullfrogDataDir(): string | null {
   // user" assumption.
   let primaryGroup: string;
   try {
-    primaryGroup = execFileSync("id", ["-gn", user], { stdio: "pipe", encoding: "utf-8" }).trim();
+    primaryGroup = execFileSync(trustedBinary("id"), ["-gn", user], {
+      stdio: "pipe",
+      encoding: "utf-8",
+    }).trim();
   } catch {
     primaryGroup = user;
   }
   // `-n` (non-interactive) makes sudo fail-fast on locked-down runners
   // instead of prompting and timing out.
   try {
-    execFileSync("sudo", ["-n", "mkdir", "-p", PULLFROG_DATA_DIR], { stdio: "pipe" });
-    execFileSync("sudo", ["-n", "chown", `${user}:${primaryGroup}`, PULLFROG_DATA_DIR], {
+    execFileSync(trustedBinary("sudo"), ["-n", "mkdir", "-p", PULLFROG_DATA_DIR], {
       stdio: "pipe",
     });
-    execFileSync("sudo", ["-n", "chmod", "700", PULLFROG_DATA_DIR], { stdio: "pipe" });
+    execFileSync(
+      trustedBinary("sudo"),
+      ["-n", "chown", `${user}:${primaryGroup}`, PULLFROG_DATA_DIR],
+      {
+        stdio: "pipe",
+      }
+    );
+    execFileSync(trustedBinary("sudo"), ["-n", "chmod", "700", PULLFROG_DATA_DIR], {
+      stdio: "pipe",
+    });
   } catch (err) {
     log.warning(
       `» subscription auth skipped: could not create ${PULLFROG_DATA_DIR} (${err instanceof Error ? err.message : String(err)}). ` +

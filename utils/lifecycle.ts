@@ -1,10 +1,9 @@
-import { spawnSync } from "node:child_process";
 import type { ShellPermission } from "../external.ts";
 import { LIFECYCLE_HOOK_TIMEOUT_MS } from "../lifecycle.ts";
 import { capOutput, runSandboxed } from "../mcp/shell.ts";
 import { log } from "./cli.ts";
-import { filterEnvForUntrustedCode, resolveEnv } from "./secrets.ts";
-import { spawn } from "./subprocess.ts";
+import { resolveEnv } from "./secrets.ts";
+import { $ } from "./shell.ts";
 
 export interface ExecuteLifecycleHookParams {
   event: string;
@@ -92,9 +91,6 @@ export async function executeLifecycleHook(
   if (!params.script) return {};
 
   log.info(`» executing ${params.event} lifecycle hook...`);
-
-  // resolve git now, while no hook has run yet — see `resolveTrustedGit`.
-  resolveTrustedGit();
 
   // snapshot tracked-file mods BEFORE the hook runs so we can distinguish
   // hook-generated drift from pre-existing work. both hook windows should
@@ -207,41 +203,8 @@ async function normalizeWorkingTreeAfterHook(params: {
   log.info(`» discarded ${trackedCount} tracked changes from ${params.event} hook`);
 }
 
-/**
- * absolute `git`, resolved BEFORE any hook has run and memoized for the process.
- *
- * normalization spawns git immediately after untrusted hook code, outside the
- * sandbox. resolving the bare name at that point runs whatever is first on
- * `PATH` — and writable dirs sit there: the corepack shim dir
- * (`utils/packageManager.ts` prepends it), and on a GitHub-hosted runner the
- * agent's own node bin dir, measured writable from inside the sandbox. so the
- * defense is timing, not path hygiene: resolve while nothing is planted yet.
- */
-let trustedGit: string | undefined;
-function resolveTrustedGit(): string {
-  if (trustedGit) return trustedGit;
-  const resolved = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf-8" });
-  trustedGit = resolved.stdout?.trim() || "git";
-  return trustedGit;
-}
-
-/**
- * the filtered env is the second lock: even if resolution were beaten, a
- * substituted binary gets no secrets.
- */
 async function runGit(args: string[]): Promise<string> {
-  const result = await spawn({
-    cmd: resolveTrustedGit(),
-    args,
-    env: filterEnvForUntrustedCode(),
-    activityTimeout: 0,
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(" ")} failed (exit ${result.exitCode}): ${result.stderr.trim() || "(no stderr)"}`
-    );
-  }
-  return result.stdout;
+  return $("git", args, { log: false });
 }
 
 async function runGitLines(args: string[]): Promise<string[]> {

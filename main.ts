@@ -262,7 +262,7 @@ export async function main(): Promise<MainResult> {
   // customer run died before the agent started. with no repo dir resolved there
   // is nothing to protect, so the window simply does not open.
   const repoDir = payload.cwd;
-  const preIntrospectionDirty = repoDir ? await dirtyTrackedPaths({ cwd: repoDir }) : null;
+  const preIntrospectionDirty = repoDir ? dirtyTrackedPaths({ cwd: repoDir }) : null;
   // decided from the checkout, before anything installs or runs opencode; every later read reuses it.
   opencodeGeneration({ cwd: repoDir ?? process.cwd(), rollouts: payload.rollouts ?? [] });
   const opencodeCliPath = await agents.opencode.install();
@@ -327,7 +327,7 @@ export async function main(): Promise<MainResult> {
 
   // close the window opened before the baseline capture.
   if (preIntrospectionDirty && repoDir) {
-    await restoreDirtiedSince({
+    restoreDirtiedSince({
       before: preIntrospectionDirty,
       actor: "model introspection",
       cwd: repoDir,

@@ -1,7 +1,7 @@
 // in-process fixture runner used by `play.ts` (and any future host-side
 // runner). does NOT know about Docker — that's `docker.ts`'s job. when run
 // inside the local docker container, this is what executes after the entrypoint.
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
 import { devNull, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +9,9 @@ import type { AgentResult } from "../agents/shared.ts";
 import { type Inputs, main } from "../main.ts";
 import { log } from "./cli.ts";
 import { ensureGitHubToken } from "./github.ts";
+import { trustedBinary } from "./sandbox.ts";
 import { setupTestRepo } from "./setup.ts";
+import { $ } from "./shell.ts";
 
 export async function run(inputsOrPrompt: Inputs | string): Promise<AgentResult> {
   await ensureGitHubToken();
@@ -63,10 +65,7 @@ export async function run(inputsOrPrompt: Inputs | string): Promise<AgentResult>
     // silently loses the authoritative diff. a fixture whose agent edits files
     // legitimately ends dirty, so this reports rather than fails — but a run
     // that dirties tracked files it did NOT mean to now says so out loud.
-    const finalDirty = execSync("git status --porcelain", {
-      cwd: tempDir,
-      encoding: "utf-8",
-    }).trim();
+    const finalDirty = $("git", ["status", "--porcelain"], { cwd: tempDir, log: false });
     if (finalDirty) log.info(`» final worktree state (dirty):\n${finalDirty}`);
     process.chdir(originalCwd);
 
@@ -85,7 +84,7 @@ export async function run(inputsOrPrompt: Inputs | string): Promise<AgentResult>
     // sandbox isolation may create files with non-host ownership; rmSync
     // can't always delete those, so escalate.
     try {
-      execSync(`sudo rm -rf "${tempParent}"`, { stdio: "ignore" });
+      execFileSync(trustedBinary("sudo"), ["rm", "-rf", tempParent], { stdio: "ignore" });
     } catch {
       // best-effort cleanup.
     }

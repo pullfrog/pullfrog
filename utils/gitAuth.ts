@@ -92,6 +92,14 @@ export function resolveGit(): void {
   log.debug(`» git binary: ${resolvedPath} (sha256: ${sha256.slice(0, 12)}...)`);
 }
 
+/**
+ * the tamper-checked git for a call that cannot go through the sandbox. a process that
+ * never ran `resolveGit` (a unit test, the local CLI) has no agent to defend against.
+ */
+export function trustedGit(): string {
+  return gitBinary ? verifyGitBinary() : "git";
+}
+
 function verifyGitBinary(): string {
   if (!gitBinary) {
     throw new Error("git binary not initialized — call resolveGit() at startup");

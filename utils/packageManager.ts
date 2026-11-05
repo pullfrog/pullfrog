@@ -4,6 +4,7 @@ import { delimiter, join } from "node:path";
 import { isValid, satisfies } from "verkit";
 import { log } from "./cli.ts";
 import { resolveNpm } from "./install.ts";
+import { buildSandboxedCommand } from "./sandbox.ts";
 import { filterEnvForUntrustedCode } from "./secrets.ts";
 import { spawn } from "./subprocess.ts";
 
@@ -146,10 +147,14 @@ interface CorepackResult {
 }
 
 async function runCorepack(args: string[]): Promise<CorepackResult> {
-  const result = await spawn({
+  const sandboxed = buildSandboxedCommand({
     cmd: "corepack",
     args,
     env: { ...filterEnvForUntrustedCode(), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0" },
+    shimWritable: args[0] === "enable",
+  });
+  const result = await spawn({
+    ...sandboxed,
     onStdout: (chunk) => process.stdout.write(chunk),
     onStderr: (chunk) => process.stderr.write(chunk),
   });
@@ -157,11 +162,9 @@ async function runCorepack(args: string[]): Promise<CorepackResult> {
 }
 
 async function currentVersion(name: SupportedPackageManager): Promise<string | null> {
-  const result = await spawn({
-    cmd: name,
-    args: ["--version"],
-    env: filterEnvForUntrustedCode(),
-  });
+  const result = await spawn(
+    buildSandboxedCommand({ cmd: name, args: ["--version"], env: filterEnvForUntrustedCode() })
+  );
   if (result.exitCode !== 0) return null;
   return result.stdout.trim();
 }
@@ -258,7 +261,9 @@ export async function ensurePackageManager(params: EnsurePackageManagerParams): 
 export type ProvisionablePackageManager = SupportedPackageManager | "deno";
 
 async function isCommandAvailable(command: string): Promise<boolean> {
-  const result = await spawn({ cmd: "which", args: [command], env: filterEnvForUntrustedCode() });
+  const result = await spawn(
+    buildSandboxedCommand({ cmd: "which", args: [command], env: filterEnvForUntrustedCode() })
+  );
   return result.exitCode === 0;
 }
 
@@ -279,9 +284,7 @@ async function installFallback(
       : [...npm.args, "install", "-g", installSpec];
   const cmd = name === "deno" ? "sh" : npm.command;
   const result = await spawn({
-    cmd,
-    args,
-    env: filterEnvForUntrustedCode(),
+    ...buildSandboxedCommand({ cmd, args, env: filterEnvForUntrustedCode() }),
     onStderr: (chunk) => process.stderr.write(chunk),
   });
   if (result.exitCode !== 0) return result.stderr || `failed to install ${name}`;
