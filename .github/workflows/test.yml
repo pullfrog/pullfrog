@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -99,7 +99,7 @@ jobs:
       GROK_AUTH_JSON: ${{ secrets.GROK_AUTH_JSON }}
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -135,7 +135,7 @@ jobs:
       PULLFROG_OPENCODE_VERSION: ${{ vars.PULLFROG_OPENCODE_VERSION }}
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
