@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
+import type { PayloadEvent } from "../external.ts";
 import type { ToolState } from "../toolState.ts";
 import { getUnsubmittedReview } from "./postRun.ts";
 
-function makeToolState(overrides: Partial<ToolState> = {}): ToolState {
-  return {
+const prEvent: PayloadEvent = {
+  trigger: "pull_request_opened",
+  issue_number: 1,
+  is_pr: true,
+  title: "t",
+  body: null,
+  branch: "b",
+};
+
+function makeCtx(overrides: Partial<ToolState> = {}) {
+  const toolState: ToolState = {
     repos: new Map([["o/r", { owner: "o", name: "r", dir: "/tmp/r", access: "primary" }]]),
     primaryRepoKey: "o/r",
     progressComment: undefined,
@@ -14,18 +24,19 @@ function makeToolState(overrides: Partial<ToolState> = {}): ToolState {
     usageEntries: [],
     ...overrides,
   };
+  return { toolState, payload: { event: prEvent } };
 }
 
 describe("getUnsubmittedReview", () => {
   it("returns null when mode is not a review mode", () => {
-    expect(getUnsubmittedReview(makeToolState({ selectedMode: "Build" }))).toBeNull();
-    expect(getUnsubmittedReview(makeToolState())).toBeNull();
+    expect(getUnsubmittedReview(makeCtx({ selectedMode: "Build" }))).toBeNull();
+    expect(getUnsubmittedReview(makeCtx())).toBeNull();
   });
 
   it("returns null when a review was already submitted", () => {
     expect(
       getUnsubmittedReview(
-        makeToolState({
+        makeCtx({
           selectedMode: "Review",
           review: { id: 1, nodeId: "n", reviewedSha: undefined },
         })
@@ -38,7 +49,7 @@ describe("getUnsubmittedReview", () => {
     // comment is not a substitute, and accepting it here previously let
     // subagent-flipped `finalSummaryWritten` silence the gate.
     expect(
-      getUnsubmittedReview(makeToolState({ selectedMode: "Review", finalSummaryWritten: true }))
+      getUnsubmittedReview(makeCtx({ selectedMode: "Review", finalSummaryWritten: true }))
     ).toBe("Review");
   });
 
@@ -47,20 +58,20 @@ describe("getUnsubmittedReview", () => {
     // "no review warranted" exit, matching the post-failure error message.
     expect(
       getUnsubmittedReview(
-        makeToolState({ selectedMode: "IncrementalReview", finalSummaryWritten: true })
+        makeCtx({ selectedMode: "IncrementalReview", finalSummaryWritten: true })
       )
     ).toBeNull();
   });
 
   it("returns null when there is no progress comment to anchor the failure to", () => {
     expect(
-      getUnsubmittedReview(makeToolState({ selectedMode: "Review", hadProgressComment: false }))
+      getUnsubmittedReview(makeCtx({ selectedMode: "Review", hadProgressComment: false }))
     ).toBeNull();
   });
 
   it("returns the selected mode when the gate should fire", () => {
-    expect(getUnsubmittedReview(makeToolState({ selectedMode: "Review" }))).toBe("Review");
-    expect(getUnsubmittedReview(makeToolState({ selectedMode: "IncrementalReview" }))).toBe(
+    expect(getUnsubmittedReview(makeCtx({ selectedMode: "Review" }))).toBe("Review");
+    expect(getUnsubmittedReview(makeCtx({ selectedMode: "IncrementalReview" }))).toBe(
       "IncrementalReview"
     );
   });

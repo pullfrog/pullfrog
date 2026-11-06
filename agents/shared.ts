@@ -49,12 +49,15 @@ export interface PostRunIssues {
    * nor a final `report_progress` write happened. derived inline from
    * `toolState.selectedMode` + `toolState.review` + `toolState.finalSummaryWritten`
    * via {@link getUnsubmittedReview} — no parallel toolState flag is stored.
-   * carries the mode name so the resume prompt can reference it. handled like
+   * says which exit is still owed so the resume prompt can name it. handled like
    * `stopHook`: nudge via resume, hard-fail if still unsatisfied after
    * `MAX_POST_RUN_RETRIES`.
    */
-  unsubmittedReview?: "Review" | "IncrementalReview";
+  unsubmittedReview?: UnsubmittedReview;
 }
+
+/** `ReviewOnIssue` is Review mode on an issue target, which cannot owe a pull request review. */
+export type UnsubmittedReview = "Review" | "ReviewOnIssue" | "IncrementalReview";
 
 export function hasPostRunIssues(issues: PostRunIssues): boolean {
   return (

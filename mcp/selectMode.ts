@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { formatMcpToolRef } from "../external.ts";
+import { formatMcpToolRef, isIssueTarget } from "../external.ts";
 import type { Mode } from "../modes.ts";
 import { apiFetch } from "../utils/apiFetch.ts";
 import type { ToolContext } from "./server.ts";
@@ -58,7 +58,12 @@ function buildOrchestratorGuidance(
   const repoSection = userInstructions
     ? `### Repository instructions\n\nSet by this repository's maintainers. Where they conflict with the steps above, including asking for feedback those steps drop, follow them.\n\n${userInstructions}`
     : "";
-  const guidance = [hardcoded, repoSection].filter(Boolean).join("\n\n");
+  // Review's checklist checks out a PR, submits a PR review and forbids report_progress
+  const issueSection =
+    mode.name === "Review" && isIssueTarget(ctx.payload.event)
+      ? `### This run is on an issue, not a pull request\n\nThe checklist below reviews a pull request: follow it only if the task names one, for that PR. Otherwise skip it, do the review the task asks for, and deliver the whole result with \`${formatMcpToolRef(ctx.agentId, "report_progress")}\`.`
+      : "";
+  const guidance = [issueSection, hardcoded, repoSection].filter(Boolean).join("\n\n");
   return {
     modeName: mode.name,
     description: mode.description,

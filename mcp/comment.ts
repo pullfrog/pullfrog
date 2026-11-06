@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { formatMcpToolRef } from "../external.ts";
+import { formatMcpToolRef, isIssueTarget } from "../external.ts";
 import { primaryRepoState } from "../toolState.ts";
 import { getApiUrl } from "../utils/apiUrl.ts";
 import { buildPullfrogFooter, stripExistingFooter } from "../utils/buildPullfrogFooter.ts";
@@ -513,6 +513,24 @@ export function ReportProgressTool(ctx: ToolContext) {
       };
     }),
   });
+}
+
+/**
+ * A submitted review obsoletes the progress comment, unless it landed on a PR that an
+ * issue merely named: the issue then keeps a link to it, or its requester sees nothing.
+ */
+export async function retireProgressCommentForReview(
+  ctx: ToolContext,
+  reviewUrl: string
+): Promise<void> {
+  if (!isIssueTarget(ctx.payload.event)) {
+    await deleteProgressComment(ctx);
+    return;
+  }
+  ctx.toolState.todoTracker?.cancel();
+  await ctx.toolState.todoTracker?.settled();
+  await reportProgress(ctx, { body: `Review submitted: ${reviewUrl}` });
+  ctx.toolState.finalSummaryWritten = true;
 }
 
 /**

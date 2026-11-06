@@ -525,6 +525,14 @@ export interface WriteablePayload {
 export type Payload = Readonly<WriteablePayload>;
 
 /**
+ * Whether the run's own target is an issue, so it has no pull request to review.
+ * False on a targetless prompt run, which may review any PR its prompt names.
+ */
+export function isIssueTarget(event: PayloadEvent): boolean {
+  return event.issue_number !== undefined && !event.is_pr;
+}
+
+/**
  * Whether `find_similar_issues` is registered for this run: an entitled account,
  * on an issue or a run with no target (`pullfrog run "enrich issue #42"`), never a PR.
  * Shared by the MCP registration and the prompt so the duplicate-detection

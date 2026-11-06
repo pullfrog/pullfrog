@@ -1060,7 +1060,7 @@ export async function main(): Promise<MainResult> {
     } catch (error) {
       // the review is the run's deliverable, so a timer that fires after it posted only cut off
       // reflection or wrap-up — failing the run would contradict the review on the PR (#1532).
-      if (error !== timeoutError || !hasDeliveredReview(toolState)) throw error;
+      if (error !== timeoutError || !hasDeliveredReview(toolContext)) throw error;
       log.warning(`» ${timeoutError.message} after the review was posted — finalizing as success`);
       killTrackedChildren();
       result = { success: true };

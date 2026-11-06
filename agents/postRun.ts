@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isIssueTarget, type PayloadEvent } from "../external.ts";
 import { LIFECYCLE_HOOK_TIMEOUT_MS } from "../lifecycle.ts";
 import { NON_COMMITTING_MODES } from "../modes.ts";
 import type { ToolState } from "../toolState.ts";
@@ -21,6 +22,7 @@ import {
   mergeAgentUsage,
   type PostRunIssues,
   type StopHookFailure,
+  type UnsubmittedReview,
 } from "./shared.ts";
 
 /** post-run working-tree status. routed through `$()` so it is sandboxed with a
@@ -36,9 +38,11 @@ export function getGitStatus(): string {
   }
 }
 
+type ReviewGateContext = { toolState: ToolState; payload: { event: PayloadEvent } };
+
 /**
  * derive "agent picked a review mode but never produced visible output" from
- * the literal facts on `toolState`. returns the selected mode when the gate
+ * the literal facts on `toolState`. returns the exit still owed when the gate
  * should fire, `null` otherwise — pure read, no side effects, safe to invoke
  * after every agent attempt.
  *
@@ -51,8 +55,9 @@ export function getGitStatus(): string {
  * `Review` and `IncrementalReview` have different valid exits:
  *   - Review: only `create_pull_request_review` counts. `report_progress` is
  *     not a substitute — a Review run that exits with just a summary comment
- *     has produced nothing reviewable on the PR. matches the hard-fail
- *     message at `expected = "create_pull_request_review"` below.
+ *     has produced nothing reviewable on the PR.
+ *   - Review on an issue target: there is no PR to submit against, so the
+ *     comment it posted is the deliverable, unless it reviewed a PR it named.
  *   - IncrementalReview: `report_progress` is a legitimate "no review
  *     warranted" exit, so either toolState flag short-circuits.
  * splitting per mode also closes the bypass where a subagent (e.g. a
@@ -60,31 +65,32 @@ export function getGitStatus(): string {
  * the gate even though the orchestrator never submitted a review.
  */
 export function getUnsubmittedReview(
-  toolState: ToolState,
-  expectsReviewOutput = toolState.hadProgressComment
-): "Review" | "IncrementalReview" | null {
+  ctx: ReviewGateContext,
+  expectsReviewOutput = ctx.toolState.hadProgressComment
+): UnsubmittedReview | null {
+  const toolState = ctx.toolState;
   const mode = toolState.selectedMode;
   if (!expectsReviewOutput) return null;
-  if (mode === "Review") return toolState.review ? null : "Review";
-  if (mode === "IncrementalReview") {
-    // a standalone comment on this target counts as the visible signal this gate
-    // exists to guarantee — and it makes report_progress a declined no-op, so
-    // finalSummaryWritten alone would nag a run that did deliver output.
-    const delivered =
-      toolState.review ||
-      toolState.finalSummaryWritten ||
-      toolState.standaloneCommentId !== undefined;
-    return delivered ? null : "IncrementalReview";
+  // a standalone comment on this target counts as the visible signal this gate
+  // exists to guarantee — and it makes report_progress a declined no-op, so
+  // finalSummaryWritten alone would nag a run that did deliver output.
+  const delivered =
+    toolState.review ||
+    toolState.finalSummaryWritten ||
+    toolState.standaloneCommentId !== undefined;
+  if (mode === "Review") {
+    if (isIssueTarget(ctx.payload.event)) return delivered ? null : "ReviewOnIssue";
+    return toolState.review ? null : "Review";
   }
+  if (mode === "IncrementalReview") return delivered ? null : "IncrementalReview";
   return null;
 }
 
 /** whether a review run's deliverable is already on the PR, whatever the agent is still doing. */
-export function hasDeliveredReview(toolState: ToolState): boolean {
-  const mode = toolState.selectedMode;
+export function hasDeliveredReview(ctx: ReviewGateContext): boolean {
+  const mode = ctx.toolState.selectedMode;
   return (
-    (mode === "Review" || mode === "IncrementalReview") &&
-    getUnsubmittedReview(toolState, true) === null
+    (mode === "Review" || mode === "IncrementalReview") && getUnsubmittedReview(ctx, true) === null
   );
 }
 
@@ -199,7 +205,16 @@ export function buildSummaryStalePrompt(filePath: string): string {
   ].join("\n");
 }
 
-export function buildUnsubmittedReviewPrompt(mode: "Review" | "IncrementalReview"): string {
+export function buildUnsubmittedReviewPrompt(mode: UnsubmittedReview): string {
+  if (mode === "ReviewOnIssue") {
+    return [
+      "MISSING OUTPUT — you selected Review mode on an issue, which has no pull request to review, and stopped without posting anything. the user has no visible signal that this run produced anything.",
+      "",
+      "call `report_progress` now with your findings. if the task named a PR, call `create_pull_request_review` on that PR instead.",
+      "",
+      "do NOT stop again until one of those tools has been called successfully.",
+    ].join("\n");
+  }
   // mode-aware: Review mode's contract is "always submit one review" — its
   // mode prompt forbids `report_progress`, so the nudge here must not offer
   // it as an exit. IncrementalReview legitimately allows a report_progress
@@ -273,10 +288,18 @@ export async function collectPostRunIssues(
     const stale = await isSummaryUnchanged(summaryFilePath, summarySeed);
     if (stale) issues.summaryStale = { filePath: summaryFilePath };
   }
-  const unsubmittedMode = getUnsubmittedReview(ctx.toolState, expectsReviewOutput(ctx));
+  const unsubmittedMode = getUnsubmittedReview(ctx, expectsReviewOutput(ctx));
   if (unsubmittedMode) issues.unsubmittedReview = unsubmittedMode;
   return issues;
 }
+
+/** mirrors the nudge prompts, so the failure never contradicts what the agent was told. */
+const UNSUBMITTED_REVIEW_ERROR: Record<UnsubmittedReview, string> = {
+  Review: "Review mode finished without calling create_pull_request_review",
+  ReviewOnIssue: "Review mode finished without calling report_progress",
+  IncrementalReview:
+    "IncrementalReview mode finished without calling create_pull_request_review or report_progress",
+};
 
 export function buildPostRunPrompt(issues: PostRunIssues): string {
   // order matches the terminal hard-fail order in `runPostRunRetryLoop` so
@@ -317,14 +340,10 @@ export async function finalizeAgentResult<R extends AgentResult>(params: {
     };
   }
   if (issues.unsubmittedReview) {
-    const expected =
-      issues.unsubmittedReview === "Review"
-        ? "create_pull_request_review"
-        : "create_pull_request_review or report_progress";
     return {
       ...params.result,
       success: false,
-      error: `${issues.unsubmittedReview} mode finished without calling ${expected}`,
+      error: UNSUBMITTED_REVIEW_ERROR[issues.unsubmittedReview],
     };
   }
   return params.result;
@@ -627,17 +646,10 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
       gateResumeCount > 0
         ? ` after ${gateResumeCount} retry ${gateResumeCount === 1 ? "attempt" : "attempts"}`
         : "";
-    // mode-aware: Review's contract requires a review submission; only
-    // IncrementalReview accepts `report_progress` as an exit. mirroring
-    // the nudge prompt avoids contradicting the agent-facing copy.
-    const expected =
-      finalIssues.unsubmittedReview === "Review"
-        ? "create_pull_request_review"
-        : "create_pull_request_review or report_progress";
     return {
       ...result,
       success: false,
-      error: `${finalIssues.unsubmittedReview} mode finished without calling ${expected}${retryNote}`,
+      error: `${UNSUBMITTED_REVIEW_ERROR[finalIssues.unsubmittedReview]}${retryNote}`,
       usage: aggregatedUsage,
     };
   }
