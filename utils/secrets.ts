@@ -47,6 +47,8 @@ const SAFE_ENV_NAMES = new Set([
   "XDG_CONFIG_HOME",
   "XDG_RUNTIME_DIR",
   "DEBIAN_FRONTEND",
+  // a runner's shared object store: without it, the commits it holds read as `bad object HEAD`
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   // runner image toolchain
   "ACCEPT_EULA",
   "AGENT_TOOLSDIRECTORY",
