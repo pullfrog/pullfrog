@@ -35,17 +35,23 @@ covers TypeScript/JavaScript and Python; <file> is relative to the current direc
 const TS_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const PY_EXTENSIONS = [".py", ".pyi"];
 const MAX_HITS = 200;
+const NEAR_LINES = 10;
 const CACHE = process.env.CODENAV_CACHE || join(tmpdir(), "codenav");
 
 type Query = {
   op: Op;
   file: string;
-  line: number;
-  /** where the symbol may be on the line, tried in order */
-  columns: number[];
+  /** zero-based places on the given line the symbol may be, tried in order */
+  positions: Position[];
+  /** the same on the lines nearest it, tried when nothing answered and the given line has no code match */
+  nearby: Position[];
+  /** lines from the given line to the nearest one with the symbol's name, 0 when it has it */
+  shift: number;
   symbol: string;
   root: string;
 };
+
+type Position = { line: number; column: number };
 
 /** zero-based; `caller` is set for `callers`, empty at module scope */
 type Hit = { file: string; line: number; column: number; caller?: string | undefined };
@@ -66,15 +72,21 @@ function parse(argv: string[]): Query {
     throw new Error(`no navigation for ${ext || "extensionless"} files`);
   }
   if (op === "impl" && PY_EXTENSIONS.includes(ext)) throw new Error("impl is TypeScript-only");
-  const line = Number(target[2]) - 1;
-  const lineText = readFileSync(file, "utf8").split("\n")[line];
-  if (lineText === undefined) throw new Error(`${target[1]} has no line ${target[2]}`);
-  const columns = target[3] ? [Number(target[3]) - 1] : symbolColumns(lineText, argv[2] ?? "");
-  if (columns.length === 0) {
-    throw new Error(`"${argv[2]}" is not on ${target[1]}:${target[2]}: ${lineText.trim()}`);
+  const lines = readFileSync(file, "utf8").split("\n");
+  const given = Number(target[2]) - 1;
+  if (lines[given] === undefined) throw new Error(`${target[1]} has no line ${target[2]}`);
+  const found = target[3]
+    ? { positions: [{ line: given, column: Number(target[3]) - 1 }], nearby: [] }
+    : symbolPositions(lines, given, argv[2] ?? "");
+  const first = found.positions[0] ?? found.nearby[0];
+  if (!first) {
+    throw new Error(
+      `"${argv[2]}" is not within ${NEAR_LINES} lines of ${target[1]}:${target[2]}: ${lines[given].trim()}`
+    );
   }
+  const lineText = lines[first.line];
   // a column inside an identifier names all of it, which is what `git grep -w` has to find
-  const start = lineText.slice(0, columns[0]).search(/[\w$]*$/);
+  const start = lineText.slice(0, first.column).search(/[\w$]*$/);
   const symbol = /^[\w$]+/.exec(lineText.slice(start))?.[0];
   if (!symbol) throw new Error(`no identifier at ${argv[1]}`);
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
@@ -82,7 +94,21 @@ function parse(argv: string[]): Query {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
   }).trim();
-  return { op, file, line, columns, symbol, root };
+  return { op, file, ...found, shift: first.line - given, symbol, root };
+}
+
+/**
+ * the symbol's matches on the line, and on the lines nearest it, above first: agents pass a line a
+ * few off the symbol's (by up to 8 in the second window).
+ */
+function symbolPositions(lines: string[], line: number, symbol: string) {
+  const on = (candidate: number) =>
+    symbolColumns(lines[candidate] ?? "", symbol).map((column) => ({ line: candidate, column }));
+  const nearby = Array.from({ length: NEAR_LINES }, (_, i) => [
+    ...on(line - i - 1),
+    ...on(line + i + 1),
+  ]);
+  return { positions: on(line), nearby: nearby.flat() };
 }
 
 /** every whole-identifier match of the symbol's last segment, so `client.request` finds `request` */
@@ -176,12 +202,42 @@ function askProject(
     const at = service.getProgram()?.getSourceFile(fileName)?.getLineAndCharacterOfPosition(start);
     return { file: fileName, line: at?.line ?? 0, column: at?.character ?? 0, caller };
   };
-  for (const column of query.columns) {
-    const position = source.getPositionOfLineAndCharacter(query.line, column);
-    const hits = askTypescript(service, { op: query.op, file: query.file, position, hit });
-    if (hits.length) return hits;
-  }
-  return [];
+  const position = (at: Position) => source.getPositionOfLineAndCharacter(at.line, at.column);
+  // a comment's or a string's text says nothing about the symbol
+  const inText = (at: Position) => {
+    const offset = position(at);
+    const deepest = (node: TS.Node): TS.Node | undefined =>
+      node.getStart(source) <= offset && offset < node.getEnd()
+        ? (ts.forEachChild(node, deepest) ?? node)
+        : undefined;
+    const node = deepest(source) ?? source;
+    return (
+      service.getSpanOfEnclosingComment(query.file, offset, false) !== undefined ||
+      ts.isStringLiteral(node) ||
+      ts.isTemplateLiteralToken(node) ||
+      ts.isJsxText(node)
+    );
+  };
+  const firstHits = (positions: Position[]) => {
+    for (const at of positions) {
+      const hits = askTypescript(service, {
+        op: query.op,
+        file: query.file,
+        position: position(at),
+        hit,
+      });
+      if (hits.length) return hits;
+    }
+    return [];
+  };
+  // code first, so a string's copies, which TypeScript lists as its references, do not hide a real match
+  const hits = firstHits(
+    [...query.positions].sort((a, b) => Number(inText(a)) - Number(inText(b)))
+  );
+  // code on the given line answers even with no results, or unresolved, as a call on an uninstalled
+  // package's type is: a namesake nearby must not answer for it
+  if (hits.length || !query.positions.every(inText)) return hits;
+  return firstHits(query.nearby.filter((at) => !inText(at)));
 }
 
 function askTypescript(
@@ -205,7 +261,16 @@ function askTypescript(
         symbol.references.filter((ref) => !ref.isDefinition).map(at)
       );
     case "callers":
-      return [service.prepareCallHierarchy(params.file, params.position) ?? []]
+      return [
+        // an import specifier has no call hierarchy of its own, so it answers for what it imports
+        service.prepareCallHierarchy(params.file, params.position) ??
+          (service.getDefinitionAtPosition(params.file, params.position) ?? [])
+            // a namespace import's definition is its module, whose start is whatever the file opens with
+            .filter((target) => !MODULE_KINDS.includes(target.kind))
+            .flatMap((target) =>
+              [service.prepareCallHierarchy(target.fileName, target.textSpan.start) ?? []].flat()
+            ),
+      ]
         .flat()
         .flatMap((item) =>
           service.provideCallHierarchyIncomingCalls(item.file, item.selectionSpan.start)
@@ -266,13 +331,19 @@ function python(query: Query): Hit[] {
       "jedi==0.19.2",
     ]);
   });
+  const lines = readFileSync(query.file, "utf8").split("\n");
+  // jedi counts code points where JavaScript counts UTF-16 units, which an emoji before a match tells apart
+  const codePoints = (at: Position) => ({
+    line: at.line,
+    column: [...lines[at.line].slice(0, at.column)].length,
+  });
   const output = run(join(dir, "bin", "python"), [
     "-c",
     JEDI,
     query.op,
     query.file,
-    String(query.line + 1),
-    query.columns.join(","),
+    JSON.stringify(query.positions.map(codePoints)),
+    JSON.stringify(query.nearby.map(codePoints)),
     query.symbol,
     query.root,
     String(MAX_HITS + 1),
@@ -294,9 +365,10 @@ function python(query: Query): Hit[] {
 
 const JEDI = `
 import json, re, subprocess, sys
-import jedi
+import jedi, parso
 
-op, path, line, columns, symbol, root, limit = sys.argv[1:]
+op, path, given, nearby, symbol, root, limit = sys.argv[1:]
+given, nearby = json.loads(given), json.loads(nearby)
 project = jedi.Project(root)
 scripts = {}
 
@@ -308,37 +380,53 @@ def script(file):
 def emit(file, line, column, caller=None):
     print(json.dumps({"file": file, "line": line, "column": column, "caller": caller}))
 
-for column in map(int, columns.split(",")):
-    targets = [d for d in script(path).goto(int(line), column, follow_imports=True) if d.module_path]
-    if not targets:
-        continue
-    if op == "def":
-        for d in targets:
-            emit(str(d.module_path), d.line, d.column)
-        break
-    keys = {(str(d.module_path), d.line, d.column) for d in targets}
-    grep = subprocess.run(["git", "grep", "-n", "-z", "-w", "-F", "--untracked", "-e", symbol, "--", "*.py", "*.pyi"], cwd=root, capture_output=True, text=True).stdout
-    found = 0
-    for entry in grep.splitlines():
-        rel, at, text = entry.split("\\0", 2)
-        file, at = f"{root}/{rel}", int(at)
-        for match in re.finditer(rf"\\b{re.escape(symbol)}\\b", text):
-            if (file, at, match.start()) in keys:
+def resolve(positions):
+    for at in positions:
+        targets = [d for d in script(path).goto(at["line"] + 1, at["column"], follow_imports=True) if d.module_path]
+        if targets:
+            return targets
+    return []
+
+def is_name(tree, at):
+    # the leaf at a name's first column is the token before it, so look one in
+    leaf = tree.get_leaf_for_position((at["line"] + 1, at["column"] + 1))
+    return leaf is not None and leaf.type == "name"
+
+targets = resolve(given)
+if not targets:
+    # a comment's or a string's text says nothing about the symbol, but a name that resolves to nothing must not answer for a namesake nearby
+    tree = parso.parse(open(path, encoding="utf-8", errors="replace").read())
+    if any(is_name(tree, at) for at in given):
+        sys.exit(0)
+    targets = resolve(nearby)
+if not targets:
+    sys.exit(0)
+if op == "def":
+    for d in targets:
+        emit(str(d.module_path), d.line, d.column)
+    sys.exit(0)
+keys = {(str(d.module_path), d.line, d.column) for d in targets}
+grep = subprocess.run(["git", "grep", "-n", "-z", "-w", "-F", "--untracked", "-e", symbol, "--", "*.py", "*.pyi"], cwd=root, capture_output=True, text=True, errors="replace").stdout
+found = 0
+for entry in grep.splitlines():
+    rel, at, text = entry.split("\\0", 2)
+    file, at = f"{root}/{rel}", int(at)
+    for match in re.finditer(rf"\\b{re.escape(symbol)}\\b", text):
+        if (file, at, match.start()) in keys:
+            continue
+        # a call or a decorator, as TypeScript's call hierarchy counts them; an import or an assignment is neither
+        if op == "callers" and not text[match.end():].lstrip().startswith("(") and not re.search(r"@[\\w.]*$", text[:match.start()]):
+            continue
+        try:
+            if not any((str(d.module_path), d.line, d.column) in keys for d in script(file).goto(at, match.start(), follow_imports=True)):
                 continue
-            # a call or a decorator, as TypeScript's call hierarchy counts them; an import or an assignment is neither
-            if op == "callers" and not text[match.end():].lstrip().startswith("(") and not re.search(r"@[\\w.]*$", text[:match.start()]):
-                continue
-            try:
-                if not any((str(d.module_path), d.line, d.column) in keys for d in script(file).goto(at, match.start(), follow_imports=True)):
-                    continue
-                context = script(file).get_context(at, match.start()) if op == "callers" else None
-            except Exception:
-                continue
-            emit(file, at, match.start(), None if context is None else "" if context.type == "module" else context.name)
-            found += 1
-            if found >= int(limit):
-                sys.exit(0)
-    break
+            context = script(file).get_context(at, match.start()) if op == "callers" else None
+        except Exception:
+            continue
+        emit(file, at, match.start(), None if context is None else "" if context.type == "module" else context.name)
+        found += 1
+        if found >= int(limit):
+            sys.exit(0)
 `;
 
 function grepFiles(query: Query, extensions: string[]): string[] {
@@ -440,7 +528,7 @@ function record(): void {
     mkdirSync(CACHE, { recursive: true });
     appendFileSync(
       join(CACHE, "calls"),
-      `${args[0] ?? ""} exited ${exitCode} in ${Date.now() - started}ms\n`
+      `${args[0] ?? ""} exited ${exitCode} in ${Date.now() - started}ms${shift ? ` (line ${shift > 0 ? "+" : ""}${shift})` : ""}\n`
     );
   } catch {
     // telemetry never fails the command
@@ -451,9 +539,16 @@ function record(): void {
 const started = Date.now();
 const args = process.argv.slice(2);
 let exitCode = 2;
+let shift = 0;
 try {
   deprioritize();
   const query = parse(args);
+  shift = query.shift;
+  if (shift) {
+    process.stderr.write(
+      `codenav: "${query.symbol}" is not on ${args[1]}; using the nearest lines that have it\n`
+    );
+  }
   const hits = dedupe(
     PY_EXTENSIONS.includes(extname(query.file)) ? python(query) : typescript(query)
   );
