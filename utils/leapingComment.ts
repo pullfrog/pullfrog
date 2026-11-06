@@ -18,7 +18,10 @@ export function isLeapingIntoActionCommentBody(body: string): boolean {
 }
 
 /** the spinner on a to-do list's in-progress item. */
-export const TODO_SPINNER_URL = "https://uploads.pullfrog.com/Progress%20Indicator.gif";
+export const TODO_SPINNER_URL = "https://pullfrog.com/todo-spinner.svg";
+
+/** the spinner earlier releases still write, so a run on one of them is a live list too. */
+const LEGACY_TODO_SPINNER_URL = "https://uploads.pullfrog.com/Progress%20Indicator.gif";
 
 /**
  * A live to-do list: one item still carries the spinner. Every finished body — a
@@ -27,5 +30,5 @@ export const TODO_SPINNER_URL = "https://uploads.pullfrog.com/Progress%20Indicat
  * or died without writing again.
  */
 export function isLiveChecklistCommentBody(body: string): boolean {
-  return body.includes(TODO_SPINNER_URL);
+  return body.includes(TODO_SPINNER_URL) || body.includes(LEGACY_TODO_SPINNER_URL);
 }

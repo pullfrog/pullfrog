@@ -40,7 +40,7 @@ function renderTodoMarkdown(todos: TodoItem[]): string {
         case "cancelled":
           return `- ~~${todo.content}~~`;
         case "in_progress":
-          return `- [ ] <img src="${TODO_SPINNER_URL}"  width="11" style="visibility: visible; max-width: 100%;" />  ${todo.content}`;
+          return `- [ ] <picture><img src="${TODO_SPINNER_URL}" width="12" height="12" /></picture> ${todo.content}`;
         case "pending":
           return `- [ ] ${todo.content}`;
         default:
