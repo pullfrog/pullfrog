@@ -1,12 +1,8 @@
-import { type } from "arktype";
 import type { PrepOptions, PrepResult } from "../prep/index.ts";
 import { runPrepPhase } from "../prep/index.ts";
 import { packageManagerBinDir } from "../utils/packageManager.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
-
-// empty schema for tools with no parameters
-const EmptyParams = type({});
 
 /**
  * format prep results into agent-friendly message
@@ -115,7 +111,6 @@ export function StartDependencyInstallationTool(ctx: ToolContext) {
     mutates: true,
     description:
       "Start installing project dependencies in the background. This is non-blocking and returns immediately. Call this early (right after branch checkout) if you anticipate needing to run tests, builds, or other commands that require dependencies. Idempotent - safe to call multiple times.",
-    parameters: EmptyParams,
     execute: execute(async () => {
       const state = ctx.toolState.dependencyInstallation;
 
@@ -154,7 +149,6 @@ export function AwaitDependencyInstallationTool(ctx: ToolContext) {
     name: "await_dependency_installation",
     description:
       "Wait for dependency installation to complete and get the results. If installation hasn't been started yet, this will start it automatically. Call this before running tests, builds, or other commands that require dependencies.",
-    parameters: EmptyParams,
     execute: execute(async () => {
       // auto-start if not started
       if (!ctx.toolState.dependencyInstallation) {

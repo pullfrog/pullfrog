@@ -20,7 +20,9 @@ export function getHttpStatus(err: unknown): number | undefined {
  * `shell`) are deliberately left unmarked: they can mutate but are allowed for
  * subagents and gated by command-arg validation instead. `readOnlyHint` is
  * independent scheduler metadata and must only follow an implementation audit;
- * the absence of `mutates` does not imply that a tool is read-only.
+ * the absence of `mutates` does not imply that a tool is read-only. a tool with
+ * no parameters omits `parameters`: arktype's `type({})` emits no `properties`,
+ * which OpenCode V2 forwards as is and a strict endpoint refuses (wiki/opencode-v2.md).
  */
 export type PullfrogTool = Tool<any, any> & { mutates?: boolean };
 
@@ -89,7 +91,7 @@ export const execute = <T, R extends Record<string, any> | string>(
       const message = formatToolError(error);
       const prefix = toolName ? `[${toolName}]` : "tool";
       log.info(`${prefix} error: ${message}`);
-      log.debug(`${prefix} params: ${formatJsonValue(params)}`);
+      log.debug(`${prefix} params: ${formatJsonValue(params ?? {})}`);
       return handleToolError(message);
     }
   };

@@ -99,7 +99,6 @@ export function ReopenCurrentTool(ctx: ToolContext) {
     name: "reopen_current",
     mutates: true,
     description: "Reopen the issue or pull request this run was triggered on.",
-    parameters: type({}),
     execute: execute(async () => {
       const target = await resolveCurrentObject(ctx);
 
