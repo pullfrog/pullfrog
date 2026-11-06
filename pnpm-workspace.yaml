@@ -1,4 +1,8 @@
 packages: [] # prevent looking upwards for the workspace root
+# this install has never run these scripts; nub 0.10 fails an install that skips one unnamed.
+neverBuiltDependencies:
+  - '@opencode/cli'
+  - agent-browser
 minimumReleaseAgeExclude:
   - '@openai/codex@0.165.0 || 0.165.0-linux-x64 || 0.165.0-linux-arm64 || 0.165.0-darwin-x64 || 0.165.0-darwin-arm64 || 0.165.0-win32-x64 || 0.165.0-win32-arm64'
   - '@openai/codex-sdk@0.165.0'
