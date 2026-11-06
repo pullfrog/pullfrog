@@ -171,6 +171,8 @@ export interface AgentRunContext {
    * `action/toolState.ts` for the literal-state design rule.
    */
   toolState: ToolState;
+  /** records on `toolState` a review this run posted outside `create_pull_request_review`. */
+  adoptPostedReview: () => Promise<void>;
   /**
    * called synchronously when the agent subprocess is killed for inner
    * activity timeout. lets main.ts tear down shared resources (MCP HTTP

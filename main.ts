@@ -11,6 +11,7 @@ import { subagentDeniedToolNames } from "./agents/subagentToolGates.ts";
 import { findDanglingPromptToolRefs } from "./external.ts";
 import { reportProgress } from "./mcp/comment.ts";
 import { startInstallation } from "./mcp/dependencies.ts";
+import { adoptPostedReview } from "./mcp/review.ts";
 import { startMcpHttpServer, type ToolContext } from "./mcp/server.ts";
 import { computeModes } from "./modes.ts";
 import { initToolState, primaryRepoState } from "./toolState.ts";
@@ -1020,6 +1021,7 @@ export async function main(): Promise<MainResult> {
       todoTracker,
       stopScript: runContext.repoSettings.stopScript,
       toolState,
+      adoptPostedReview: adoptPostedReview.bind(null, toolContext),
       apiToken: runContext.apiToken,
       onActivityTimeout: onInnerActivityTimeout,
       onTurnRecovered,
@@ -1061,7 +1063,9 @@ export async function main(): Promise<MainResult> {
     } catch (error) {
       // the review is the run's deliverable, so a timer that fires after it posted only cut off
       // reflection or wrap-up — failing the run would contradict the review on the PR (#1532).
-      if (error !== timeoutError || !hasDeliveredReview(toolContext)) throw error;
+      if (error !== timeoutError) throw error;
+      await adoptPostedReview(toolContext);
+      if (!hasDeliveredReview(toolContext)) throw error;
       log.warning(`» ${timeoutError.message} after the review was posted — finalizing as success`);
       killTrackedChildren();
       result = { success: true };

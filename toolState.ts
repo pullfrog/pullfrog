@@ -134,6 +134,8 @@ export interface ToolState {
   repos: Map<string, RepoToolState>;
   // key into `repos` for the primary (triggering) repo.
   primaryRepoKey: string;
+  // epoch ms this process began: what separates a review this run posted from an earlier run's.
+  startedAt: number;
   selectedMode?: string;
   // number of prepush hook failures this run. push_branch runs the hook
   // while this is 0 and skips it once non-zero; never decremented within
@@ -309,6 +311,7 @@ export function initToolState(params: InitToolStateParams): ToolState {
   return {
     repos,
     primaryRepoKey,
+    startedAt: Date.now(),
     progressComment: resolved,
     hadProgressComment: !!resolved,
     prepushFailureCount: 0,

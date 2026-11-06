@@ -55,7 +55,8 @@ type ReviewGateContext = { toolState: ToolState; payload: { event: PayloadEvent 
  * `Review` and `IncrementalReview` have different valid exits:
  *   - Review: only `create_pull_request_review` counts. `report_progress` is
  *     not a substitute — a Review run that exits with just a summary comment
- *     has produced nothing reviewable on the PR.
+ *     has produced nothing reviewable on the PR. a review the run posted another
+ *     way lands on the same record: see `adoptPostedReview`.
  *   - Review on an issue target: there is no PR to submit against, so the
  *     comment it posted is the deliverable, unless it reviewed a PR it named.
  *   - IncrementalReview: `report_progress` is a legitimate "no review
@@ -288,7 +289,9 @@ export async function collectPostRunIssues(
     const stale = await isSummaryUnchanged(summaryFilePath, summarySeed);
     if (stale) issues.summaryStale = { filePath: summaryFilePath };
   }
-  const unsubmittedMode = getUnsubmittedReview(ctx, expectsReviewOutput(ctx));
+  const expectsReview = expectsReviewOutput(ctx);
+  if (getUnsubmittedReview(ctx, expectsReview)) await ctx.adoptPostedReview();
+  const unsubmittedMode = getUnsubmittedReview(ctx, expectsReview);
   if (unsubmittedMode) issues.unsubmittedReview = unsubmittedMode;
   return issues;
 }

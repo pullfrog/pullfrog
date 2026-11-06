@@ -404,7 +404,8 @@ const WATCHDOG_SALVAGE_PROMPT =
  * A fire there arms the safety net but never stands it down — the next turn's
  * `armForTurn()` clears the latch, so `firedThisTurn()` reads false at that
  * turn's end. Unreachable today: the only between-turn work is `getGitStatus`
- * (10s cap), `isSummaryUnchanged` and `getUnsubmittedReview`, and the stop hook
+ * (10s cap), `isSummaryUnchanged`, `getUnsubmittedReview` and `adoptPostedReview`
+ * (10s cap), and the stop hook
  * is commented out (`postRun.ts`, #714), so the budget cannot elapse there.
  * Re-enabling the stop hook would make it reachable.
  */

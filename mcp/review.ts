@@ -861,40 +861,14 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
           throw new Error(`createReview returned invalid data: ${JSON.stringify(result.data)}`);
         }
         const reviewId = result.data.id;
-        const reviewNodeId = result.data.node_id;
-        // the verdict was recorded before submission (so it survives cleanup); now that
-        // the review exists, attach its url for the `Pullfrog` check's summary.
-        if (ctx.toolState.approval) ctx.toolState.approval.url = result.data.html_url;
         log.info(`» created review ${reviewId} on pull request #${pull_number}`);
 
         // reviewedSha = what the agent actually reviewed (checkout SHA), not the
         // submission anchor (current HEAD). this ensures postReviewCleanup dispatches
         // a follow-up if the agent doesn't handle new commits inline.
-        const actuallyReviewedSha = primary.checkoutSha ?? params.commit_id;
-        ctx.toolState.review = {
-          id: reviewId,
-          nodeId: reviewNodeId,
-          reviewedSha: actuallyReviewedSha,
-        };
-        // pin the approval verdict to the sha actually reviewed, so the
-        // pullfrog-approval check never anchors to a head the agent didn't
-        // review. the gate set a provisional checkoutSha, which is undefined
-        // for a review submitted without checkout_pr — without this, finalize
-        // would fall back to the (possibly moved) live head.
-        if (ctx.toolState.approval) ctx.toolState.approval.sha = actuallyReviewedSha;
-
-        ctx.toolState.wasUpdated = true;
-
-        // a submitted review obsoletes the progress comment — the review IS the
-        // durable artifact. owned here (not in main.ts) so cleanup is atomic with
-        // submission and survives any path out of the run (success, timeout,
-        // crash). deleting sets progressComment = null, so a later report_progress
-        // call short-circuits to a no-op; on an issue target the comment instead
-        // survives with a link to the review, and report_progress may replace it.
-        // best-effort: a cleanup failure must not turn a successful review into
-        // a tool-call failure visible to the agent.
-        await retireProgressCommentForReview(ctx, result.data.html_url).catch((err) => {
-          log.debug(`progress comment cleanup after review failed: ${err}`);
+        await recordSubmittedReview(ctx, {
+          review: result.data,
+          reviewedSha: primary.checkoutSha ?? params.commit_id,
         });
 
         // detect commits pushed since checkout and guide the agent to review them
@@ -1201,6 +1175,85 @@ export async function createAndSubmitWithFooter(
     }
     throw err;
   }
+}
+
+/** what a review on the PR settles for this run, whichever path posted it. */
+async function recordSubmittedReview(
+  ctx: ToolContext,
+  params: {
+    review: { id: number; node_id: string; html_url: string };
+    reviewedSha: string | undefined;
+  }
+): Promise<void> {
+  ctx.toolState.review = {
+    id: params.review.id,
+    nodeId: params.review.node_id,
+    reviewedSha: params.reviewedSha,
+  };
+  if (ctx.toolState.approval) {
+    // the verdict was recorded before submission (so it survives cleanup); now that
+    // the review exists, attach its url for the `Pullfrog` check's summary.
+    ctx.toolState.approval.url = params.review.html_url;
+    // pin the approval verdict to the sha actually reviewed, so the
+    // pullfrog-approval check never anchors to a head the agent didn't
+    // review. the gate set a provisional checkoutSha, which is undefined
+    // for a review submitted without checkout_pr — without this, finalize
+    // would fall back to the (possibly moved) live head.
+    ctx.toolState.approval.sha = params.reviewedSha;
+  }
+
+  ctx.toolState.wasUpdated = true;
+
+  // a submitted review obsoletes the progress comment — the review IS the
+  // durable artifact. owned here (not in main.ts) so cleanup is atomic with
+  // submission and survives any path out of the run (success, timeout,
+  // crash). deleting sets progressComment = null, so a later report_progress
+  // call short-circuits to a no-op; on an issue target the comment instead
+  // survives with a link to the review, and report_progress may replace it.
+  // best-effort: a cleanup failure must not turn a successful review into
+  // a tool-call failure visible to the agent.
+  await retireProgressCommentForReview(ctx, params.review.html_url).catch((err) => {
+    log.debug(`progress comment cleanup after review failed: ${err}`);
+  });
+}
+
+/**
+ * adopt a review this run published without `create_pull_request_review` recording it, so
+ * the post-run gates and the push dedup read what is on the PR. an agent falls back to `gh`
+ * when GitHub 5xxes the tool, and the gate then demanded a second review or failed the run
+ * (pullfrog/pullfrog#127). `gh` anchors to the live head, so a push mid-run leaves the review
+ * on a later commit than the checkout: time, not commit, says it is this run's.
+ * a failed read leaves the gate as it was: GitHub may still be down.
+ */
+export async function adoptPostedReview(ctx: ToolContext): Promise<void> {
+  const mode = ctx.toolState.selectedMode;
+  if ((mode !== "Review" && mode !== "IncrementalReview") || ctx.toolState.review) return;
+  const primary = primaryRepoState(ctx.toolState);
+  if (!primary.issueNumber) return;
+  const reviews = await ctx.octokit
+    .paginate(ctx.octokit.rest.pulls.listReviews, {
+      owner: ctx.repo.owner,
+      repo: ctx.repo.name,
+      pull_number: primary.issueNumber,
+      per_page: 100,
+      request: { signal: AbortSignal.timeout(10_000) },
+    })
+    .catch((err: unknown) => {
+      log.info(`» could not check the PR for a posted review: ${err}`);
+      return [];
+    });
+  const posted = reviews.findLast(
+    (review) =>
+      isPullfrog(review.user?.login) &&
+      review.state !== "PENDING" &&
+      new Date(review.submitted_at ?? 0).getTime() >= ctx.toolState.startedAt
+  );
+  if (!posted) return;
+  log.info(`» adopting review ${posted.id}, posted without create_pull_request_review`);
+  await recordSubmittedReview(ctx, {
+    review: posted,
+    reviewedSha: primary.checkoutSha ?? posted.commit_id ?? undefined,
+  });
 }
 
 /**
