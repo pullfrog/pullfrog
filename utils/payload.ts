@@ -418,6 +418,9 @@ export function resolvePayload(
     // permissions: inputs > repoSettings > fallbacks
     push,
     shell: resolvedShell,
+    // main.ts sets this when the runner can't sandbox commands, which turns `shell` off whatever the
+    // setting says, so the prompt can tell that apart from a repo that chose `disabled`
+    shellUnsandboxable: false,
 
     // the `pullfrog` run-lifecycle check. ON by default — the whole point is that a PR
     // shows whether Pullfrog is running without anyone having to opt in. the workflow

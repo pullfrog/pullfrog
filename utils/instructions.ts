@@ -124,6 +124,11 @@ function getShellInstructions(payload: ResolvedPayload, t: (name: string) => str
   const shell = payload.shell;
   switch (shell) {
     case "disabled":
+      if (payload.shellUnsandboxable) {
+        return `### Shell commands
+
+Shell commands are unavailable: this runner can't sandbox them, so you can't run tests, builds, linters or \`gh\`. Never imply they ran. If that leaves your result unverified, say so in one sentence in your final comment or review, linking https://docs.pullfrog.com/security#self-hosted-runners for the fix. Otherwise don't mention it.`;
+      }
       return `### Shell commands
 
 Shell command execution is DISABLED. Do not attempt to run shell commands.`;

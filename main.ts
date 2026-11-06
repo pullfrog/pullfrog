@@ -360,6 +360,7 @@ export async function main(): Promise<MainResult> {
   // a run left without a shell is not handed a `gh` token it cannot use (#1517).
   if (payload.shell !== "disabled" && process.env.CI === "true" && getSandboxMethod() === "none") {
     payload.shell = "disabled";
+    payload.shellUnsandboxable = true;
     payload.codenav = false;
     log.warning(
       "» shell commands and the `gh` tool are disabled for this run: this runner provides no PID-namespace isolation " +
