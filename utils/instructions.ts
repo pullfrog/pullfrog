@@ -64,8 +64,9 @@ function buildRuntimeContext(ctx: InstructionsContext): string {
     eventInstructions: _ei,
     previousRunsNote: _prn,
     event: _e,
-    // the shell instructions already say when it is on
+    // the shell instructions already say when it is on, and why the shell is off on a runner that can't sandbox
     codenav: _cn,
+    shellUnsandboxable: _su,
     ...payloadRest
   } = ctx.payload;
 
