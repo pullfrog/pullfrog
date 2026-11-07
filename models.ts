@@ -924,6 +924,9 @@ export const bundledProviders = {
         // free to run, still gated on the provider's own OPENCODE_API_KEY —
         // see the big-pickle note above (#1077).
         isFree: true,
+        // Zen dropped the free id from `/v1/models` and models.dev deprecated it
+        // by 2026-11-07; stored picks land on Big Pickle, as `space-bunny` does.
+        fallback: "opencode/big-pickle",
       },
       // Zen's live free MiMo, and the second free row in a menu that big-pickle
       // was alone in since `mimo-v2-pro-free` lost its model.
