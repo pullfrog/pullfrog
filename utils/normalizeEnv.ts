@@ -1,3 +1,4 @@
+import { parseCustomHeaders } from "../models.ts";
 import { log } from "./cli.ts";
 import { maskSecret } from "./secretCommands.ts";
 import { isSensitiveEnvName } from "./secrets.ts";
@@ -57,6 +58,25 @@ export function sanitizeSecret(key: string, value: string): string | null {
   }
   maskSecret(trimmed);
   return trimmed;
+}
+
+/**
+ * The request headers `envVar` holds, for a harness config. Each value is masked on its own: the
+ * runner masks the variable whole and line by line, and neither matches a value printed apart from
+ * its name. Under 8 characters is no credential, and masking `X-Tenant: 1` would blank every 1.
+ */
+export function readCustomHeaders(envVar: string): Record<string, string> {
+  const parsed = parseCustomHeaders(process.env[envVar] ?? "");
+  if (parsed.badLine) {
+    throw new Error(
+      `Line ${parsed.badLine} of \`${envVar}\` is not a header. Write one \`Name: Value\` per line, in ASCII. ` +
+        "[Custom headers guide](https://docs.pullfrog.com/keys#custom-headers)"
+    );
+  }
+  for (const value of Object.values(parsed.headers)) {
+    if (value.length >= 8) maskSecret(value);
+  }
+  return parsed.headers;
 }
 
 /**

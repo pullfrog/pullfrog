@@ -19,9 +19,12 @@ import {
   OPENAI_COMPATIBLE_CONTEXT_ENV,
   OPENAI_COMPATIBLE_MAX_OUTPUT_ENV,
   OPENAI_COMPATIBLE_PROVIDER,
+  openAICompatibleEnv,
+  PROVIDER_GATEWAY_HEADERS_ENV,
 } from "../models.ts";
 import { log } from "../utils/cli.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
+import { readCustomHeaders } from "../utils/normalizeEnv.ts";
 import { getAuthorizedModels } from "../utils/openCodeModels.ts";
 import { getDevDependencyVersion } from "../utils/version.ts";
 import { opencodeGeneration } from "./opencodeGeneration.ts";
@@ -44,7 +47,11 @@ export type OpenCodeConfig = {
 interface OpenAICompatibleProviderEntry {
   npm: string;
   name: string;
-  options: { baseURL: string | undefined; apiKey: string | undefined };
+  options: {
+    baseURL: string | undefined;
+    apiKey: string | undefined;
+    headers: Record<string, string>;
+  };
   models: Record<string, { name: string; limit: ModelLimit }>;
 }
 
@@ -100,6 +107,7 @@ export function openAICompatibleProvider(
         // trailing slash would double up against opencode's `/chat/completions` join
         baseURL: process.env[OPENAI_COMPATIBLE_BASE_URL_ENV]?.replace(/\/$/, ""),
         apiKey: process.env[OPENAI_COMPATIBLE_API_KEY_ENV],
+        headers: readCustomHeaders(openAICompatibleEnv().headers),
       },
       models: { [modelId]: { name: modelId, limit: openAICompatibleLimit() } },
     },
@@ -134,12 +142,13 @@ const OPENCODE_GATEWAY_PATH: Record<string, string> = { anthropic: "/v1" };
  */
 export function providerGatewayOverride(
   model: string | undefined
-): Record<string, { options: { baseURL: string } }> {
+): Record<string, { options: { baseURL: string; headers: Record<string, string> } }> {
   const gatewayUrl = getProviderGatewayUrl(model);
   if (!model || !gatewayUrl) return {};
   const provider = model.slice(0, model.indexOf("/"));
   const baseURL = `${gatewayUrl}${OPENCODE_GATEWAY_PATH[provider] ?? ""}`;
-  return { [provider]: { options: { baseURL } } };
+  const headers = readCustomHeaders(PROVIDER_GATEWAY_HEADERS_ENV[provider]);
+  return { [provider]: { options: { baseURL, headers } } };
 }
 
 /**

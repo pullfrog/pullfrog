@@ -17,6 +17,7 @@ export const SENSITIVE_PATTERNS = [
   /_TOKEN$/i,
   /_PASSWORD$/i,
   /_CREDENTIAL$/i,
+  /_HEADERS$/i,
 ];
 
 export function isSensitiveEnvName(key: string): boolean {

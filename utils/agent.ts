@@ -123,7 +123,7 @@ function heldOpenAICompatibleSet(slug: string): string | undefined {
 }
 
 /**
- * make the run's named set (`openai-compatible/<name>`) its endpoint: the set's five values
+ * make the run's named set (`openai-compatible/<name>`) its endpoint: the set's values
  * replace the bare `OPENAI_COMPATIBLE_*` that validation and the opencode provider read. a value
  * the set lacks is cleared, never inherited, so the default endpoint's key cannot reach the set's
  * URL. returns the set, so setup errors can name its own variables.

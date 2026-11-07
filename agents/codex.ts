@@ -36,12 +36,18 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { ThreadEvent, ThreadItem } from "@openai/codex-sdk";
 import { pullfrogMcpName } from "../external.ts";
-import { getModelProvider, getProviderGatewayUrl, stripProviderPrefix } from "../models.ts";
+import {
+  getModelProvider,
+  getProviderGatewayUrl,
+  PROVIDER_GATEWAY_HEADERS_ENV,
+  stripProviderPrefix,
+} from "../models.ts";
 import { AGENT_ACTIVITY_TIMEOUT_MS, getIdleMs, markActivity } from "../utils/activity.ts";
 import { log } from "../utils/cli.ts";
 import { installCodexHome } from "../utils/codexHome.ts";
 import type { OAuthWriteback } from "../utils/codexRefreshDetect.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
+import { readCustomHeaders } from "../utils/normalizeEnv.ts";
 import { OAUTH_WRITEBACK_STATE } from "../utils/oauthWriteback.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { resolveRunEffort } from "../utils/runEffort.ts";
@@ -431,6 +437,9 @@ const CODEX_GATEWAY_PROVIDER = "pullfrog-gateway";
 
 function gatewayProvider(gatewayUrl: string | undefined): string[] {
   if (!gatewayUrl) return [];
+  const headers = Object.entries(readCustomHeaders(PROVIDER_GATEWAY_HEADERS_ENV.openai))
+    .map(([name, value]) => `${JSON.stringify(name)} = ${JSON.stringify(value)}`)
+    .join(", ");
   return [
     `[model_providers.${CODEX_GATEWAY_PROVIDER}]`,
     'name = "OpenAI gateway"',
@@ -438,6 +447,7 @@ function gatewayProvider(gatewayUrl: string | undefined): string[] {
     'wire_api = "responses"',
     // where the harness puts the run's OPENAI_API_KEY
     'env_key = "CODEX_API_KEY"',
+    `http_headers = { ${headers} }`,
     "",
   ];
 }

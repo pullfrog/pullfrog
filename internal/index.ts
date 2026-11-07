@@ -62,6 +62,7 @@ export {
   OSS_RECOMMENDED_MODEL,
   offeredRungs,
   ossFundedModelNames,
+  PROVIDER_GATEWAY_HEADERS_ENV,
   PROVIDER_GATEWAY_URL_ENV,
   parseEffortPosition,
   parseModel,
@@ -94,6 +95,7 @@ export {
   openAICompatibleSetName,
   openAICompatibleSetOf,
   openAICompatibleSets,
+  parseCustomHeaders,
 } from "../models.ts";
 export type { Mode } from "../modes.ts";
 export { modes } from "../modes.ts";

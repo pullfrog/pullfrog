@@ -133,6 +133,7 @@ export {
   OSS_MODEL_ALLOWLIST,
   OSS_RECOMMENDED_MODEL,
   ossFundedModelNames,
+  PROVIDER_GATEWAY_HEADERS_ENV,
   PROVIDER_GATEWAY_URL_ENV,
   parseModel,
   providers,

@@ -2296,6 +2296,7 @@ export const OPENAI_COMPATIBLE_FIELDS = [
   "model",
   "context",
   "maxOutput",
+  "headers",
 ] as const;
 
 /** the env var names one endpoint is configured by: a named set's, or the default's. */
@@ -2309,6 +2310,7 @@ export function openAICompatibleEnv(
     model: `${prefix}MODEL`,
     context: `${prefix}CONTEXT`,
     maxOutput: `${prefix}MAX_OUTPUT`,
+    headers: `${prefix}HEADERS`,
   };
 }
 
@@ -2323,7 +2325,7 @@ function openAICompatibleSetEnvVars(slug: string): string[] {
 /** the set a variable belongs to: `OPENAI_COMPATIBLE_VLLM_A_API_KEY` → `vllm-a`. */
 export function openAICompatibleSetOf(envName: string): string | undefined {
   const match =
-    /^OPENAI_COMPATIBLE_([A-Z0-9]+(?:_[A-Z0-9]+)*)_(?:BASE_URL|API_KEY|MODEL|CONTEXT|MAX_OUTPUT)$/.exec(
+    /^OPENAI_COMPATIBLE_([A-Z0-9]+(?:_[A-Z0-9]+)*)_(?:BASE_URL|API_KEY|MODEL|CONTEXT|MAX_OUTPUT|HEADERS)$/.exec(
       envName
     );
   const name = match?.[1]?.toLowerCase().replaceAll("_", "-");
@@ -2374,6 +2376,42 @@ export function getProviderGatewayUrl(specifier: string | undefined): string | u
   if (!envVar) return undefined;
   // a trailing slash doubles up against the path opencode joins onto it
   return process.env[envVar]?.trim().replace(/\/$/, "") || undefined;
+}
+
+/**
+ * The extra request headers a re-pointed provider sends its gateway, scoped per endpoint like its
+ * URL. A single variable for every provider would hand a gateway's credential to whichever provider
+ * a run falls back to. `ANTHROPIC_CUSTOM_HEADERS` is Claude Code's own name, read natively there.
+ */
+export const PROVIDER_GATEWAY_HEADERS_ENV: Record<string, string> = {
+  anthropic: "ANTHROPIC_CUSTOM_HEADERS",
+  openai: "OPENAI_CUSTOM_HEADERS",
+};
+
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+/** what every harness sends: `fetch` throws on a control character, and Codex drops a header past visible ASCII. */
+const HEADER_VALUE = /^[\t\x20-\x7e]*$/;
+
+/**
+ * `Name: Value` per line, the format Claude Code reads `ANTHROPIC_CUSTOM_HEADERS` in. `badLine` is
+ * the first line that is neither blank nor a header, by number because its text may be a credential.
+ */
+export function parseCustomHeaders(raw: string): {
+  headers: Record<string, string>;
+  badLine: number | undefined;
+} {
+  const headers: Record<string, string> = {};
+  for (const [index, line] of raw.split("\n").entries()) {
+    if (!line.trim()) continue;
+    const colon = line.indexOf(":");
+    const name = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+    if (colon < 0 || !HEADER_NAME.test(name) || !HEADER_VALUE.test(value)) {
+      return { headers: {}, badLine: index + 1 };
+    }
+    headers[name] = value;
+  }
+  return { headers, badLine: undefined };
 }
 
 // ── keyless auth ───────────────────────────────────────────────────────────────
