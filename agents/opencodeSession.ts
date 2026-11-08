@@ -50,6 +50,7 @@ export interface OpencodeDriver {
     config: OpenCodeConfig;
     sandbox: Sandbox;
     home: string;
+    configHome: string;
     repoDir: string;
   }) => Record<string, string>;
   /** open the run's session on the booted server. throws when the server refuses it. */

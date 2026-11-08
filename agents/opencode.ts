@@ -645,6 +645,7 @@ export const opencode = agent({
         config: buildSecurityConfig(ctx, model),
         sandbox,
         home: homeEnv.HOME,
+        configHome: homeEnv.XDG_CONFIG_HOME,
         repoDir,
       }),
       GOOGLE_GENERATIVE_AI_API_KEY:

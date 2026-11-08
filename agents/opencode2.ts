@@ -10,15 +10,15 @@
  *   - `execute` (Code Mode, on by default) is denied, so MCP tools reach the
  *     model directly as `pullfrog_<tool>` — the names the salvage gate, the
  *     diff-coverage tracker and the todo tracker count.
- *   - a permission prompt is refused at once: V2's `ask` waits for a reply
- *     forever, where V1's failed closed.
+ *   - a permission prompt or a form is refused at once: V2's `ask` waits for a
+ *     reply forever, where V1's failed closed.
  *   - subscription tokens V2 rotates in its database are mirrored back into
  *     auth.json, the file the post hook writes back from.
  *
  * See wiki/opencode-v2.md.
  */
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -28,6 +28,7 @@ import {
   type OpenCodeClient,
   type OpenCodeEvent,
   type SessionInfo,
+  type SessionStructuredError,
 } from "@opencode/client";
 import * as yes from "yes";
 import { pullfrogMcpName } from "../external.ts";
@@ -63,22 +64,35 @@ import type { AgentResult, AgentUsage } from "./shared.ts";
 
 export const opencode2: OpencodeDriver = {
   gatePlugin: buildOpencode2GateSource,
-  env: (params) => ({
-    // the V1-shaped config is normalized in memory by V2; these keys exist only in V2.
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({
-      ...params.config,
-      // off by default in V2, and the todo tracker reads `todowrite`.
-      experimental: { todo: true },
-      // where `installBundledSkills` and `addSkill` put them.
-      skills: [join(params.home, ".agents", "skills")],
-      // V2 dropped V1's CLAUDE.md fallback. config lists union across files, so this adds, never replaces.
-      instructions: existsSync(join(params.repoDir, "AGENTS.md")) ? [] : ["CLAUDE.md"],
-    }),
-    // without one, serve prints a generated password to stdout, which the job log would carry.
-    OPENCODE_PASSWORD: randomBytes(24).toString("base64url"),
-  }),
+  env: (params) => {
+    // with no provider picked, V2's web search stalls a minute on a consent form and fails. the
+    // global layer ranks below a checkout's config, so a repo that picked a provider keeps it.
+    writeFileSync(
+      join(params.configHome, "opencode", "opencode.json"),
+      JSON.stringify({ websearch: defaultWebSearch(params.config.model) })
+    );
+    return {
+      // the V1-shaped config is normalized in memory by V2; these keys exist only in V2.
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        ...params.config,
+        // off by default in V2, and the todo tracker reads `todowrite`.
+        experimental: { todo: true },
+        // where `installBundledSkills` and `addSkill` put them.
+        skills: [join(params.home, ".agents", "skills")],
+        // V2 dropped V1's CLAUDE.md fallback. config lists union across files, so this adds, never replaces.
+        instructions: existsSync(join(params.repoDir, "AGENTS.md")) ? [] : ["CLAUDE.md"],
+      }),
+      // without one, serve prints a generated password to stdout, which the job log would carry.
+      OPENCODE_PASSWORD: randomBytes(24).toString("base64url"),
+    };
+  },
   open,
 };
+
+/** V1 offered its keyless search only on these two providers, through Exa or Parallel. */
+function defaultWebSearch(model: string | undefined) {
+  return /^opencode(-go)?\//.test(model ?? "") ? { provider: "exa" } : false;
+}
 
 const EVENT_TYPES = [
   "session.created",
@@ -99,6 +113,7 @@ const EVENT_TYPES = [
   "session.execution.failed",
   "session.execution.interrupted",
   "permission.asked",
+  "form.created",
 ] as const;
 
 type Event = Extract<OpenCodeEvent, { type: (typeof EVENT_TYPES)[number] }>;
@@ -314,6 +329,9 @@ function dispatchEvent(ctx: RunnerContext, event: OpenCodeEvent): void {
     case "permission.asked":
       refusePermission(ctx, event.data);
       return;
+    case "form.created":
+      refuseForm(ctx, event.data.form);
+      return;
     case "session.created":
       ctx.sessions.add(event.data.sessionID);
       // binds the child to the label its dispatch queued.
@@ -327,17 +345,23 @@ function dispatchEvent(ctx: RunnerContext, event: OpenCodeEvent): void {
       ctx.executionEnded = undefined;
       return;
     case "session.step.failed":
-      onProviderError(ctx, { sessionID: event.data.sessionID, message: event.data.error.message });
+      onProviderError(ctx, {
+        sessionID: event.data.sessionID,
+        message: describeError(event.data.error),
+      });
       return;
     case "session.retry.scheduled":
-      onProviderError(ctx, { sessionID: event.data.sessionID, message: event.data.error.message });
+      onProviderError(ctx, {
+        sessionID: event.data.sessionID,
+        message: describeError(event.data.error),
+      });
       // a capped provider asks for days, and V2 keeps retrying at 15min a time. the watchdog would only
       // re-prompt into the same wait, so the turn ends now. `at` is capped; `retryAfterMs` is what it asked.
       if (
         event.data.sessionID === ctx.orchestratorSessionID &&
         (event.data.error.retryAfterMs ?? 0) > AGENT_ACTIVITY_TIMEOUT_MS
       ) {
-        ctx.terminalRetry = event.data.error.message;
+        ctx.terminalRetry = describeError(event.data.error);
         ctx.turnAbort.abort();
       }
       return;
@@ -429,6 +453,30 @@ function refusePermission(
     .catch((err) => log.warning(`» could not refuse a permission request: ${String(err)}`));
 }
 
+/** a form is V2's other blocking ask, and only a person can answer one. refusing fails the tool now. */
+function refuseForm(
+  ctx: RunnerContext,
+  form: { id: string; sessionID: string; title: string }
+): void {
+  log.info(`» form refused: ${form.title}`);
+  ctx.client.session.form
+    .cancel({
+      sessionID: form.sessionID,
+      formID: form.id,
+      message: "Nobody can answer a form in a Pullfrog run.",
+    })
+    .catch((err) => log.warning(`» could not refuse a form: ${String(err)}`));
+}
+
+/** V2 keeps a provider's own refusal in `response.body`; `message` is often just the decoder's complaint about it. */
+function describeError(error: SessionStructuredError): string {
+  const status = (error.status ?? 0) >= 400 ? ` (${error.status})` : "";
+  const body = error.response?.body.replace(/\s+/g, " ").trim().slice(0, 500);
+  return body && !body.includes(error.message)
+    ? `${error.message}${status}: ${body}`
+    : `${error.message}${status}`;
+}
+
 function onProviderError(ctx: RunnerContext, params: { sessionID: string; message: string }): void {
   if (params.sessionID !== ctx.orchestratorSessionID) return;
   log.info(`» ${ctx.label} provider error: ${params.message}`);
@@ -509,7 +557,7 @@ async function runPromptTurn(
   const idle = await lastIdle(ctx);
   if (idle?.outcome === "failed") {
     return fail(
-      `provider error: ${idle.error?.message ?? "the turn failed with no error recorded"}`
+      `provider error: ${idle.error ? describeError(idle.error) : "the turn failed with no error recorded"}`
     );
   }
   if (idle?.outcome === "interrupted") {
