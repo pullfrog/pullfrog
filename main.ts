@@ -9,6 +9,7 @@ import { opencodeGeneration } from "./agents/opencodeGeneration.ts";
 import { hasDeliveredReview } from "./agents/postRun.ts";
 import { subagentDeniedToolNames } from "./agents/subagentToolGates.ts";
 import { findDanglingPromptToolRefs } from "./external.ts";
+import { resolveAskModels } from "./mcp/askModel.ts";
 import { reportProgress } from "./mcp/comment.ts";
 import { startInstallation } from "./mcp/dependencies.ts";
 import { adoptPostedReview } from "./mcp/review.ts";
@@ -745,6 +746,7 @@ export async function main(): Promise<MainResult> {
       oss: runContext.oss,
       plan: runContext.plan,
       resolvedModel,
+      askModels: resolveAskModels({ runContext, proxied: !!payload.proxyModel }),
     };
     if (payload.codenav) installCodenav(tmpdir);
     await using mcpHttpServer = await startMcpHttpServer(toolContext, { outputSchema });
@@ -1167,7 +1169,10 @@ export async function main(): Promise<MainResult> {
     // that returned AgentResult with success=false still report their partial
     // usage because the harness populates AgentUsage before returning.
     if (toolContext) {
-      const patch = aggregateUsage(toolState.usageEntries);
+      // an ask is paid by another credential, so it stays off the row a proxy key reconciles against
+      const patch = aggregateUsage(
+        toolState.usageEntries.filter((entry) => entry.agent !== "ask_model")
+      );
       // persist the resolved/effective model (what actually ran) so per-model
       // cost analytics don't have to parse the audit-only payload.
       if (toolState.model) patch.model = toolState.model;

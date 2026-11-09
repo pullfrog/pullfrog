@@ -14,10 +14,6 @@ import {
   getOpenCodeEnvVars,
   getProviderGatewayUrl,
   modelAliases,
-  OPENAI_COMPATIBLE_API_KEY_ENV,
-  OPENAI_COMPATIBLE_BASE_URL_ENV,
-  OPENAI_COMPATIBLE_CONTEXT_ENV,
-  OPENAI_COMPATIBLE_MAX_OUTPUT_ENV,
   OPENAI_COMPATIBLE_PROVIDER,
   openAICompatibleEnv,
   PROVIDER_GATEWAY_HEADERS_ENV,
@@ -79,11 +75,9 @@ interface AzureProviderEntry {
  * Both env vars are therefore required by `validateOpenAICompatibleSetup`, which
  * runs before the agent and rejects non-numeric values, so they parse here.
  */
-function openAICompatibleLimit(): ModelLimit {
-  return {
-    context: Number(process.env[OPENAI_COMPATIBLE_CONTEXT_ENV]),
-    output: Number(process.env[OPENAI_COMPATIBLE_MAX_OUTPUT_ENV]),
-  };
+function openAICompatibleLimit(set: string | undefined): ModelLimit {
+  const env = openAICompatibleEnv(set);
+  return { context: Number(process.env[env.context]), output: Number(process.env[env.maxOutput]) };
 }
 
 /**
@@ -94,22 +88,25 @@ function openAICompatibleLimit(): ModelLimit {
  * guaranteed present by `validateOpenAICompatibleSetup`.
  */
 export function openAICompatibleProvider(
-  model: string | undefined
+  model: string | undefined,
+  /** a named endpoint whose own variables to read; the run's endpoint is always the bare ones */
+  set?: string
 ): Record<string, OpenAICompatibleProviderEntry> {
   const prefix = `${OPENAI_COMPATIBLE_PROVIDER}/`;
   if (!model?.startsWith(prefix)) return {};
   const modelId = model.slice(prefix.length);
+  const env = openAICompatibleEnv(set);
   return {
     [OPENAI_COMPATIBLE_PROVIDER]: {
       npm: "@ai-sdk/openai-compatible",
       name: "OpenAI-compatible",
       options: {
         // trailing slash would double up against opencode's `/chat/completions` join
-        baseURL: process.env[OPENAI_COMPATIBLE_BASE_URL_ENV]?.replace(/\/$/, ""),
-        apiKey: process.env[OPENAI_COMPATIBLE_API_KEY_ENV],
-        headers: readCustomHeaders(openAICompatibleEnv().headers),
+        baseURL: process.env[env.baseUrl]?.replace(/\/$/, ""),
+        apiKey: process.env[env.apiKey],
+        headers: readCustomHeaders(env.headers),
       },
-      models: { [modelId]: { name: modelId, limit: openAICompatibleLimit() } },
+      models: { [modelId]: { name: modelId, limit: openAICompatibleLimit(set) } },
     },
   };
 }

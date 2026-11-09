@@ -96,6 +96,7 @@ export {
   openAICompatibleSetOf,
   openAICompatibleSets,
   parseCustomHeaders,
+  stripProviderPrefix,
 } from "../models.ts";
 export type { Mode } from "../modes.ts";
 export { modes } from "../modes.ts";
@@ -109,6 +110,7 @@ export {
   PULLFROG_DIVIDER,
   stripExistingFooter,
 } from "../utils/buildPullfrogFooter.ts";
+export { type CallableModel, callableModels } from "../utils/callableModels.ts";
 export type { CodexAuthBody } from "../utils/codexOAuth.ts";
 export {
   decodeJwtExpMs,

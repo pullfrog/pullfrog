@@ -50,7 +50,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import type { CredentialEntry } from "@opencode/client";
 import { log } from "./cli.ts";
@@ -353,6 +353,46 @@ export function installXaiAuth(): InstalledXaiAuth | null {
   installedSubscriptionPaths.set(XAI_AUTH_ENV, authPath);
 
   return { authPath, originalRefresh: body.tokens.refresh_token };
+}
+
+/** a fresh dir for an `ask_model` credential file. in CI it sits under the bootstrapped data dir the MCP shell cannot see. */
+export function askModelPrivateDir(): string | null {
+  const base = process.env.CI === "true" ? resolveDataHome() : tmpdir();
+  return base ? mkdtempSync(join(base, "ask-model-")) : null;
+}
+
+/**
+ * one subscription in a private data dir of its own, for an `ask_model` process that must not
+ * share the run's auth.json. returns the dir and when the access token expires; nothing is written
+ * back, so the caller must not let the process refresh it, which would rotate the chain the stored
+ * credential depends on.
+ */
+export function installPrivateSubscription(input: {
+  name: "CODEX_AUTH_JSON" | "GROK_AUTH_JSON";
+  value: string;
+}) {
+  const codex = input.name === CODEX_AUTH_ENV ? parseCodexAuthBody(input.value) : null;
+  const xai = codex ? null : parseXaiAuthBody(input.value);
+  const body = codex ?? xai;
+  if (!body || (codex && isRejectedChain(codex)) || (xai && isXaiRejectedChain(xai))) return null;
+  const dataHome = askModelPrivateDir();
+  if (!dataHome) return null;
+  maskTokens(body.tokens);
+  const opencodeDir = join(dataHome, "opencode");
+  const expires = decodeJwtExpMs(body.tokens.access_token) ?? 0;
+  writeOpenCodeAuthEntry({
+    opencodeDir,
+    authPath: join(opencodeDir, "auth.json"),
+    provider: codex ? "openai" : "xai",
+    entry: {
+      type: "oauth",
+      refresh: body.tokens.refresh_token,
+      access: body.tokens.access_token,
+      expires,
+      ...(codex?.tokens.account_id ? { accountId: codex.tokens.account_id } : {}),
+    },
+  });
+  return { dataHome, expires };
 }
 
 /** the server latches `refresh_rejected_at` when xAI rejects the refresh.

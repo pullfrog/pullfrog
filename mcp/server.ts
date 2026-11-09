@@ -11,6 +11,7 @@ import type { OctokitWithPlugins } from "../utils/github.ts";
 import type { ResolvedPayload } from "../utils/payload.ts";
 import type { AccountPlan } from "../utils/runContext.ts";
 import type { RunRepo } from "../utils/runContextData.ts";
+import { type AskModels, AskModelTool } from "./askModel.ts";
 import { CheckoutPrTool } from "./checkout.ts";
 import { GetCheckSuiteLogsTool } from "./checkSuite.ts";
 import {
@@ -112,6 +113,8 @@ export interface ToolContext {
   // undefined when payload.proxyModel is set or when the alias is unresolvable.
   // used by the schema sanitizer to detect Gemini-routed traffic.
   resolvedModel: string | undefined;
+  // models `ask_model` can reach this run; an empty list withholds the tool.
+  askModels: AskModels;
 }
 
 const mcpPortStart = 3764;
@@ -196,6 +199,9 @@ function buildCommonTools(ctx: ToolContext, outputSchema?: JsonSchema): Pullfrog
   }
   if (!ctx.payload.event.is_pr) {
     tools.push(SearchIssuesTool(ctx));
+  }
+  if (ctx.askModels.models.length > 0) {
+    tools.push(AskModelTool(ctx));
   }
 
   const isStandalone = ctx.payload.event.trigger === "unknown";
@@ -362,6 +368,16 @@ export async function startMcpHttpServer(
 ): Promise<{ url: string; toolNames: string[]; [Symbol.asyncDispose]: () => Promise<void> }> {
   const tools = buildOrchestratorTools(ctx, options?.outputSchema);
   const startResult = await selectMcpPort(ctx, tools);
+  // an `ask_model` process gets what an in-process subagent gets, minus further asks. a server of its
+  // own holds that line whatever config the process runs with
+  const askServer =
+    ctx.askModels.models.length > 0
+      ? await selectMcpPort(
+          ctx,
+          tools.filter((registered) => !registered.mutates && registered.name !== "ask_model")
+        )
+      : undefined;
+  ctx.askModels.mcpUrl = askServer?.url;
 
   let disposed = false;
   return {
@@ -376,6 +392,7 @@ export async function startMcpHttpServer(
       closeBrowserDaemon(ctx.toolState);
       await killBackgroundProcesses(ctx.toolState);
       await startResult.server.stop();
+      await askServer?.server.stop();
     },
   };
 }

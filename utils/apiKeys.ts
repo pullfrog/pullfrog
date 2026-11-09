@@ -384,14 +384,9 @@ function hasPositiveNumberEnvVar(name: string): boolean {
   return Number(process.env[name]) > 0;
 }
 
-/** checks the run's endpoint under the names it is stored as: a named set's own variables
- * (`activateOpenAICompatibleSet` copied them into the bare ones), else the bare ones. */
-function validateOpenAICompatibleSetup(params: {
-  owner: string;
-  name: string;
-  set: string | undefined;
-}): void {
-  const env = openAICompatibleEnv(params.set);
+/** what the endpoint `set` (the bare variables when undefined) lacks in this process's env. */
+export function openAICompatibleSetupMissing(set: string | undefined): string[] {
+  const env = openAICompatibleEnv(set);
   const missing: string[] = [];
   if (!hasEnvVar(env.baseUrl)) missing.push(env.baseUrl);
   if (!hasEnvVar(env.apiKey)) missing.push(env.apiKey);
@@ -401,15 +396,26 @@ function validateOpenAICompatibleSetup(params: {
   // auto-compaction for the whole run. see openAICompatibleLimit().
   if (!hasPositiveNumberEnvVar(env.context)) missing.push(env.context);
   if (!hasPositiveNumberEnvVar(env.maxOutput)) missing.push(env.maxOutput);
+  return missing;
+}
 
+/** checks the run's endpoint under the names it is stored as: a named set's own variables
+ * (`activateOpenAICompatibleSet` copied them into the bare ones), else the bare ones. */
+function validateOpenAICompatibleSetup(params: {
+  owner: string;
+  name: string;
+  set: string | undefined;
+}): void {
+  const missing = openAICompatibleSetupMissing(params.set);
   if (missing.length > 0) {
+    const env = openAICompatibleEnv(params.set);
     throw new Error(
       buildOpenAICompatibleSetupError({ owner: params.owner, name: params.name, missing, env })
     );
   }
 }
 
-function validateAzureSetup(params: { owner: string; name: string }): void {
+export function azureSetupMissing(): string[] {
   const missing: string[] = [];
   if (!hasEnvVar(AZURE_API_KEY_ENV)) missing.push(AZURE_API_KEY_ENV);
   if (!hasEnvVar(AZURE_RESOURCE_NAME_ENV)) missing.push(AZURE_RESOURCE_NAME_ENV);
@@ -419,13 +425,17 @@ function validateAzureSetup(params: { owner: string; name: string }): void {
   // limits itself or opencode falls back to 32000 max_tokens with no compaction.
   if (!hasPositiveNumberEnvVar(AZURE_CONTEXT_ENV)) missing.push(AZURE_CONTEXT_ENV);
   if (!hasPositiveNumberEnvVar(AZURE_MAX_OUTPUT_ENV)) missing.push(AZURE_MAX_OUTPUT_ENV);
+  return missing;
+}
 
+function validateAzureSetup(params: { owner: string; name: string }): void {
+  const missing = azureSetupMissing();
   if (missing.length > 0) {
     throw new Error(buildAzureSetupError({ owner: params.owner, name: params.name, missing }));
   }
 }
 
-function validateBedrockSetup(params: { owner: string; name: string }): void {
+export function bedrockSetupMissing(): string[] {
   const hasAuth =
     hasEnvVar("AWS_BEARER_TOKEN_BEDROCK") ||
     (hasEnvVar("AWS_ACCESS_KEY_ID") && hasEnvVar("AWS_SECRET_ACCESS_KEY"));
@@ -435,13 +445,17 @@ function validateBedrockSetup(params: { owner: string; name: string }): void {
     missing.push("AWS_BEARER_TOKEN_BEDROCK (or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY)");
   if (!hasEnvVar("AWS_REGION")) missing.push("AWS_REGION");
   if (!hasEnvVar(BEDROCK_MODEL_ID_ENV)) missing.push(BEDROCK_MODEL_ID_ENV);
+  return missing;
+}
 
+function validateBedrockSetup(params: { owner: string; name: string }): void {
+  const missing = bedrockSetupMissing();
   if (missing.length > 0) {
     throw new Error(buildBedrockSetupError({ owner: params.owner, name: params.name, missing }));
   }
 }
 
-function validateVertexSetup(params: { owner: string; name: string }): void {
+export function vertexSetupMissing(): string[] {
   const hasAuth = hasEnvVar(VERTEX_SERVICE_ACCOUNT_JSON_ENV);
   const hasProject =
     hasEnvVar(GOOGLE_CLOUD_PROJECT_ENV) ||
@@ -452,7 +466,11 @@ function validateVertexSetup(params: { owner: string; name: string }): void {
   if (!hasProject) missing.push(GOOGLE_CLOUD_PROJECT_ENV);
   if (!hasEnvVar(VERTEX_LOCATION_ENV)) missing.push(VERTEX_LOCATION_ENV);
   if (!hasEnvVar(VERTEX_MODEL_ID_ENV)) missing.push(VERTEX_MODEL_ID_ENV);
+  return missing;
+}
 
+function validateVertexSetup(params: { owner: string; name: string }): void {
+  const missing = vertexSetupMissing();
   if (missing.length > 0) {
     throw new Error(buildVertexSetupError({ owner: params.owner, name: params.name, missing }));
   }

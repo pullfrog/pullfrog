@@ -215,6 +215,18 @@ export async function selectConfiguredCredential(input: {
   );
 }
 
+/**
+ * a stored credential's value for a side call (`ask_model`), loaded without activating it: the
+ * first candidate of that name, in the order startup selection tries them. never call it for a
+ * name the run already holds — selecting a subscription again can rotate the chain it is using.
+ */
+export async function loadStoredCredential(input: { access: CredentialAccess; name: string }) {
+  const candidate = input.access.candidates.find((item) => item.name === input.name);
+  if (!candidate) return null;
+  const selected = await select({ access: input.access, candidate });
+  return selected && sanitizeSecret(input.name, selected.value);
+}
+
 async function probe(input: { name: string; value: string; model: string }) {
   const subscription = subscriptionNameSchema.safeParse(input.name);
   const model = stripProviderPrefix(input.model);
