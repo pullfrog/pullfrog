@@ -55,7 +55,7 @@ import { OPENAI_COMPATIBLE_PROVIDER } from "../models.ts";
 import { openCodeHomeEnv } from "../utils/openCodeModels.ts";
 import { resolveRepoRoot } from "../utils/sandbox.ts";
 import { HOOK_ASSET_TMPDIR_RELPATHS } from "./nativeFsDenies.ts";
-import type { AgentRunContext } from "./shared.ts";
+import { type AgentRunContext, DEADLINE_RESERVE_MS } from "./shared.ts";
 
 export const PULLFROG_BUS_EVENT_TYPE = "pullfrog_bus_event" as const;
 
@@ -183,6 +183,7 @@ export function buildOpencodeSubagentGateSource(ctx: AgentRunContext): string {
 // inside the per-run tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside
 // the user's working tree.
 ${realPathGateSource(ctx)}
+${reserveGateSource(ctx)}
 // embedded at template-render time so the plugin source has no project imports.
 // the denied set is derived from each tool's \`mutates\` flag — see
 // action/agents/subagentToolGates.ts.
@@ -225,6 +226,7 @@ export default async function pullfrogSubagentGatePlugin() {
         throw new Error(${JSON.stringify(bashRefusal)});
       }
       refuseEscape(tool, output?.args);
+      if (tool === "task" && Date.now() >= RESERVE_STARTS_AT) throw new Error(RESERVE_REFUSAL);
       if (!sessionID || !tool) return;
       if (orchestratorSessionID === undefined) orchestratorSessionID = sessionID;
       if (sessionID === orchestratorSessionID) return;
@@ -310,6 +312,16 @@ const SUBAGENT_DENIAL =
   "report_progress, etc.) are reserved for the orchestrator. " +
   "report findings back to the orchestrator and let it perform the mutation.";
 
+/** inside the deadline reserve only submitting is left, so a new subagent is refused (#1666). */
+function reserveGateSource(ctx: AgentRunContext): string {
+  const startsAt =
+    ctx.deadlineAt === undefined ? Number.POSITIVE_INFINITY : ctx.deadlineAt - DEADLINE_RESERVE_MS;
+  const refusal =
+    "the run is within 5 minutes of its time limit, so no subagent may start. Submit your work now, with what you have.";
+  return `const RESERVE_STARTS_AT = ${startsAt};
+const RESERVE_REFUSAL = ${JSON.stringify(refusal)};`;
+}
+
 /** the id the V2 gate registers under, which the harness requires `plugin.list` to report active. */
 export const OPENCODE_V2_GATE_PLUGIN_ID = "pullfrog.gate";
 
@@ -326,6 +338,7 @@ export function buildOpencode2GateSource(ctx: AgentRunContext): string {
 // action/agents/opencodePlugin.ts in pullfrog/app. lives inside the per-run
 // tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside the user's working tree.
 ${realPathGateSource(ctx)}
+${reserveGateSource(ctx)}
 const SUBAGENT_DENIED_TOOLS = new Set(${JSON.stringify(ctx.subagentDeniedTools)});
 
 // the orchestrator calls a tool (its \`subagent\` dispatch) before any subagent
@@ -346,6 +359,7 @@ export default {
       const sessionID = typeof event?.sessionID === "string" ? event.sessionID : "";
       if (tool === "shell") throw new Error(${JSON.stringify(nativeShellRefusal(ctx, "shell"))});
       refuseEscape(tool, event.input);
+      if (tool === "subagent" && Date.now() >= RESERVE_STARTS_AT) throw new Error(RESERVE_REFUSAL);
       if (!sessionID || !tool) return;
       if (orchestratorSessionID === undefined) orchestratorSessionID = sessionID;
       if (sessionID === orchestratorSessionID) return;

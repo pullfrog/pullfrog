@@ -158,6 +158,8 @@ async function open(launch: OpencodeLaunch) {
       const resp = await ctx.client.session.abort({ sessionID });
       if (!resp.data) throw new Error(resp.error ? JSON.stringify(resp.error) : "nothing aborted");
     },
+    // V1 has no way to reach a running turn; its gate still refuses a late dispatch.
+    note: async () => {},
     close: async () => {
       eventsController.abort();
       await eventLoopPromise;

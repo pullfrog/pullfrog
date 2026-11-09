@@ -81,6 +81,8 @@ export interface OpencodeSession {
   prompt: (text: string, signal: AbortSignal) => Promise<AgentResult>;
   /** stop one session's in-flight work. a subagent's dispatching call then fails. */
   interrupt: (sessionID: string) => Promise<void>;
+  /** tell the orchestrator something at its next step, without starting a turn. */
+  note: (text: string) => Promise<void>;
   /** stop the event stream. the caller closes the server. */
   close: () => Promise<void>;
 }
@@ -113,6 +115,8 @@ export interface RunState {
       interrupted?: boolean;
     }
   >;
+  /** the run has been outside its deadline reserve, so entering it earns the one submit note. */
+  reserveNoteArmed: boolean;
   /** first dispatch time per child session, so a lens resumed by its session id keeps its spent budget. */
   childStartedAt: Map<string, number>;
   /** orchestrator tool calls already bookkept, so a replay never fires side effects twice. */
@@ -145,6 +149,7 @@ export function createRunState(launch: OpencodeLaunch, sessionID: string): RunSt
     eventCount: 0,
     lastEventAt: performance.now(),
     taskDispatchByCallID: new Map(),
+    reserveNoteArmed: false,
     childStartedAt: new Map(),
     loggedToolCallIDs: new Set(),
     mcpToolCalls: 0,

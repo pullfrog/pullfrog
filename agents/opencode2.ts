@@ -204,6 +204,14 @@ async function open(launch: OpencodeLaunch): Promise<OpencodeSession> {
       const resp = await ctx.client.session.interrupt({ sessionID });
       if (!resp.interrupted) throw new Error("nothing running to interrupt");
     },
+    note: async (text) => {
+      await ctx.client.session.synthetic({
+        sessionID: ctx.orchestratorSessionID,
+        text,
+        delivery: "steer",
+        resume: false,
+      });
+    },
     close: async () => {
       clearInterval(mirror);
       await mirrorCredentials(ctx);

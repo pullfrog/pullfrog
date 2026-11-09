@@ -58,6 +58,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { totalmem } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Agent, fetch as undiciFetch } from "undici";
 import { pullfrogMcpName } from "../external.ts";
 import { BEDROCK_MODEL_ID_ENV } from "../models.ts";
@@ -68,6 +69,7 @@ import {
   watchdogBudgetMs,
 } from "../utils/activity.ts";
 import type { AgentDiagnostic } from "../utils/agentHangReport.ts";
+import { isApiKeyAuthError } from "../utils/apiKeys.ts";
 import { log } from "../utils/cli.ts";
 import { installCodexAuth, installXaiAuth } from "../utils/codexHome.ts";
 import type { OAuthWriteback } from "../utils/codexRefreshDetect.ts";
@@ -381,6 +383,11 @@ function watchProviderErrors(server: ServerHandle, diagnostic: AgentDiagnostic):
 const WATCHDOG_SALVAGE_PROMPT =
   "Your previous turn was cut off mid-response by a provider stall. Nothing you had not already submitted through a tool was saved. Continue from where you stopped and submit your work now — do not restart your analysis.";
 
+/** OpenRouter intermittently refuses a key it minted seconds earlier (#1665), so wait that out. */
+const PROXY_KEY_RETRY_DELAYS_MS = [15_000, 30_000];
+const PROXY_KEY_RETRY_PROMPT =
+  "Your previous attempt failed before the model could respond. Start on the task above now.";
+
 /**
  * Start an event-silence watchdog. The outer process-level activity timer
  * (main.ts `createProcessOutputActivityTimeout`) watches `process.stdout.write`
@@ -485,17 +492,31 @@ function startInnerActivityWatchdog(params: {
 /** a `reviewfrog` lens's budget: leaves 4,608 of 4,615 finished lenses untouched (#1524). */
 const LENS_BUDGET_MS = 20 * 60_000;
 
+function noteOrchestrator(session: OpencodeSession, text: string): void {
+  session.note(text).catch((err) => log.debug(`» could not note the orchestrator: ${String(err)}`));
+}
+
 /**
  * Interrupt a lens past its budget, or any subagent still running inside the run's last minutes. The
  * `task` call waiting on it then fails, so the orchestrator submits with what it has instead of idling
  * until the run timer fails everything. The clock is the child session's, not the call's, because a
- * resume by session id would otherwise start a fresh budget.
+ * resume by session id would otherwise start a fresh budget. A bare cancellation reads as a transient
+ * failure, and got lenses re-dispatched until the run timed out (#1666), so the orchestrator is told why.
  */
 function enforceLensBudgets(ctx: AgentRunContext, session: OpencodeSession): void {
   // read per tick, not at import: `unsafe_overrides` lands in the env after modules load
   const budgetMs = watchdogBudgetMs(LENS_BUDGET_MS, "PULLFROG_E2E_LENS_BUDGET_MS");
   const nearDeadline =
     ctx.deadlineAt !== undefined && ctx.deadlineAt - Date.now() < DEADLINE_RESERVE_MS;
+  if (!nearDeadline) {
+    session.state.reserveNoteArmed = true;
+  } else if (session.state.reserveNoteArmed) {
+    session.state.reserveNoteArmed = false;
+    noteOrchestrator(
+      session,
+      "This run is within 5 minutes of its time limit. Stop exploring and submit your review or push your work now, with what you have."
+    );
+  }
   for (const dispatch of session.state.taskDispatchByCallID.values()) {
     if (!dispatch.child) continue;
     const elapsedMs = performance.now() - dispatch.child.startedAt;
@@ -509,6 +530,11 @@ function enforceLensBudgets(ctx: AgentRunContext, session: OpencodeSession): voi
         dispatch.interrupted = true;
         log.info(
           `» interrupted subagent ${dispatch.label} after ${Math.round(elapsedMs / 1000)}s: ${why}`
+        );
+        if (!overBudget) return;
+        noteOrchestrator(
+          session,
+          `Pullfrog stopped subagent ${dispatch.label} for exceeding its time budget. This is not a transient failure, so do not dispatch it again: continue with the findings you have.`
         );
       },
       (err) => log.debug(`» could not interrupt subagent ${dispatch.label}: ${String(err)}`)
@@ -886,7 +912,18 @@ async function runTurns(ctx: AgentRunContext, session: OpencodeSession): Promise
   };
 
   try {
-    const initial = await runTurn(ctx.instructions.full);
+    let initial = await runTurn(ctx.instructions.full);
+    for (const delayMs of PROXY_KEY_RETRY_DELAYS_MS) {
+      const refused =
+        !initial.success &&
+        !!ctx.payload.proxyModel &&
+        !state.diagnostic.sawModelOutput &&
+        isApiKeyAuthError(initial.error ?? "");
+      if (!refused) break;
+      log.info(`» the provider refused this run's minted key — retrying in ${delayMs / 1000}s`);
+      await sleep(delayMs);
+      initial = await runTurn(PROXY_KEY_RETRY_PROMPT);
+    }
 
     // post-run gate retry loop — every resume is another prompt against the
     // same session, so MCP, plugins, provider sockets stay warm and the

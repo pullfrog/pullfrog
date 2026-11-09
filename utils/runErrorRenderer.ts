@@ -36,7 +36,8 @@
  *
  *   3. API-key auth error — `isApiKeyAuthError` sniffs the raw error string
  *      (or the activity-timeout hang body when present, since that's where
- *      the underlying provider error often lands).
+ *      the underlying provider error often lands). On a proxy run the key is
+ *      Pullfrog's, so the body names Pullfrog instead of asking for a rotation.
  *
  *   4. Model not in OpenCode's catalog (opencode ≥1.18 words it `Model not
  *      found: <id>`, #1470), a provider declining the model (#1077), Zen's
@@ -529,6 +530,16 @@ function renderRunErrorBody(ctx: RenderContext): string {
   }
 
   const apiKeySource = hangBody ?? message;
+  // a proxy run's key is one Pullfrog minted, so the customer has nothing to rotate.
+  if (ctx.routerActive && isApiKeyAuthError(apiKeySource)) {
+    return renderFailure({
+      headline: "Pullfrog's model credential for this run was refused.",
+      detail:
+        "This is on Pullfrog's side, not your key or balance. Re-trigger the run to try again.",
+      details: providerResponse(ctx),
+      links: [DISCORD_LINK],
+    });
+  }
   if (isApiKeyAuthError(apiKeySource)) {
     return formatApiKeyErrorSummary({
       owner: ctx.repo.owner,

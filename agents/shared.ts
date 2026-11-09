@@ -126,7 +126,8 @@ export interface AgentResult {
 
 /**
  * the last stretch before `deadlineAt` belongs to submitting: nothing optional starts in it,
- * and running lenses are interrupted when it begins (#1532, #1524).
+ * and running lenses are interrupted when it begins (#1532, #1524). the gate refuses a new
+ * subagent inside it, and the orchestrator is told once to submit (#1666).
  */
 export const DEADLINE_RESERVE_MS = 5 * 60_000;
 
