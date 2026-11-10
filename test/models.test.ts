@@ -65,6 +65,8 @@ const BYOK_ONLY_MODELS = new Set<string>([
   "vercel/glm",
   "vercel/kimi-k3",
   "vercel/muse-spark",
+  "vercel/muse-wonder",
+  "vercel/muse-ember",
   "vercel/mistral-large",
   // same reason as the vercel/* entries, one step further: these aliases exist
   // to spend a Kimi MEMBERSHIP, and OpenRouter cannot resell one — its

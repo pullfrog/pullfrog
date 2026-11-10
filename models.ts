@@ -532,6 +532,20 @@ export const bundledProviders = {
         openRouterResolve: "openrouter/meta/muse-spark-1.3",
         preferred: true,
       },
+      // Meta's top tier (2026-10-12) and its cost-efficient tier (2026-11-09),
+      // on the same four routes and API as Muse Spark.
+      "muse-wonder": {
+        displayName: "Muse Wonder",
+        resolve: "meta/muse-wonder-1.0",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/meta/muse-wonder",
+      },
+      "muse-ember": {
+        displayName: "Muse Ember",
+        resolve: "meta/muse-ember-1.0",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/meta/muse-ember",
+      },
       // the Contributor tier: the same model at $0.10 / $0.20 (cache read
       // $0.002) because Meta trains on the prompts and completions. an opt-in
       // pick on the OSS menu (public code, headless runs), never the default.
@@ -781,6 +795,18 @@ export const bundledProviders = {
         effort: ["minimal", "low", "medium", "high", "xhigh"],
         openRouterResolve: "openrouter/meta/muse-spark-1.3",
         openRouterEffort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      },
+      "muse-wonder": {
+        displayName: "Muse Wonder",
+        resolve: "opencode/muse-wonder-1.0",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/meta/muse-wonder",
+      },
+      "muse-ember": {
+        displayName: "Muse Ember",
+        resolve: "opencode/muse-ember-1.0",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/meta/muse-ember",
       },
       // Zen's FREE contributor tier: the same model at $0 because Meta trains
       // on the prompts and completions. Zen served it to our key on 2026-09-12
@@ -1407,6 +1433,18 @@ export const bundledProviders = {
         effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
         openRouterResolve: "openrouter/meta/muse-spark-1.3",
       },
+      "muse-wonder": {
+        displayName: "Muse Wonder",
+        resolve: "openrouter/meta/muse-wonder",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/meta/muse-wonder",
+      },
+      "muse-ember": {
+        displayName: "Muse Ember",
+        resolve: "openrouter/meta/muse-ember",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+        openRouterResolve: "openrouter/meta/muse-ember",
+      },
       "muse-spark-contributor": {
         displayName: "Muse Spark Contributor",
         description: "Meta trains on prompts and completions",
@@ -1512,6 +1550,16 @@ export const bundledProviders = {
       "muse-spark": {
         displayName: "Muse Spark",
         resolve: "vercel/meta/muse-spark-1.3",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      },
+      "muse-wonder": {
+        displayName: "Muse Wonder",
+        resolve: "vercel/meta/muse-wonder-1.0",
+        effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
+      },
+      "muse-ember": {
+        displayName: "Muse Ember",
+        resolve: "vercel/meta/muse-ember",
         effort: ["minimal", "low", "medium", "high", "xhigh", "max"],
       },
       "mistral-large": {
