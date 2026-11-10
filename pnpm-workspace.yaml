@@ -4,6 +4,15 @@ neverBuiltDependencies:
   - '@opencode/cli'
   - agent-browser
 minimumReleaseAgeExclude:
+  - '@anthropic-ai/claude-code@2.1.321'
+  - '@anthropic-ai/claude-code-darwin-arm64@2.1.321'
+  - '@anthropic-ai/claude-code-darwin-x64@2.1.321'
+  - '@anthropic-ai/claude-code-linux-arm64@2.1.321'
+  - '@anthropic-ai/claude-code-linux-arm64-musl@2.1.321'
+  - '@anthropic-ai/claude-code-linux-x64@2.1.321'
+  - '@anthropic-ai/claude-code-linux-x64-musl@2.1.321'
+  - '@anthropic-ai/claude-code-win32-arm64@2.1.321'
+  - '@anthropic-ai/claude-code-win32-x64@2.1.321'
   - '@openai/codex@0.165.0 || 0.165.0-linux-x64 || 0.165.0-linux-arm64 || 0.165.0-darwin-x64 || 0.165.0-darwin-arm64 || 0.165.0-win32-x64 || 0.165.0-win32-arm64'
   - '@openai/codex-sdk@0.165.0'
   - yes@0.2.7

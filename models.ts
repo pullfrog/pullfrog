@@ -146,7 +146,7 @@ export const bundledProviders = {
       // API is the source of truth (#959).
       "claude-fable": {
         displayName: "Claude Fable",
-        resolve: "anthropic/claude-fable-5-1",
+        resolve: "anthropic/claude-fable-5-2",
         effort: ["low", "medium", "high", "xhigh", "max"],
         // rolling alias: models.dev's OpenRouter mirror lags brand-new pinned
         // versions (claude-fable-5 was missing there when this was added), so track ~…-latest to
@@ -582,7 +582,7 @@ export const bundledProviders = {
       // the Anthropic access grant `anthropic/claude-fable` still needs.
       "claude-fable": {
         displayName: "Claude Fable",
-        resolve: "opencode/claude-fable-5-1",
+        resolve: "opencode/claude-fable-5-2",
         effort: ["low", "medium", "high", "xhigh", "max"],
         openRouterResolve: "openrouter/~anthropic/claude-fable-latest",
         subagentModel: "claude-sonnet",

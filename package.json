@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@actions/core": "^3.0.1",
-    "@anthropic-ai/claude-code": "2.1.293",
+    "@anthropic-ai/claude-code": "2.1.321",
     "@ark/fs": "0.56.0",
     "@ark/util": "0.56.0",
     "@clack/prompts": "^1.2.0",
