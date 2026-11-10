@@ -121,7 +121,7 @@ export async function finalizeSuccessRun(input: {
   }
 
   // create_pull_request_review owns its own deletion (see mcp/review.ts), so
-  // progressComment is already null by the time we get here for that path.
+  // progressComment is already closed by the time we get here for that path.
   // uses finalSummaryWritten (not todoTracker.enabled or wasUpdated) so
   // cleanup survives API failures in report_progress where cancel() ran but
   // the write didn't succeed, and isn't fooled by writes to *other* artifacts.
@@ -134,7 +134,7 @@ export async function finalizeSuccessRun(input: {
   // and a no-op error report (see #868).
   if (
     input.result.success &&
-    input.toolState.progressComment &&
+    input.toolState.progressComment.status === "open" &&
     input.toolState.wasUpdated &&
     !input.toolState.finalSummaryWritten
   ) {

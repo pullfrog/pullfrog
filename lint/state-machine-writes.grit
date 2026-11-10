@@ -1,0 +1,15 @@
+// a machine's status column is written only by the one module that owns its transition table
+// see wiki/state-machines.md
+
+`$db.$model.$write($args)` where {
+  $model <: or { `workflowRun`, `repo`, `invoice`, `ossApplication` },
+  or {
+    and { $write <: or { `update`, `updateMany` }, $args <: contains `data: { $fields }` },
+    and { $write <: `upsert`, $args <: contains `update: { $fields }` }
+  },
+  $fields <: some r"^status\b.*",
+  register_diagnostic(
+    span = $write,
+    message = "this column is a state machine: write it through the module that owns its transitions (see wiki/state-machines.md)"
+  )
+}

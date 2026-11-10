@@ -17,7 +17,7 @@ function makeCtx(overrides: Partial<ToolState> = {}) {
     repos: new Map([["o/r", { owner: "o", name: "r", dir: "/tmp/r", access: "primary" }]]),
     primaryRepoKey: "o/r",
     startedAt: 0,
-    progressComment: undefined,
+    progressComment: { status: "unseeded" },
     hadProgressComment: true,
     prepushFailureCount: 0,
     noopReviewSubmissions: 0,

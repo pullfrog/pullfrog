@@ -1207,7 +1207,7 @@ async function recordSubmittedReview(
   // a submitted review obsoletes the progress comment — the review IS the
   // durable artifact. owned here (not in main.ts) so cleanup is atomic with
   // submission and survives any path out of the run (success, timeout,
-  // crash). deleting sets progressComment = null, so a later report_progress
+  // crash). deleting closes progressComment, so a later report_progress
   // call short-circuits to a no-op; on an issue target the comment instead
   // survives with a link to the review, and report_progress may replace it.
   // best-effort: a cleanup failure must not turn a successful review into

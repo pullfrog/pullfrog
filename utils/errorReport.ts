@@ -52,11 +52,11 @@ export async function reportErrorToComment(ctx: ReportErrorParams): Promise<void
   // is never masked — and the error bodies quote provider and tool output.
   const body = `${redactSecrets(ctx.error)}${footer}`;
 
-  const comment = ctx.toolState.progressComment;
-  if (comment) {
+  const progress = ctx.toolState.progressComment;
+  if (progress.status === "open") {
     await updateProgressComment(
       { octokit, owner: repoContext.owner, repo: repoContext.name },
-      comment,
+      progress.comment,
       body
     );
     ctx.toolState.wasUpdated = true;
@@ -67,7 +67,8 @@ export async function reportErrorToComment(ctx: ReportErrorParams): Promise<void
   // intentionally have no progress comment. for terminal errors that need
   // user action — billing exhaustion, transient billing-service outage —
   // surface a fresh issue comment instead of leaving the GH job summary as
-  // the only signal. see #775.
+  // the only signal. see #775. a `closed` comment lands here too: the review
+  // that replaced it says nothing about this failure.
   if (!ctx.createIfMissing) return;
   const issueNumber = primaryRepoState(ctx.toolState).issueNumber;
   if (!issueNumber) return;
@@ -79,7 +80,10 @@ export async function reportErrorToComment(ctx: ReportErrorParams): Promise<void
       issue_number: issueNumber,
       body,
     });
-    ctx.toolState.progressComment = { id: created.data.id, type: "issue" };
+    ctx.toolState.progressComment = {
+      status: "open",
+      comment: { id: created.data.id, type: "issue" },
+    };
     ctx.toolState.wasUpdated = true;
   } catch (error) {
     log.warning(

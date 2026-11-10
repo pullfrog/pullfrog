@@ -207,9 +207,9 @@ export const ReportProgress = type({
  * Report progress to a GitHub comment.
  *
  * progressComment has three states:
- *   - undefined: no comment yet — will create one if an issue/PR target exists
- *   - object:    active comment — will update it in place via the right REST endpoint for its type
- *   - null:      deliberately deleted (e.g. after submitting a PR review) — skips silently
+ *   - unseeded: no comment yet — will create one if an issue/PR target exists
+ *   - open:     active comment — will update it in place via the right REST endpoint for its type
+ *   - closed:   deliberately deleted (e.g. after submitting a PR review) — skips silently
  *
  * The body is tracked in lastProgressBody for the job summary regardless of comment state,
  * EXCEPT for `liveProgress` (todo-tracker) writes — see the param note below.
@@ -288,74 +288,78 @@ export async function reportProgress(
     };
   }
 
-  const existingComment = ctx.toolState.progressComment;
+  const progress = ctx.toolState.progressComment;
 
-  // if we already have a progress comment, update it
-  if (existingComment) {
-    const customParts =
-      isPlanMode && issueNumber !== undefined
-        ? [buildImplementPlanLink(ctx, issueNumber, existingComment.id)]
-        : enrichmentLinks;
+  switch (progress.status) {
+    // if we already have a progress comment, update it
+    case "open": {
+      const customParts =
+        isPlanMode && issueNumber !== undefined
+          ? [buildImplementPlanLink(ctx, issueNumber, progress.comment.id)]
+          : enrichmentLinks;
 
-    const bodyWithoutFooter = stripExistingFooter(fixDoubleEscapedString(body));
-    const footer = buildCommentFooter(ctx, customParts);
-    const bodyWithFooter = `${bodyWithoutFooter}${footer}`;
+      const bodyWithoutFooter = stripExistingFooter(fixDoubleEscapedString(body));
+      const footer = buildCommentFooter(ctx, customParts);
+      const bodyWithFooter = `${bodyWithoutFooter}${footer}`;
 
-    // a review-reply progress comment (seeded by the AddressReviews dispatch
-    // path) can become stale before final delivery — the thread is deleted or
-    // otherwise unreachable, so updateReviewComment 404s. rather than fail an
-    // already-completed run, fall back to a fresh top-level comment on the PR
-    // and retarget future writes there. (#919)
-    let result: Awaited<ReturnType<typeof updateProgressComment>>;
-    try {
-      result = await updateProgressComment(apiCtx, existingComment, bodyWithFooter);
-    } catch (error) {
-      // only a deliberate write to a stale review-reply comment falls back. a
-      // liveProgress (todo-tracker) 404 rethrows — it must never create a
-      // user-facing comment, and the next deliberate report_progress recovers.
-      if (
-        params.liveProgress ||
-        existingComment.type !== "review" ||
-        !isNotFoundError(error) ||
-        issueNumber === undefined
-      ) {
-        throw error;
+      // a review-reply progress comment (seeded by the AddressReviews dispatch
+      // path) can become stale before final delivery — the thread is deleted or
+      // otherwise unreachable, so updateReviewComment 404s. rather than fail an
+      // already-completed run, fall back to a fresh top-level comment on the PR
+      // and retarget future writes there. (#919)
+      let result: Awaited<ReturnType<typeof updateProgressComment>>;
+      try {
+        result = await updateProgressComment(apiCtx, progress.comment, bodyWithFooter);
+      } catch (error) {
+        // only a deliberate write to a stale review-reply comment falls back. a
+        // liveProgress (todo-tracker) 404 rethrows — it must never create a
+        // user-facing comment, and the next deliberate report_progress recovers.
+        if (
+          params.liveProgress ||
+          progress.comment.type !== "review" ||
+          !isNotFoundError(error) ||
+          issueNumber === undefined
+        ) {
+          throw error;
+        }
+        log.warning(
+          `progress review comment ${progress.comment.id} is gone (404); posting a top-level comment on #${issueNumber} instead`
+        );
+        const created = await createLeapingProgressComment(
+          apiCtx,
+          { kind: "issue", issueNumber },
+          bodyWithFooter
+        );
+        ctx.toolState.progressComment = { status: "open", comment: created.comment };
+        if (!params.liveProgress) ctx.toolState.wasUpdated = true;
+        return {
+          commentId: created.comment.id,
+          url: created.html_url,
+          body: created.body || "",
+          action: "created",
+        };
       }
-      log.warning(
-        `progress review comment ${existingComment.id} is gone (404); posting a top-level comment on #${issueNumber} instead`
-      );
-      const created = await createLeapingProgressComment(
-        apiCtx,
-        { kind: "issue", issueNumber },
-        bodyWithFooter
-      );
-      ctx.toolState.progressComment = created.comment;
+
       if (!params.liveProgress) ctx.toolState.wasUpdated = true;
+
+      if (isPlanMode && result.node_id) {
+        await patchWorkflowRunFields(ctx, { planCommentNodeId: result.node_id });
+      }
+
       return {
-        commentId: created.comment.id,
-        url: created.html_url,
-        body: created.body || "",
-        action: "created",
+        commentId: result.id,
+        url: result.html_url,
+        body: result.body || "",
+        action: "updated",
       };
     }
-
-    if (!params.liveProgress) ctx.toolState.wasUpdated = true;
-
-    if (isPlanMode && result.node_id) {
-      await patchWorkflowRunFields(ctx, { planCommentNodeId: result.node_id });
-    }
-
-    return {
-      commentId: result.id,
-      url: result.html_url,
-      body: result.body || "",
-      action: "updated",
-    };
-  }
-
-  // null = progress comment was deleted by stranded-comment cleanup in main.ts
-  if (existingComment === null) {
-    return { body, action: "skipped" };
+    // closed = shut on purpose (review posted, stranded-comment cleanup)
+    case "closed":
+      return { body, action: "skipped" };
+    case "unseeded":
+      break;
+    default:
+      progress satisfies never;
   }
 
   // no existing comment - need an issue/PR to create one on
@@ -376,7 +380,7 @@ export async function reportProgress(
     initialBody
   );
 
-  ctx.toolState.progressComment = created.comment;
+  ctx.toolState.progressComment = { status: "open", comment: created.comment };
   if (!params.liveProgress) ctx.toolState.wasUpdated = true;
 
   // if Plan mode, update the comment to add the "Implement plan" link
@@ -535,33 +539,33 @@ export async function retireProgressCommentForReview(
 
 /**
  * Delete the progress comment if it exists.
- * Used by main.ts for stranded-comment cleanup (orphaned "Leaping into action" or
+ * Used by runLifecycle.ts for stranded-comment cleanup (orphaned "Leaping into action" or
  * checklist left by the todo tracker when the agent didn't call report_progress).
- * Sets progressComment to null so subsequent report_progress calls are no-ops.
+ * Sets progressComment to closed so subsequent report_progress calls are no-ops.
  */
 export async function deleteProgressComment(ctx: ToolContext): Promise<boolean> {
   const existing = ctx.toolState.progressComment;
-  if (!existing) {
+  if (existing.status !== "open") {
     // nothing to delete, but still close the surface. callers reach here once the
     // run's durable artifact has landed (review submitted, fix approved), so a later
     // report_progress must not open a fresh comment — which it otherwise would when
     // the dispatcher never seeded one under `progressComments: disabled`.
-    ctx.toolState.progressComment = null;
+    ctx.toolState.progressComment = { status: "closed" };
     return false;
   }
 
   try {
     await deleteProgressCommentApi(
       { octokit: ctx.octokit, owner: ctx.repo.owner, repo: ctx.repo.name },
-      existing
+      existing.comment
     );
   } catch (error) {
     // ignore 404 - comment already deleted
     if (!isNotFoundError(error)) throw error;
   }
 
-  // set to null (not undefined) so report_progress skips instead of creating a new comment
-  ctx.toolState.progressComment = null;
+  // set to closed (not unseeded) so report_progress skips instead of creating a new comment
+  ctx.toolState.progressComment = { status: "closed" };
 
   return true;
 }
@@ -628,11 +632,17 @@ async function deleteProgressReplyInThread(
   threadRootId: number | undefined
 ): Promise<void> {
   const progress = ctx.toolState.progressComment;
-  if (progress?.type !== "review" || threadRootId === undefined) return;
+  if (
+    progress.status !== "open" ||
+    progress.comment.type !== "review" ||
+    threadRootId === undefined
+  ) {
+    return;
+  }
   const seeded = await ctx.octokit.rest.pulls.getReviewComment({
     owner: ctx.repo.owner,
     repo: ctx.repo.name,
-    comment_id: progress.id,
+    comment_id: progress.comment.id,
   });
   if (seeded.data.in_reply_to_id !== threadRootId) return;
   await deleteProgressComment(ctx);

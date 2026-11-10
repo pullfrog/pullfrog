@@ -104,6 +104,16 @@ export interface RepoToolState {
 }
 
 /**
+ * unseeded = no comment yet (the first write creates one), open = active comment
+ * (writes edit it in place), closed = shut on purpose, whether or not a comment
+ * ever existed (writes are skipped).
+ */
+export type ProgressCommentState =
+  | { status: "unseeded" }
+  | { status: "open"; comment: ProgressComment }
+  | { status: "closed" };
+
+/**
  * mutable per-run record of facts that occurred during execution. shared
  * between the action process and the MCP server (one process — toolState is
  * just a JS object passed by reference into both surfaces).
@@ -181,8 +191,7 @@ export interface ToolState {
     promise: Promise<PrepResult[]> | undefined;
     results: PrepResult[] | undefined;
   };
-  // undefined = no comment yet, object = active comment, null = deliberately deleted
-  progressComment: ProgressComment | null | undefined;
+  progressComment: ProgressCommentState;
   // immutable snapshot: true if a progress comment was pre-created at init time.
   // survives deleteProgressComment so handleAgentResult can still detect "expected but never reported".
   hadProgressComment: boolean;
@@ -312,7 +321,7 @@ export function initToolState(params: InitToolStateParams): ToolState {
     repos,
     primaryRepoKey,
     startedAt: Date.now(),
-    progressComment: resolved,
+    progressComment: resolved ? { status: "open", comment: resolved } : { status: "unseeded" },
     hadProgressComment: !!resolved,
     prepushFailureCount: 0,
     noopReviewSubmissions: 0,
