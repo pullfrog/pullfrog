@@ -301,6 +301,15 @@ export const bundledProviders = {
         // the v4 e2e test). Pro is cost-effective enough to use for both
         // orchestrator and lenses.
       },
+      // an additional tier beside Argon, not its successor: Google keeps Argon as
+      // the default for most work and positions Carbon for the hardest tasks.
+      "gemini-carbon": {
+        displayName: "Gemini Carbon",
+        resolve: "google/gemini-4-carbon",
+        effort: ["low", "medium", "high"],
+        openRouterResolve: "openrouter/google/gemini-4-carbon",
+        subagentModel: "gemini-pro",
+      },
       "gemini-flash": {
         displayName: "Gemini Flash",
         resolve: "google/gemini-3.8-flash",
@@ -695,6 +704,14 @@ export const bundledProviders = {
         effort: ["low", "medium", "high"],
         openRouterResolve: "openrouter/google/gemini-4-argon",
         // Inherit — see google/gemini-pro for rationale.
+      },
+      // see google/gemini-carbon.
+      "gemini-carbon": {
+        displayName: "Gemini Carbon",
+        resolve: "opencode/gemini-4-carbon",
+        effort: ["low", "medium", "high"],
+        openRouterResolve: "openrouter/google/gemini-4-carbon",
+        subagentModel: "gemini-pro",
       },
       "gemini-flash": {
         displayName: "Gemini Flash",
@@ -1352,6 +1369,15 @@ export const bundledProviders = {
         // Inherit — see google/gemini-pro for rationale.
         pinned: true,
       },
+      // see google/gemini-carbon. pinned to the id: the `~google/gemini-pro-latest`
+      // pointer above tracks the default tier, not this one.
+      "gemini-carbon": {
+        displayName: "Gemini Carbon",
+        resolve: "openrouter/google/gemini-4-carbon",
+        effort: ["low", "medium", "high"],
+        openRouterResolve: "openrouter/google/gemini-4-carbon",
+        subagentModel: "gemini-pro",
+      },
       "gemini-flash": {
         displayName: "Gemini Flash",
         resolve: "openrouter/~google/gemini-flash-latest",
@@ -1518,6 +1544,12 @@ export const bundledProviders = {
         displayName: "Gemini Pro",
         resolve: "vercel/google/gemini-4-argon",
         effort: ["low", "medium", "high"],
+      },
+      "gemini-carbon": {
+        displayName: "Gemini Carbon",
+        resolve: "vercel/google/gemini-4-carbon",
+        effort: ["low", "medium", "high"],
+        subagentModel: "gemini-pro",
       },
       "gemini-flash": {
         displayName: "Gemini Flash",
