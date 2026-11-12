@@ -310,6 +310,14 @@ export const bundledProviders = {
         openRouterResolve: "openrouter/google/gemini-4-carbon",
         subagentModel: "gemini-pro",
       },
+      // gemini 4's fast tier at twice 3.8 flash's price, so a separate pick rather than
+      // a gemini-flash bump that would silently double what flash users pay.
+      "gemini-hydrogen": {
+        displayName: "Gemini Hydrogen",
+        resolve: "google/gemini-4-hydrogen",
+        effort: ["low", "medium", "high", "xhigh"],
+        openRouterResolve: "openrouter/google/gemini-4-hydrogen",
+      },
       "gemini-flash": {
         displayName: "Gemini Flash",
         resolve: "google/gemini-3.8-flash",
@@ -712,6 +720,13 @@ export const bundledProviders = {
         effort: ["low", "medium", "high"],
         openRouterResolve: "openrouter/google/gemini-4-carbon",
         subagentModel: "gemini-pro",
+      },
+      // see google/gemini-hydrogen.
+      "gemini-hydrogen": {
+        displayName: "Gemini Hydrogen",
+        resolve: "opencode/gemini-4-hydrogen",
+        effort: ["low", "medium", "high", "xhigh"],
+        openRouterResolve: "openrouter/google/gemini-4-hydrogen",
       },
       "gemini-flash": {
         displayName: "Gemini Flash",
@@ -1378,6 +1393,14 @@ export const bundledProviders = {
         openRouterResolve: "openrouter/google/gemini-4-carbon",
         subagentModel: "gemini-pro",
       },
+      // see google/gemini-hydrogen. pinned to the id: `~google/gemini-flash-latest`
+      // below still serves 3.8 flash.
+      "gemini-hydrogen": {
+        displayName: "Gemini Hydrogen",
+        resolve: "openrouter/google/gemini-4-hydrogen",
+        effort: ["low", "medium", "high", "xhigh"],
+        openRouterResolve: "openrouter/google/gemini-4-hydrogen",
+      },
       "gemini-flash": {
         displayName: "Gemini Flash",
         resolve: "openrouter/~google/gemini-flash-latest",
@@ -1550,6 +1573,11 @@ export const bundledProviders = {
         resolve: "vercel/google/gemini-4-carbon",
         effort: ["low", "medium", "high"],
         subagentModel: "gemini-pro",
+      },
+      "gemini-hydrogen": {
+        displayName: "Gemini Hydrogen",
+        resolve: "vercel/google/gemini-4-hydrogen",
+        effort: ["low", "medium", "high", "xhigh"],
       },
       "gemini-flash": {
         displayName: "Gemini Flash",
