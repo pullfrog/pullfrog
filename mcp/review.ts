@@ -12,6 +12,7 @@ import { isPullfrog } from "../utils/isPullfrog.ts";
 import { countOutstandingPullfrogThreads } from "../utils/outstandingThreads.ts";
 import { patchWorkflowRunFields } from "../utils/patchWorkflowRunFields.ts";
 import { deleteProgressComment, retireProgressCommentForReview } from "./comment.ts";
+import { assertOwnTarget } from "./currentObject.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, getHttpStatus, tool } from "./shared.ts";
 
@@ -554,6 +555,7 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
     parameters: CreatePullRequestReview,
     execute: execute(
       async ({ pull_number, body, approved, request_changes, commit_id, comments = [] }) => {
+        assertOwnTarget(ctx, pull_number);
         if (approved && request_changes) {
           throw new Error(
             "approved and request_changes are mutually exclusive — set at most one. an approval cannot also block."

@@ -11,6 +11,7 @@ import { retryTransientOctokit } from "../utils/isTransientNetworkError.ts";
 import { log } from "../utils/log.ts";
 import { isOutsideAuthor } from "../utils/payload.ts";
 import { getThumbsUpCommentIds } from "../utils/thumbsUp.ts";
+import { assertOwnTarget, isReaderRun } from "./currentObject.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
 
@@ -1004,6 +1005,18 @@ export function ListPullRequestReviewsTool(ctx: ToolContext) {
   });
 }
 
+const REVIEW_THREAD_PR_QUERY = `
+query($threadId: ID!) {
+  node(id: $threadId) {
+    ... on PullRequestReviewThread {
+      pullRequest {
+        number
+      }
+    }
+  }
+}
+`;
+
 const RESOLVE_REVIEW_THREAD_MUTATION = `
 mutation($threadId: ID!) {
   resolveReviewThread(input: {threadId: $threadId}) {
@@ -1049,6 +1062,14 @@ export function ResolveReviewThreadTool(ctx: ToolContext) {
           message:
             "this run was started by someone without write access, so it cannot resolve review threads. reply instead and leave the thread for a maintainer.",
         };
+      }
+      if (isReaderRun(ctx)) {
+        const thread = await ctx.octokit.graphql<{
+          node: { pullRequest?: { number: number } } | null;
+        }>(REVIEW_THREAD_PR_QUERY, { threadId: params.thread_id });
+        const prNumber = thread.node?.pullRequest?.number;
+        if (prNumber === undefined) throw new Error(`review thread ${params.thread_id} not found`);
+        assertOwnTarget(ctx, prNumber);
       }
       try {
         const response = await ctx.octokit.graphql<{

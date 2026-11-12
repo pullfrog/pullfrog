@@ -17,6 +17,7 @@ import {
   deleteProgressCommentApi,
   updateProgressComment,
 } from "../utils/progressComment.ts";
+import { assertNotReaderRun, assertOwnTarget, isReaderRun } from "./currentObject.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
 
@@ -106,6 +107,7 @@ export function CreateCommentTool(ctx: ToolContext) {
       "For the current run's answer, progress, or plan use report_progress instead. Use this on the current target only when the task explicitly requests a standalone comment. Skip report_progress only when that current-target comment is the task's sole requested deliverable.",
     parameters: Comment,
     execute: execute(async ({ issueNumber, body, type: commentType }) => {
+      assertOwnTarget(ctx, issueNumber);
       const bodyWithFooter = addFooter(ctx, body);
 
       const result = await ctx.octokit.rest.issues.createComment({
@@ -176,6 +178,17 @@ export function EditCommentTool(ctx: ToolContext) {
     description: "Edit a GitHub issue comment by its ID",
     parameters: EditComment,
     execute: execute(async ({ commentId, body }) => {
+      if (isReaderRun(ctx)) {
+        const existing = await ctx.octokit.rest.issues.getComment({
+          owner: ctx.repo.owner,
+          repo: ctx.repo.name,
+          comment_id: commentId,
+        });
+        assertOwnTarget(ctx, Number(existing.data.issue_url.split("/").pop()));
+        if (!isPullfrog(existing.data.user?.login)) {
+          assertNotReaderRun(ctx, "edit a comment someone else wrote");
+        }
+      }
       const bodyWithFooter = addFooter(ctx, body);
 
       const result = await ctx.octokit.rest.issues.updateComment({
@@ -661,6 +674,7 @@ export function ReplyToReviewCommentTool(ctx: ToolContext) {
       "Call exactly ONCE per parent comment you address in AddressReviews mode — duplicate calls with the same body are a no-op. Keep replies extremely brief (1 sentence max).",
     parameters: ReplyToReviewComment,
     execute: execute(async ({ pull_number, comment_id, body }) => {
+      assertOwnTarget(ctx, pull_number);
       const bodyWithFooter = addFooter(ctx, body);
 
       // guard against duplicate reply submissions in the same session.

@@ -46,6 +46,35 @@ async function resolveCurrentObject(ctx: ToolContext) {
   return { issueNumber, isPr: issue.data.pull_request !== undefined };
 }
 
+/**
+ * Whether a `read`/`none` triggerer steers this run. The MCP token can write to any
+ * issue or PR in the repo, and such a user can write only to their own thread, so
+ * every tool that takes a target checks it here (see wiki/agent-github-access.md).
+ */
+export function isReaderRun(ctx: ToolContext): boolean {
+  return (
+    mirrorRolePermissions(ctx.payload.event.authorPermission) === null &&
+    ctx.payload.event.authorPermission !== undefined
+  );
+}
+
+/** refuse a reader run's write anywhere but the issue or PR it was started on */
+export function assertOwnTarget(ctx: ToolContext, issueNumber: number): void {
+  const own = ctx.payload.event.issue_number;
+  if (!isReaderRun(ctx) || issueNumber === own) return;
+  throw new Error(
+    `this run was started by someone without write access to ${ctx.repo.owner}/${ctx.repo.name}, so it can only write to ${own === undefined ? "its own thread" : `#${own}`}, not #${issueNumber}.`
+  );
+}
+
+/** refuse a write a reader run may not make anywhere, such as opening a new thread */
+export function assertNotReaderRun(ctx: ToolContext, action: string): void {
+  if (!isReaderRun(ctx)) return;
+  throw new Error(
+    `this run was started by someone without write access to ${ctx.repo.owner}/${ctx.repo.name}, so it cannot ${action}.`
+  );
+}
+
 export const CloseCurrent = type({
   state_reason: type
     .enumerated("completed", "not_planned", "duplicate")

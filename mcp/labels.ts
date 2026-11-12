@@ -1,7 +1,18 @@
 import { type } from "arktype";
 import { log } from "../utils/cli.ts";
+import { assertNotReaderRun, assertOwnTarget } from "./currentObject.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, getHttpStatus, tool } from "./shared.ts";
+
+/**
+ * a reader may add labels only to their own issue, which `autoLabelIssues` needs. a PR label can
+ * gate fork code onto secrets ("safe to test"); an issue label can still fire an `issues: labeled`
+ * workflow, but one running the default branch's code, which is the accepted trade.
+ */
+function assertReaderMayLabel(ctx: ToolContext, issueNumber: number): void {
+  assertOwnTarget(ctx, issueNumber);
+  if (ctx.payload.event.is_pr) assertNotReaderRun(ctx, "label a pull request");
+}
 
 export const AddLabelsParams = type({
   issue_number: type.number.describe("the issue or PR number to add labels to"),
@@ -16,6 +27,7 @@ export function AddLabelsTool(ctx: ToolContext) {
       "Add labels to a GitHub issue or pull request. Only use labels that already exist in the repository.",
     parameters: AddLabelsParams,
     execute: execute(async ({ issue_number, labels }) => {
+      assertReaderMayLabel(ctx, issue_number);
       const result = await ctx.octokit.rest.issues.addLabels({
         owner: ctx.repo.owner,
         repo: ctx.repo.name,
@@ -45,6 +57,8 @@ export function RemoveLabelsTool(ctx: ToolContext) {
       "Remove labels from a GitHub issue or pull request. Labels not currently applied are silently ignored.",
     parameters: RemoveLabelsParams,
     execute: execute(async (params) => {
+      // a read-role issue author cannot remove a maintainer's label, so neither can their run
+      assertNotReaderRun(ctx, "remove labels");
       // confirm the issue/PR exists first, so a wrong issue_number is a hard error
       // rather than a swallowed 404 that masquerades as success.
       await ctx.octokit.rest.issues.get({

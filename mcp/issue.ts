@@ -2,6 +2,7 @@ import { type } from "arktype";
 import { log } from "../utils/cli.ts";
 import { fixDoubleEscapedString } from "../utils/fixDoubleEscapedString.ts";
 import { patchWorkflowRunFields } from "../utils/patchWorkflowRunFields.ts";
+import { assertNotReaderRun } from "./currentObject.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
 
@@ -25,6 +26,7 @@ export function IssueTool(ctx: ToolContext) {
     description: "Create a new GitHub issue",
     parameters: Issue,
     execute: execute(async (params) => {
+      assertNotReaderRun(ctx, "open a new issue");
       const result = await ctx.octokit.rest.issues.create({
         owner: ctx.repo.owner,
         repo: ctx.repo.name,

@@ -4,6 +4,7 @@ import { log } from "../utils/cli.ts";
 import { fixDoubleEscapedString } from "../utils/fixDoubleEscapedString.ts";
 import { patchWorkflowRunFields } from "../utils/patchWorkflowRunFields.ts";
 import { $ } from "../utils/shell.ts";
+import { assertNotReaderRun, assertOwnTarget } from "./currentObject.ts";
 import { resolveRepoCtx } from "./resolveRepoCtx.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
@@ -49,6 +50,7 @@ export function UpdatePullRequestBodyTool(ctx: ToolContext) {
     description: "Update the body/description of an existing pull request",
     parameters: UpdatePullRequestBody,
     execute: execute(async (params) => {
+      assertOwnTarget(ctx, params.pull_number);
       const bodyWithFooter = buildPrBodyWithFooter(ctx, params.body);
 
       const result = await ctx.octokit.rest.pulls.update({
@@ -77,6 +79,7 @@ export function CreatePullRequestTool(ctx: ToolContext) {
     description: "Create a pull request from the current branch",
     parameters: PullRequest,
     execute: execute(async (params) => {
+      assertNotReaderRun(ctx, "open a pull request");
       const rc = resolveRepoCtx(ctx, params.repo);
       if (rc.access === "read") {
         throw new Error(
