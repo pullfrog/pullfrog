@@ -55,11 +55,11 @@ export const selectedCredentialSchema = z.object({
   receipt: z.string(),
 });
 
-/** ChatGPT plan ids whose name is not the id read aloud, as the codex CLI names them. */
+/** ChatGPT plan ids whose name is not the id read aloud. OpenAI sells `prolite` and `pro` both as Pro. */
 const PLAN_NAMES: Record<string, string> = {
   prolite: "Pro",
-  pro: "Pro (More)",
-  promax: "Pro (Max)",
+  pro: "Pro",
+  promax: "Pro Max",
   self_serve_business_prolite: "Business",
   self_serve_business_usage_based: "Business",
   ent26: "Enterprise",
