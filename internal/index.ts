@@ -100,7 +100,12 @@ export {
 } from "../models.ts";
 export type { Mode } from "../modes.ts";
 export { modes } from "../modes.ts";
-export { type CommercialRefusal, commercialPaywallBody } from "../utils/billingErrors.ts";
+export {
+  type CommercialRefusal,
+  commercialPaywallBody,
+  GRACE_DAYS,
+  TEAM_PRICE_CENTS,
+} from "../utils/billingErrors.ts";
 export type {
   BuildPullfrogFooterParams,
   WorkflowRunFooterInfo,

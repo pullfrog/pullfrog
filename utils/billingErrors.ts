@@ -89,6 +89,15 @@ function billingConsoleUrl(owner: string): string {
 export type CommercialRefusal = "commercial" | "subscription_ended" | "subscription_unpaid";
 
 /**
+ * flat Pro price, $30/month per account — same price for both account types.
+ * defined here, not in the server's billing module, so the paywall copy quotes
+ * the price Stripe charges.
+ */
+export const TEAM_PRICE_CENTS = 3000;
+/** post-trial grace window: keeps reviewing before the telegraphed pause. */
+export const GRACE_DAYS = 7;
+
+/**
  * Canonical paused-run paywall body (billing model v2). Single source of truth so
  * the two surfaces that show it can never drift: the trigger-time comment (a run
  * refused before it starts, `triggerWorkflow.postPaywallComment`) and the mid-run
@@ -101,16 +110,18 @@ export function commercialPaywallBody(params: {
   url: string;
   freshReply?: boolean | undefined;
 }): string {
-  let action: string;
+  const resume = "to resume private-repo runs.";
+  const plan = `The Organization plan is $${TEAM_PRICE_CENTS / 100}/month for unlimited runs and unlimited members.`;
+  let detail: string;
   switch (params.reason) {
     case "commercial":
-      action = "upgrade";
+      detail = `The free trial and its ${GRACE_DAYS}-day grace period have ended. An org owner can [upgrade](${params.url}) ${resume} ${plan}`;
       break;
     case "subscription_ended":
-      action = "resubscribe";
+      detail = `The subscription has ended. An org owner can [resubscribe](${params.url}) ${resume} ${plan}`;
       break;
     case "subscription_unpaid":
-      action = "update billing";
+      detail = `The latest subscription payment failed. An org owner can [update billing](${params.url}) ${resume}`;
       break;
     default:
       return params.reason satisfies never;
@@ -118,7 +129,7 @@ export function commercialPaywallBody(params: {
   return [
     `**Pullfrog is ${params.freshReply ? "still paused" : "paused"} for ${params.ownerLogin}.**`,
     "",
-    `An org owner can [${action}](${params.url}) to resume private-repo runs.`,
+    detail,
   ].join("\n");
 }
 
