@@ -96,6 +96,19 @@ export function hasDeliveredReview(ctx: ReviewGateContext): boolean {
 }
 
 /**
+ * a turn that dies after the review posted (activity timeout, usage limit, a killed server) has
+ * still delivered the run, so it reports success. only review modes have an authoritative
+ * "delivered" fact; every other mode keeps its failure (#1618).
+ */
+function recoverDeliveredReview<R extends AgentResult>(ctx: ReviewGateContext, result: R): R {
+  if (result.success || !hasDeliveredReview(ctx)) return result;
+  log.warning(
+    `» review already posted; not failing the run on: ${result.error ?? "unknown error"}`
+  );
+  return { ...result, success: true, error: undefined };
+}
+
+/**
  * whether this run owes visible review output. normally "a progress comment was seeded",
  * but seeding is skipped under `progressComments: disabled` and can also fail outright
  * (archived repo, locked conversation, 403) — so fall back to the two facts seeding itself
@@ -333,23 +346,24 @@ export async function finalizeAgentResult<R extends AgentResult>(params: {
   ctx: AgentRunContext;
   result: R;
 }): Promise<R> {
-  if (!params.result.success) return params.result;
+  const result = recoverDeliveredReview(params.ctx, params.result);
+  if (!result.success) return result;
   const issues = await collectPostRunIssues(params.ctx, { skipSummaryStale: true });
   if (issues.stopHook) {
     return {
-      ...params.result,
+      ...result,
       success: false,
       error: `stop hook failed (exit code ${issues.stopHook.exitCode}): ${issues.stopHook.output || "(no output)"}`,
     };
   }
   if (issues.unsubmittedReview) {
     return {
-      ...params.result,
+      ...result,
       success: false,
       error: UNSUBMITTED_REVIEW_ERROR[issues.unsubmittedReview],
     };
   }
-  return params.result;
+  return result;
 }
 
 /**
@@ -615,6 +629,8 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
     if (onlySummaryStale) result = { ...result, output: preResume.output || result.output };
     gateResumeCount++;
   }
+
+  result = recoverDeliveredReview(params.ctx, result);
 
   // we exhausted retries without observing a clean state — finalIssues
   // reflects pre-resume state, so re-check to see what the last resume

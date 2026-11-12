@@ -195,14 +195,21 @@ export async function selectConfiguredCredential(input: {
       : { name: option.name, value: workflowCredentials[option.name], receipt: undefined };
     if (!selected) continue;
     const from = option.candidate ? `${option.candidate.source} scope` : "the workflow";
-    const verdict = await probe({ ...selected, model });
+    // a value no header can carry would throw out of the probe and lose every verdict before it (#1621)
+    const value = sanitizeSecret(option.name, selected.value);
+    const verdict = value ? await probe({ ...selected, value, model }) : UNSENDABLE;
     if (selected.receipt) await reportVerdict({ receipt: selected.receipt, verdict });
     if (usable(verdict)) {
       activate({ names, ...selected, model });
       if (option.candidate) log.info(`» selected ${option.name} from ${from}`);
       return true;
     }
-    refused.push({ name: option.name, source: option.candidate?.source ?? "workflow", verdict });
+    refused.push({
+      name: option.name,
+      source: option.candidate?.source ?? "workflow",
+      verdict,
+      unsendable: !value,
+    });
     log.info(`» ${option.name} from ${from} unavailable; trying the next credential`);
   }
   throw new Error(
@@ -214,6 +221,11 @@ export async function selectConfiguredCredential(input: {
     })
   );
 }
+
+const UNSENDABLE = {
+  status: "rejected",
+  detail: "holds a character that cannot be sent in an HTTP header",
+} satisfies ProbeVerdict;
 
 /**
  * a stored credential's value for a side call (`ask_model`), loaded without activating it: the

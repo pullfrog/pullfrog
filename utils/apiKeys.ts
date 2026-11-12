@@ -368,11 +368,10 @@ function hasEnvVar(name: string): boolean {
  * than being refused on our own ignorance.
  *
  * Private on purpose. `autoSelectModel`'s `servable` looks like a duplicate
- * but asks a stricter question — "may I PIN this alias?" — and must stay
- * conservative about managed credentials: Codex eligibility is a separate
- * upstream allow list that `opencode models` doesn't honor, so a
- * `CODEX_AUTH_JSON` run is better left to opencode's own pick than handed
- * `openai/gpt-6.1-sol`. Don't widen this to share it with the picker.
+ * but asks a stricter question — "may I PIN this alias?" — so it counts a
+ * managed credential only for a model in `getByokModels`, the set opencode's
+ * subscription plugin filtered to what a subscription serves. Left to opencode's
+ * own pick, a `CODEX_AUTH_JSON` run chose a provider it held no key for (#1640).
  */
 function modelHasRuntimeAuth(model: string): boolean {
   const authVars = [...getOpenCodeEnvVars(model), ...getModelManagedCredentials(model)];
@@ -741,10 +740,11 @@ export function isOAuthCredentialExpiredError(text: string): boolean {
  * interior newline, and the provider SDK refuses to serialize the header
  * (`API Error: Header '14' has invalid value`). The only member of the
  * credential-error family whose remedy is NOT "rotate the key" — re-saving the
- * same value on one line fixes it. See #1162.
+ * same value on one line fixes it. See #1162. A smart quote or zero-width space
+ * dies the same way in undici's `Headers` (#1621).
  */
 export function isMalformedKeyError(text: string): boolean {
-  return /Header '\d+' has invalid value/i.test(text);
+  return /Header '\d+' has invalid value|Cannot convert argument to a ByteString/i.test(text);
 }
 
 /**
@@ -950,6 +950,8 @@ export type RefusedCredential = {
   name: string;
   source: CredentialCandidate["source"] | "workflow";
   verdict: Extract<ProbeVerdict, { status: "rejected" | "exhausted" }>;
+  /** refused before any provider saw it: the stored text cannot be sent as a header. */
+  unsendable?: boolean;
 };
 
 /**
@@ -1005,6 +1007,9 @@ function describeRefusal(params: { credential: RefusedCredential; owner: string;
     credential.source === "workflow"
       ? `in [this repo's GitHub Actions secrets](${secretsUrl(params)})`
       : `in [Pullfrog](${getApiUrl()}/console/${params.owner}#billing)`;
+  if (credential.unsendable) {
+    return `${what} contains a line break, smart quote or other non-ASCII character, so it can't be sent as an HTTP header. Re-save it as plain text ${where}; the key itself is likely fine.`;
+  }
   return `${what} was rejected. ${issue} and update it ${where}.`;
 }
 
@@ -1058,7 +1063,7 @@ export function formatApiKeyErrorSummary(params: {
     return renderFailure({
       headline: "Your stored API key can't be sent as an HTTP header.",
       detail:
-        "It contains a line break or control character, usually from a key pasted across several lines. Re-save it as a single line; the key itself is likely fine.",
+        "It contains a line break, smart quote or other non-ASCII character, usually from a key pasted out of a document. Re-save it as plain text on one line; the key itself is likely fine.",
       links: [
         {
           label: "Pullfrog provider settings",

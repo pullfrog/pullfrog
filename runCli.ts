@@ -303,8 +303,10 @@ function runPackageCli(context: RuntimeContext, packageSpec: string, cliArgs: st
 
   const corepackPath = resolveExecutable({ command: "corepack", env: context.env, verify: true });
   if (corepackPath) {
-    console.warn("» npx not found, using corepack pnpm dlx");
-    runCommand({ context, command: corepackPath, args: ["pnpm", "dlx", packageSpec, ...cliArgs] });
+    // corepack latches the first `latest` it sees and cannot launch a pnpm newer than itself (#1633)
+    const pnpm = actionPackageJson.packageManager;
+    console.warn(`» npx not found, using corepack ${pnpm.split("+")[0]} dlx`);
+    runCommand({ context, command: corepackPath, args: [pnpm, "dlx", packageSpec, ...cliArgs] });
     return;
   }
 

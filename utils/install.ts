@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, createWriteStream, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
+import * as yes from "yes";
 import { AGENT_BIN_DIR_RELPATH } from "../agents/nativeFsDenies.ts";
 import { log } from "./cli.ts";
 
@@ -83,13 +84,37 @@ export async function installFromNpmTarball(params: InstallFromNpmTarballParams)
     AGENT_BIN_DIR_RELPATH,
     `npm-${params.packageName.replace(/[^a-z0-9]+/gi, "-")}`
   );
-  const extractedDir = join(packageRoot, "package");
-  const cliPath = join(extractedDir, params.executablePath);
+  const cliPath = join(packageRoot, "package", params.executablePath);
 
   if (existsSync(cliPath)) {
     log.debug(`» using cached binary at ${cliPath}`);
     return cliPath;
   }
+
+  const installed = await yes.try(installTarball({ ...params, packageRoot, cliPath }));
+  if (installed instanceof Error) {
+    // a failed attempt can leave the tarball's placeholder at `cliPath` for the check above to return
+    rmSync(packageRoot, { recursive: true, force: true });
+    throw installed;
+  }
+  return cliPath;
+}
+
+/**
+ * each attempt starts from an empty tree, so it can retry once when the platform package fails to land
+ * (#1679), and concurrent installs of one package share it rather than racing in that tree
+ */
+const installTarball = yes.query({
+  name: "installFromNpmTarball",
+  retry: [5000],
+  run: installTarballOnce,
+});
+
+async function installTarballOnce(
+  params: InstallFromNpmTarballParams & { packageRoot: string; cliPath: string }
+) {
+  rmSync(params.packageRoot, { recursive: true, force: true });
+  const extractedDir = join(params.packageRoot, "package");
 
   // Resolve version if it's a range or "latest"
   let resolvedVersion = params.version;
@@ -118,8 +143,8 @@ export async function installFromNpmTarball(params: InstallFromNpmTarballParams)
 
   log.debug(`» installing ${params.packageName}@${resolvedVersion}...`);
 
-  mkdirSync(packageRoot, { recursive: true });
-  const tarballPath = join(packageRoot, "package.tgz");
+  mkdirSync(params.packageRoot, { recursive: true });
+  const tarballPath = join(params.packageRoot, "package.tgz");
 
   // Download tarball from npm
   const npmRegistry = process.env.NPM_REGISTRY || "https://registry.npmjs.org";
@@ -147,7 +172,7 @@ export async function installFromNpmTarball(params: InstallFromNpmTarballParams)
 
   // Extract tarball
   log.debug(`» extracting tarball...`);
-  const extractResult = spawnSync("tar", ["-xzf", tarballPath, "-C", packageRoot], {
+  const extractResult = spawnSync("tar", ["-xzf", tarballPath, "-C", params.packageRoot], {
     stdio: "pipe",
     encoding: "utf-8",
   });
@@ -160,8 +185,13 @@ export async function installFromNpmTarball(params: InstallFromNpmTarballParams)
   // Install dependencies if requested
   if (params.installDependencies) {
     log.debug(`» installing dependencies for ${params.packageName}...`);
+    // claude-code and both opencode generations ship a shell placeholder at the executable path,
+    // codex ships nothing there, and each postinstall puts the platform binary in its place
+    const shipped = statSync(params.cliPath, { throwIfNoEntry: false })?.size;
     const npm = resolveNpm();
-    const installResult = spawnSync(npm.command, [...npm.args, "install", "--production"], {
+    // explicit, so a host `.npmrc` that omits optionals or skips scripts cannot skip the binary
+    const installArgs = ["install", "--omit=dev", "--include=optional", "--ignore-scripts=false"];
+    const installResult = spawnSync(npm.command, [...npm.args, ...installArgs], {
       cwd: extractedDir,
       stdio: "pipe",
       encoding: "utf-8",
@@ -172,28 +202,29 @@ export async function installFromNpmTarball(params: InstallFromNpmTarballParams)
       // flag to no-op the guard. harmless for packages without such a guard.
       env: { ...process.env, AUTHORIZED: "1" },
     });
+    const npmOutput = `${installResult.stderr}${installResult.stdout}`.trim() || "Unknown error";
     if (installResult.status !== 0) {
+      throw new Error(`Failed to install dependencies: ${npmOutput}`);
+    }
+    // npm exits 0 when an optional platform package fails to land, leaving the placeholder (#1679)
+    if (statSync(params.cliPath, { throwIfNoEntry: false })?.size === shipped) {
       throw new Error(
-        `Failed to install dependencies: ${installResult.stderr || installResult.stdout || "Unknown error"}`
+        `npm installed ${params.packageName} without its platform binary: ${npmOutput}`
       );
     }
     log.debug(`» dependencies installed`);
   }
 
-  // checked AFTER the dependency install, not before: every CLI we pull this
-  // way ships its real executable in a platform optionalDependency, so the
-  // path only exists once `npm install` has run (claude's postinstall copies
-  // over a stub, codex's vendor dir isn't in the base tarball at all).
-  if (!existsSync(cliPath)) {
-    throw new Error(`Executable not found in extracted package at ${cliPath}`);
+  // checked AFTER the dependency install, not before: codex's vendor dir isn't
+  // in the base tarball at all, so its path only exists once `npm install` has run.
+  if (!existsSync(params.cliPath)) {
+    throw new Error(`Executable not found in extracted package at ${params.cliPath}`);
   }
 
   // Make the file executable
-  chmodSync(cliPath, 0o755);
+  chmodSync(params.cliPath, 0o755);
 
-  log.debug(`» ${params.packageName} installed at ${cliPath}`);
-
-  return cliPath;
+  log.debug(`» ${params.packageName} installed at ${params.cliPath}`);
 }
 
 /**

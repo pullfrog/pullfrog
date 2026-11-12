@@ -4,7 +4,7 @@ import * as yes from "yes";
 import { formatMcpToolRef } from "../external.ts";
 import { type CommentableLines, primaryRepoState } from "../toolState.ts";
 import { getApiUrl } from "../utils/apiUrl.ts";
-import { buildPullfrogFooter } from "../utils/buildPullfrogFooter.ts";
+import { buildPullfrogFooter, VERDICT_REFUSED_MARKER } from "../utils/buildPullfrogFooter.ts";
 import { log } from "../utils/cli.ts";
 import { countLinesInRanges, getDiffCoverageBreakdown } from "../utils/diffCoverage.ts";
 import { fixDoubleEscapedString } from "../utils/fixDoubleEscapedString.ts";
@@ -191,6 +191,7 @@ export async function approveAfterFix(ctx: ToolContext): Promise<void> {
     wouldApprove: true,
     sha: headSha,
     url: result.data.html_url,
+    refusedByGitHub: params.event === "APPROVE" && result.data.state === "COMMENTED",
   };
   log.info(`» auto-approved #${pullNumber} after fix run (review ${result.data.id})`);
 
@@ -558,6 +559,15 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
             "approved and request_changes are mutually exclusive — set at most one. an approval cannot also block."
           );
         }
+        // `suggestion: ""` is a valid "delete these lines". without this GitHub 500s the submit
+        // with an empty message and the agent resends the same payload blind (#1628).
+        const emptyComments = comments.filter((c) => !c.body?.trim() && c.suggestion == null);
+        if (emptyComments.length > 0) {
+          const where = emptyComments.map((c) => `${c.path}:${c.line}`).join(", ");
+          throw new Error(
+            `inline comment(s) at ${where} have no \`body\` and no \`suggestion\`. each needs non-empty \`body\` text or a \`suggestion\`. nothing was posted; resend with the comment text filled in.`
+          );
+        }
         if (body) body = fixDoubleEscapedString(body);
 
         // a review posts permanently and cannot be retracted by any tool we
@@ -862,6 +872,13 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
         }
         const reviewId = result.data.id;
         log.info(`» created review ${reviewId} on pull request #${pull_number}`);
+        const verdictRefused = event !== "COMMENT" && result.data.state === "COMMENTED";
+        if (verdictRefused && ctx.toolState.approval) {
+          ctx.toolState.approval.refusedByGitHub = true;
+        }
+        const verdictNote = verdictRefused
+          ? "GitHub refused this verdict and took the review as a comment. it is posted; do not resubmit."
+          : undefined;
 
         // reviewedSha = what the agent actually reviewed (checkout SHA), not the
         // submission anchor (current HEAD). this ensures postReviewCleanup dispatches
@@ -893,6 +910,7 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
             user: result.data.user?.login,
             submitted_at: result.data.submitted_at,
             droppedComments: droppedComments.length > 0 ? droppedComments : undefined,
+            verdictNote,
             newCommits: {
               from: fromSha,
               to: toSha,
@@ -912,6 +930,7 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
           user: result.data.user?.login,
           submitted_at: result.data.submitted_at,
           droppedComments: droppedComments.length > 0 ? droppedComments : undefined,
+          verdictNote,
         };
       }
     ),
@@ -1057,7 +1076,7 @@ export async function createReviewWithStrandedRecovery(
   params: RestEndpointMethodTypes["pulls"]["createReview"]["parameters"]
 ): Promise<Awaited<ReturnType<typeof ctx.octokit.rest.pulls.createReview>>> {
   try {
-    return await ctx.octokit.rest.pulls.createReview(params);
+    return await createReviewOrComment(ctx, params);
   } catch (err) {
     await clearStrandedPendingReview(ctx, {
       owner: params.owner,
@@ -1065,11 +1084,62 @@ export async function createReviewWithStrandedRecovery(
       pull_number: params.pull_number,
       originalErr: err,
     });
-    return await ctx.octokit.rest.pulls.createReview(params);
+    return await createReviewOrComment(ctx, params);
   }
 }
 
+async function createReviewOrComment(
+  ctx: ToolContext,
+  params: RestEndpointMethodTypes["pulls"]["createReview"]["parameters"]
+): Promise<Awaited<ReturnType<typeof ctx.octokit.rest.pulls.createReview>>> {
+  try {
+    return await ctx.octokit.rest.pulls.createReview(params);
+  } catch (err) {
+    if (!isVerdictRefused(err, params.event)) throw err;
+    log.info(`» GitHub refused ${params.event}; posting the review as a comment`);
+    return await ctx.octokit.rest.pulls.createReview({
+      ...params,
+      event: "COMMENT",
+      body: VERDICT_REFUSED_NOTE.trimStart(),
+    });
+  }
+}
+
+const VERDICT_REFUSED_NOTE = `\n\n> ℹ️ GitHub took this as a comment because it requires explicit repository access to approve or block a pull request here.${VERDICT_REFUSED_MARKER}`;
+
+function isVerdictRefused(err: unknown, event: string | undefined): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    event !== "COMMENT" &&
+    getHttpStatus(err) === 422 &&
+    message.includes("without explicit repository access")
+  );
+}
+
+/**
+ * a repository can limit approving and blocking reviews to users with explicit access, a stable
+ * setting GitHub enforces with a 422 on every such verdict. the review goes out as a comment
+ * instead of leaving the agent to retry, and the marker stops later runs asking again (#1644).
+ */
 export async function createAndSubmitWithFooter(
+  ctx: ToolContext,
+  params: RestEndpointMethodTypes["pulls"]["createReview"]["parameters"],
+  opts: FooterOpts
+): Promise<Awaited<ReturnType<typeof ctx.octokit.rest.pulls.submitReview>>> {
+  try {
+    return await publishDraftReview(ctx, params, opts);
+  } catch (err) {
+    if (!isVerdictRefused(err, params.event)) throw err;
+    log.info(`» GitHub refused ${params.event}; posting the review as a comment`);
+    return await publishDraftReview(
+      ctx,
+      { ...params, event: "COMMENT" },
+      { ...opts, body: opts.body + VERDICT_REFUSED_NOTE }
+    );
+  }
+}
+
+async function publishDraftReview(
   ctx: ToolContext,
   params: RestEndpointMethodTypes["pulls"]["createReview"]["parameters"],
   opts: FooterOpts

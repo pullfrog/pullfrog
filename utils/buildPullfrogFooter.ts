@@ -9,6 +9,9 @@ import {
 
 export const PULLFROG_DIVIDER = "<!-- PULLFROG_DIVIDER_DO_NOT_REMOVE_PLZ -->";
 
+/** on a review GitHub took as a comment because it refused the verdict (`isAwaitingApproval`). */
+export const VERDICT_REFUSED_MARKER = "<!-- PULLFROG_VERDICT_REFUSED -->";
+
 const FROG_LOGO = `<a href="https://pullfrog.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://pullfrog.com/logos/frog-white-full-18px.png"><img src="https://pullfrog.com/logos/frog-green-full-18px.png" width="9px" height="9px" style="vertical-align: middle; " alt="Pullfrog"></picture></a>`;
 
 /**

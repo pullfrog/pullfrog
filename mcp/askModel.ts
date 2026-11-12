@@ -41,7 +41,7 @@ import { askModelPrivateDir, installPrivateSubscription } from "../utils/codexHo
 import { loadStoredCredential } from "../utils/credentialPool.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
 import type { RunContextData } from "../utils/runContextData.ts";
-import { filterEnvForUntrustedCode, isSensitiveEnvName } from "../utils/secrets.ts";
+import { filterEnvForUntrustedCode, isSensitiveEnvName, proxyEnv } from "../utils/secrets.ts";
 import { SpawnTimeoutError, spawn } from "../utils/subprocess.ts";
 import { type CredentialAccess, subscriptionNameSchema } from "../utils/subscriptionCredentials.ts";
 import { probeSubscription } from "../utils/subscriptionProbe.ts";
@@ -321,6 +321,7 @@ function isolatedEnv(ctx: ToolContext) {
   const home = mkdtempSync(join(ctx.tmpdir, "ask-model-"));
   const env: Record<string, string | undefined> = {
     ...filterEnvForUntrustedCode(),
+    ...proxyEnv(),
     HOME: home,
     XDG_CONFIG_HOME: join(home, ".config"),
     XDG_DATA_HOME: join(home, ".local", "share"),

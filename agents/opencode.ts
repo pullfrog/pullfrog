@@ -60,6 +60,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Agent, fetch as undiciFetch } from "undici";
+import * as yes from "yes";
 import { pullfrogMcpName } from "../external.ts";
 import { BEDROCK_MODEL_ID_ENV } from "../models.ts";
 import {
@@ -111,7 +112,7 @@ import {
   openRouterProvider,
   providerGatewayOverride,
 } from "./opencodeShared.ts";
-import { runPostRunRetryLoop } from "./postRun.ts";
+import { hasDeliveredReview, runPostRunRetryLoop } from "./postRun.ts";
 import { REVIEWER_AGENT_NAME } from "./reviewer.ts";
 import {
   type AgentResult,
@@ -185,6 +186,15 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): O
 }
 
 // ── server boot ────────────────────────────────────────────────────────────────
+
+/** fleet p99 is ~10s, but a loaded self-hosted host binds in ~25s with nothing else running (#1656). */
+const SERVE_BIND_TIMEOUT_MS = 120_000;
+
+/**
+ * From `server up` to a session: p50 9s, p99 53s and max 137s over 2,840 November runs. Nothing
+ * else bounds it but the 15-minute silence timer, which one host hit on 22 runs in a day (#1681).
+ */
+const STARTUP_TIMEOUT_MS = 180_000;
 
 /**
  * Spawn `<cliPath> serve --port 0 --hostname 127.0.0.1` and wait for the
@@ -329,7 +339,7 @@ function bootOpencodeServer(params: {
       }
     });
 
-    // safety: if the listening line never arrives, bail after 30s.
+    // safety: if the listening line never arrives, bail.
     const bootTimeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
@@ -337,11 +347,11 @@ function bootOpencodeServer(params: {
         void close();
         reject(
           new Error(
-            `timed out after 30s waiting for opencode serve to bind${tail ? `\n${tail}` : ""}`
+            `timed out after ${SERVE_BIND_TIMEOUT_MS / 1000}s waiting for opencode serve to bind${tail ? `\n${tail}` : ""}`
           )
         );
       }
-    }, 30_000);
+    }, SERVE_BIND_TIMEOUT_MS);
     bootTimeout.unref?.();
   });
 }
@@ -731,7 +741,6 @@ export const opencode = agent({
     // refused for the rest of the run (#1133). the binary exposes no
     // project-plugin-root override, so snapshot here and restore below.
     const preBootDirty = dirtyTrackedPaths();
-    const server = await bootOpencodeServer({ cliPath, env, cwd: repoDir });
     // the SDK's bundled fetch tries to disable per-request timeouts via the
     // bun-only `req.timeout = false` no-op, which does nothing under node/undici
     // — so undici's default 300s headers/body timeout aborts any turn that
@@ -760,48 +769,72 @@ export const opencode = agent({
       });
     };
     try {
-      const diagnostic: AgentDiagnostic = {
-        label: "Pullfrog",
-        recentStderr: server.recentStderr,
-        lastProviderError: undefined,
-        idleSec: undefined,
-        sawModelOutput: false,
-        eventCount: 0,
-      };
-      watchProviderErrors(server, diagnostic);
-      const opened = await driver
-        .open({
-          ctx,
-          server,
-          sandbox,
-          env,
-          repoDir,
-          model,
-          rawModel,
-          effort,
-          fetch: fetchWithoutTimeout,
-          diagnostic,
-        })
-        .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
-      // config and plugins load lazily during instance bootstrap — on the first
-      // request, not at spawn — so this is the earliest point the startup writes
-      // above have all landed, and it is still ahead of the first agent turn.
-      restoreDirtiedSince({ before: preBootDirty, actor: "agent startup" });
-      if (opened instanceof Error) {
-        return {
-          success: false,
-          output: "",
-          error: withServerStderr(opened.message, server.recentStderr),
-        };
+      // a hung startup gets one fresh server: the host that hung 22 runs in a day started its
+      // others normally, so the hang belongs to one server process (#1681)
+      for (let attempt = 1; ; attempt++) {
+        const server = await bootOpencodeServer({ cliPath, env, cwd: repoDir });
+        try {
+          const diagnostic: AgentDiagnostic = {
+            label: "Pullfrog",
+            recentStderr: server.recentStderr,
+            lastProviderError: undefined,
+            idleSec: undefined,
+            sawModelOutput: false,
+            eventCount: 0,
+          };
+          watchProviderErrors(server, diagnostic);
+          // before `open`, so a hang inside it still renders with the server's stderr
+          ctx.toolState.agentDiagnostic = diagnostic;
+          const opened = await yes
+            .mutation({
+              name: "opencode startup",
+              timeout: STARTUP_TIMEOUT_MS,
+              run: () =>
+                driver.open({
+                  ctx,
+                  server,
+                  sandbox,
+                  env,
+                  repoDir,
+                  model,
+                  rawModel,
+                  effort,
+                  fetch: fetchWithoutTimeout,
+                  diagnostic,
+                }),
+            })()
+            .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
+          // config and plugins load lazily during instance bootstrap — on the first
+          // request, not at spawn — so this is the earliest point the startup writes
+          // above have all landed, and it is still ahead of the first agent turn.
+          restoreDirtiedSince({ before: preBootDirty, actor: "agent startup" });
+          if (opened instanceof Error) {
+            const hung = opened instanceof yes.TimeoutError;
+            const message = hung
+              ? `opencode did not finish starting within ${STARTUP_TIMEOUT_MS / 1000}s`
+              : opened.message;
+            if (hung && attempt === 1) {
+              log.warning(
+                withServerStderr(`» ${message}, retrying on a fresh server`, server.recentStderr)
+              );
+              continue;
+            }
+            return {
+              success: false,
+              output: "",
+              error: withServerStderr(message, server.recentStderr),
+            };
+          }
+          return await runTurns(ctx, opened);
+        } finally {
+          await server.close().catch((err) => {
+            log.debug(
+              `opencode server close failed: ${err instanceof Error ? err.message : String(err)}`
+            );
+          });
+        }
       }
-      ctx.toolState.agentDiagnostic = diagnostic;
-      return await runTurns(ctx, opened);
     } finally {
-      await server.close().catch((err) => {
-        log.debug(
-          `opencode server close failed: ${err instanceof Error ? err.message : String(err)}`
-        );
-      });
       await dispatcher.close().catch(() => {});
     }
   },
@@ -885,7 +918,8 @@ async function runTurns(ctx: AgentRunContext, session: OpencodeSession): Promise
     // the watchdog fired but the turn landed anyway — it can beat the abort
     // through the driver's post-turn usage round trip.
     if (result.success) return standDownIfRecovered(result);
-    if (salvagesLeft <= 0) return result;
+    // the review is already on the PR, so a re-prompt can only spend a first-token budget (#1618)
+    if (salvagesLeft <= 0 || hasDeliveredReview(ctx)) return result;
     salvagesLeft--;
     // about to run another turn, so this net has done its job.
     ctx.onTurnRecovered?.();

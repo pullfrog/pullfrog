@@ -7,6 +7,8 @@ type ComputeIncrementalDiffParams = {
   headSha: string;
   /** tips the base branch was force-pushed away from, which either version may still be built on */
   formerBaseTips: string[];
+  /** on a partial clone, fetches the blobs `merge-tree` and `range-diff` would lazily miss (#1632) */
+  prefetch: (revs: string[]) => Promise<void>;
 };
 
 /**
@@ -50,13 +52,14 @@ export type IncrementalDiffResult =
    *  see #1139. */
   | { status: "unavailable"; reason: string };
 
-export function computeIncrementalDiff(
+export async function computeIncrementalDiff(
   params: ComputeIncrementalDiffParams
-): IncrementalDiffResult {
+): Promise<IncrementalDiffResult> {
   try {
     const tips = [`origin/${params.baseBranch}`, ...params.formerBaseTips];
     const oldBase = versionBase({ sha: params.beforeSha, tips });
     const newBase = versionBase({ sha: params.headSha, tips });
+    await params.prefetch([oldBase, newBase, params.beforeSha]);
     const replayed =
       oldBase === newBase ? null : replay({ sha: params.beforeSha, from: oldBase, onto: newBase });
     // $1/$2=the old version's base and tree (newBase and the replayed tree once replayed),

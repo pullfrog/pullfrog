@@ -1,5 +1,5 @@
 /**
- * End-of-run cleanup phases extracted out of `main.ts`. Three shapes:
+ * End-of-run cleanup phases extracted out of `main.ts`. Four shapes:
  *
  *   - `persistRunArtifacts`: best-effort post-review cleanup + summary +
  *     learnings persistence. Shared by both the success path and the
@@ -11,13 +11,16 @@
  *     deletes stranded progress comments, writes the GitHub Actions job
  *     summary, and emits the structured output marker.
  *
+ *   - `finalizeRunChecks`: success-only, after `handleAgentResult` — the
+ *     `pullfrog` checks and auto-merge, on the run's final outcome.
+ *
  *   - `writeRunErrorOutputs`: error-only — writes the rendered error
  *     summary to the Actions summary tab and mirrors it to the PR
  *     progress comment. The catch path calls this and then
  *     `persistRunArtifacts` separately so the rendered error lands before
  *     the persistence calls, in case the latter throw.
  *
- * All three swallow their own non-fatal errors (`log.debug` or empty
+ * All four swallow their own non-fatal errors (`log.debug` or empty
  * `catch {}`) so a cleanup failure can't flip an already-decided run
  * outcome.
  */
@@ -170,20 +173,28 @@ export async function finalizeSuccessRun(input: {
       log.debug(`fix auto-approval failed: ${error}`);
     });
   }
+}
 
-  // opt-in branch-protection check-runs. `runSucceeded` mirrors the run's
-  // own outcome so a harness-returned `{success: false}` posts `pullfrog`
-  // = failure, same as the catch path. own best-effort guard internally.
-  await reportStatusChecks(input.toolContext, { runSucceeded: input.result.success });
+/**
+ * Finalize the success path's checks on the run's FINAL outcome, which `handleAgentResult` decides
+ * after `finalizeSuccessRun`: a run it fails for landing no GitHub write would otherwise leave a
+ * green `pullfrog` check, and the first terminal write wins (#1682).
+ */
+export async function finalizeRunChecks(
+  toolContext: ToolContext,
+  params: { runSucceeded: boolean }
+): Promise<void> {
+  // opt-in branch-protection check-runs. own best-effort guard internally.
+  await reportStatusChecks(toolContext, params);
 
-  if (input.result.success) {
+  if (params.runSucceeded) {
     // bounded, experimental autonomous merge of any PR Pullfrog approved
     // (contributor PRs included, not just its own). runs after approveAfterFix so
     // it can consume the verdict that call (or create_pull_request_review) just
     // recorded. enables GitHub native auto-merge (or direct-merges an already-
     // mergeable PR); best-effort, never flips the outcome. runs after our own checks
     // are finalized, or their `in_progress` alone makes the PR `unstable` (#1533).
-    await autoMergeAfterApprove(input.toolContext).catch((error) => {
+    await autoMergeAfterApprove(toolContext).catch((error) => {
       // 409 = the direct-merge fallback lost a TOCTOU race (a commit landed
       // mid-merge) — the expected "don't merge" outcome, stays quiet. anything
       // else is an unexpected enable/merge failure on an armed repo; surface it at

@@ -11,6 +11,7 @@ import {
   AZURE_MAX_OUTPUT_ENV,
   AZURE_PROVIDER,
   AZURE_USE_CHAT_COMPLETIONS_ENV,
+  getModelManagedCredentials,
   getOpenCodeEnvVars,
   getProviderGatewayUrl,
   modelAliases,
@@ -21,7 +22,7 @@ import {
 import { log } from "../utils/cli.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
 import { readCustomHeaders } from "../utils/normalizeEnv.ts";
-import { getAuthorizedModels } from "../utils/openCodeModels.ts";
+import { getAuthorizedModels, getByokModels } from "../utils/openCodeModels.ts";
 import { getDevDependencyVersion } from "../utils/version.ts";
 import { opencodeGeneration } from "./opencodeGeneration.ts";
 import { REVIEWER_AGENT_NAME, REVIEWER_SYSTEM_PROMPT } from "./reviewer.ts";
@@ -339,7 +340,13 @@ export function autoSelectModel(): string | undefined {
     // it here pinned `anthropic/claude-opus-5` on subscription-only accounts
     // and handed it to a harness that dies on `Model not found`.
     const envVars = getOpenCodeEnvVars(a.resolve);
-    return envVars.length === 0 || envVars.some((name) => process.env[name]);
+    if (envVars.length === 0 || envVars.some((name) => process.env[name])) return true;
+    // a subscription's models reach this diff only through opencode's own plugin, which filters
+    // the provider down to what a subscription can serve, so a listed one is servable (#1640).
+    return (
+      getByokModels().has(a.resolve) &&
+      getModelManagedCredentials(a.resolve).some((name) => process.env[name])
+    );
   });
   const pick = (list: typeof servable) => list.find((a) => a.preferred) ?? list[0];
   // a catalog hit is the better evidence, but `opencode models` can exit 0 having printed

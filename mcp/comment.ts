@@ -2,7 +2,11 @@ import { type } from "arktype";
 import { formatMcpToolRef, isIssueTarget } from "../external.ts";
 import { primaryRepoState } from "../toolState.ts";
 import { getApiUrl } from "../utils/apiUrl.ts";
-import { buildPullfrogFooter, stripExistingFooter } from "../utils/buildPullfrogFooter.ts";
+import {
+  buildPullfrogFooter,
+  stripExistingFooter,
+  VERDICT_REFUSED_MARKER,
+} from "../utils/buildPullfrogFooter.ts";
 import { log } from "../utils/cli.ts";
 import { fixDoubleEscapedString } from "../utils/fixDoubleEscapedString.ts";
 import { isPullfrog } from "../utils/isPullfrog.ts";
@@ -306,24 +310,20 @@ export async function reportProgress(
       // path) can become stale before final delivery — the thread is deleted or
       // otherwise unreachable, so updateReviewComment 404s. rather than fail an
       // already-completed run, fall back to a fresh top-level comment on the PR
-      // and retarget future writes there. (#919)
+      // and retarget future writes there. (#919) an issue-type comment 404s the
+      // same way when the server deletes it on an edited mention (#1552).
       let result: Awaited<ReturnType<typeof updateProgressComment>>;
       try {
         result = await updateProgressComment(apiCtx, progress.comment, bodyWithFooter);
       } catch (error) {
-        // only a deliberate write to a stale review-reply comment falls back. a
+        // only a deliberate write to a stale comment falls back. a
         // liveProgress (todo-tracker) 404 rethrows — it must never create a
         // user-facing comment, and the next deliberate report_progress recovers.
-        if (
-          params.liveProgress ||
-          progress.comment.type !== "review" ||
-          !isNotFoundError(error) ||
-          issueNumber === undefined
-        ) {
+        if (params.liveProgress || !isNotFoundError(error) || issueNumber === undefined) {
           throw error;
         }
         log.warning(
-          `progress review comment ${progress.comment.id} is gone (404); posting a top-level comment on #${issueNumber} instead`
+          `progress ${progress.comment.type} comment ${progress.comment.id} is gone (404); posting a top-level comment on #${issueNumber} instead`
         );
         const created = await createLeapingProgressComment(
           apiCtx,
@@ -431,12 +431,15 @@ async function isAwaitingApproval(ctx: ToolContext): Promise<boolean> {
     ...target,
     per_page: 100,
   });
-  // a reviewer's standing verdict is their latest review that is not a comment.
+  // a reviewer's standing verdict is their latest review that is not a comment, unless GitHub
+  // refused a later one: asking again only burns a refused call on every push (#1644).
   const standing = reviews.findLast(
     (review) =>
-      isPullfrog(review.user?.login) && review.state !== "COMMENTED" && review.state !== "PENDING"
+      isPullfrog(review.user?.login) &&
+      review.state !== "PENDING" &&
+      (review.state !== "COMMENTED" || review.body?.includes(VERDICT_REFUSED_MARKER))
   );
-  if (standing?.state === "APPROVED") return false;
+  if (standing?.state === "APPROVED" || standing?.state === "COMMENTED") return false;
   return (await countOutstandingPullfrogThreads(ctx, pullNumber)) === 0;
 }
 

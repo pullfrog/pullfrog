@@ -44,6 +44,9 @@ type GitAuthOptions = {
    */
   refreshGitToken?: ((stale: string) => Promise<string>) | undefined;
   signal?: AbortSignal | undefined;
+  input?: string | undefined;
+  /** `key=value` for `-c`, placed before the pinned security flags so a pin always wins. */
+  config?: string[] | undefined;
 };
 
 /**
@@ -206,6 +209,7 @@ export async function $git(
   // agent-redirected hooksPath (~/.gitconfig, husky, .git/config) can't run
   // attacker code with the token live — see resolveHooksDir.
   const fullArgs = [
+    ...(options.config ?? []).flatMap((entry) => ["-c", entry]),
     "-c",
     "core.fsmonitor=false",
     "-c",
@@ -246,6 +250,7 @@ export async function $git(
       },
       activityTimeout: 0,
       signal: options.signal,
+      input: options.input,
     });
 
     if (result.stderr.includes("askpass-compromised")) {
@@ -361,5 +366,66 @@ export async function $gitFetchWithDeepen(
     );
     const retryArgs = args.filter((a) => !a.startsWith("--depth="));
     return await $git("fetch", [`--deepen=${DEEPEN_RETRY_DEPTH}`, ...retryArgs], options);
+  }
+}
+
+function isPartialClone(): boolean {
+  return ["extensions.partialclone", "remote.origin.promisor"].some(
+    (key) => $("git", ["config", "--default", "", "--get", key], { log: false }).trim() !== ""
+  );
+}
+
+/** `--missing=print` turns lazy fetching off, and `--quiet` leaves only the missing objects. */
+function listMissingObjects(args: string[]): string[] {
+  return $("git", ["rev-list", "--quiet", "--objects", "--no-walk", "--missing=print", ...args], {
+    log: false,
+  })
+    .split("\n")
+    .filter((line) => line.startsWith("?"))
+    .map((line) => line.slice(1));
+}
+
+/** `actions/checkout` makes every sparse checkout a `blob:none` clone, so skip its out-of-cone blobs. */
+function sparseFilterArgs(): string[] {
+  const git = (args: string[]) => $("git", args, { log: false }).trim();
+  const sparse = git(["config", "--type=bool", "--default=false", "--get", "core.sparseCheckout"]);
+  if (sparse !== "true") return [];
+  const patterns = git(["rev-parse", "--git-path", "info/sparse-checkout"]);
+  return [`--filter=sparse:oid=${git(["hash-object", "-w", patterns])}`];
+}
+
+/**
+ * git's own lazy fetch (`promisor-remote.c`), run under askpass ahead of a working-tree command
+ * that would otherwise trigger it with no credentials and die half way through (#1632). Flags
+ * match git's, noop negotiation included. A second round covers `tree:0`, whose blobs appear once
+ * their trees have.
+ */
+export async function prefetchPromisedObjects(
+  params: GitAuthOptions & { revs: string[] }
+): Promise<void> {
+  if (!isPartialClone()) return;
+  const args = [...sparseFilterArgs(), ...params.revs];
+  let missing = listMissingObjects(args);
+  while (missing.length > 0) {
+    await $gitFetchWithDeepen(
+      [
+        "origin",
+        "--no-tags",
+        "--no-write-fetch-head",
+        "--recurse-submodules=no",
+        "--filter=blob:none",
+        "--stdin",
+      ],
+      {
+        ...params,
+        input: `${missing.join("\n")}\n`,
+        config: ["fetch.negotiationAlgorithm=noop"],
+      },
+      "promised objects"
+    );
+    log.info(`» fetched ${missing.length} promised objects`);
+    const remaining = listMissingObjects(args);
+    if (remaining.join() === missing.join()) return;
+    missing = remaining;
   }
 }

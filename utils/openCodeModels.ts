@@ -17,8 +17,8 @@
 //      decisions (validateAgentApiKey).
 //
 // The set difference (`authorized - baseline`) is the contribution of
-// Pullfrog-stored auth to this run — logged once for operator visibility
-// and reserved for a future server-side "OSS proxy opt-out" detection.
+// Pullfrog-stored auth to this run — logged once for operator visibility,
+// and the proof `autoSelectModel` needs before pinning a subscription's model.
 //
 // Memoized at module scope so the two consumers
 // (`validateAgentApiKey` + `autoSelectModel`) share one shell-out.
@@ -34,6 +34,7 @@ import { getSubscriptionDataHome, openCodeV2Credentials } from "./codexHome.ts";
 
 let baseline: Set<string> | undefined;
 let authorized: Set<string> | undefined;
+let byok = new Set<string>();
 let failure: string | undefined;
 let catalogFailure: string | undefined;
 
@@ -155,35 +156,55 @@ export function getModelsCatalogFailure(): string | undefined {
   return catalogFailure;
 }
 
-function readModels(params: { cliPath: string; tmpdir: string }): Set<string> {
+class PluginsActivating extends Error {}
+
+/** each attempt is a whole new process that waits its own 5s, so far shorter than `requireGate`'s poll. */
+const MODELS_ACTIVATION_SCHEDULE = [1000, 3000];
+
+async function readModels(params: { cliPath: string; tmpdir: string }): Promise<Set<string>> {
   const env = { ...process.env, ...openCodeHomeEnv(params.tmpdir) };
   syncOpenCodeCredentials({ cliPath: params.cliPath, env, capture: true });
   // without --standalone, V2 starts a detached `serve --service` daemon that outlives the command.
   const args = opencodeGeneration() === 2 ? ["models", "--standalone"] : ["models"];
-  // spawnSync, not execFileSync: we want opencode's stderr as a value rather
-  // than a throw, and `stdio` keeps it out of the job log (execFileSync leaks
-  // it to the parent, so a config error printed once per capture).
-  const result = spawnSync(params.cliPath, args, {
-    encoding: "utf-8",
-    timeout: 30_000,
-    // `models` exits mid plugin-dependency install, leaving its flock under XDG_STATE_HOME; shared
-    // with the server, that lock held `session.create` until it went stale at 60s (#1513).
-    env: { ...env, XDG_STATE_HOME: join(params.tmpdir, ".local", "state-introspection") },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    // a timeout or spawn failure kills the child before it writes stderr, so
-    // `result.error` carries the only reason there is. without folding it in,
-    // `failure` stays undefined and the empty set reaches validateAgentApiKey
-    // as a bare "you have no key" verdict for what is really a runner problem.
-    const stderr = (result.stderr ?? "").replace(ANSI_PATTERN, "").trim();
-    failure = stderr || result.error?.message;
-    log.debug(`» \`opencode models\` failed (${result.status}): ${failure}`);
+  const stdout = await yes.try(
+    yes.query({
+      run: async () => {
+        // spawnSync, not execFileSync: we want opencode's stderr as a value rather
+        // than a throw, and `stdio` keeps it out of the job log (execFileSync leaks
+        // it to the parent, so a config error printed once per capture).
+        const result = spawnSync(params.cliPath, args, {
+          encoding: "utf-8",
+          timeout: 30_000,
+          // `models` exits mid plugin-dependency install, leaving its flock under XDG_STATE_HOME; shared
+          // with the server, that lock held `session.create` until it went stale at 60s (#1513).
+          env: { ...env, XDG_STATE_HOME: join(params.tmpdir, ".local", "state-introspection") },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        if (result.status === 0) return result.stdout;
+        // a timeout or spawn failure kills the child before it writes stderr, so
+        // `result.error` carries the only reason there is. without folding it in,
+        // `failure` stays undefined and the empty set reaches validateAgentApiKey
+        // as a bare "you have no key" verdict for what is really a runner problem.
+        const stderr = (result.stderr ?? "").replace(ANSI_PATTERN, "").trim();
+        const reason = stderr || result.error?.message;
+        log.debug(`» \`opencode models\` failed (${result.status}): ${reason}`);
+        // the same refusal `requireGate` retries on the server path; a config error stays fatal (#1658)
+        throw stderr.startsWith("ServiceUnavailableError")
+          ? new PluginsActivating(reason)
+          : new Error(reason);
+      },
+      name: "opencode models",
+      retry: (error, attempt) =>
+        error instanceof PluginsActivating ? yes.backoff(MODELS_ACTIVATION_SCHEDULE, attempt) : -1,
+    })()
+  );
+  if (stdout instanceof Error) {
+    failure = stdout.message;
     return new Set();
   }
   failure = undefined;
   return new Set(
-    result.stdout
+    stdout
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
@@ -204,24 +225,35 @@ export function getModelsFailure(): string | undefined {
 
 /** Snapshot the set of models OpenCode can serve from the current env, BEFORE
  * Pullfrog-stored credentials are merged in. Call once early in `main.ts`. */
-export function captureBaselineModels(params: { cliPath: string; tmpdir: string }): void {
-  baseline = readModels(params);
+export async function captureBaselineModels(params: {
+  cliPath: string;
+  tmpdir: string;
+}): Promise<void> {
+  baseline = await readModels(params);
   log.debug(`» opencode baseline: ${baseline.size} models`);
 }
 
 /** Snapshot the set of models OpenCode can serve AFTER dbSecrets +
  * Codex auth.json are in place. Logs the diff against the baseline as
  * `» BYOK auth enabled N model(s): …`. */
-export function captureAuthorizedModels(params: { cliPath: string; tmpdir: string }): void {
-  authorized = readModels(params);
+export async function captureAuthorizedModels(params: {
+  cliPath: string;
+  tmpdir: string;
+}): Promise<void> {
+  authorized = await readModels(params);
   const base = baseline;
   if (base) {
-    const diff = [...authorized].filter((m) => !base.has(m));
-    if (diff.length > 0) {
-      log.info(`» BYOK auth enabled ${diff.length} model(s): ${diff.join(", ")}`);
+    byok = new Set([...authorized].filter((m) => !base.has(m)));
+    if (byok.size > 0) {
+      log.info(`» BYOK auth enabled ${byok.size} model(s): ${[...byok].join(", ")}`);
     }
   }
   log.debug(`» opencode authorized: ${authorized.size} models`);
+}
+
+/** The models opencode lists only because of Pullfrog-stored auth. */
+export function getByokModels(): ReadonlySet<string> {
+  return byok;
 }
 
 /** A model whose credential the pool just probed. Added directly: a second

@@ -89,6 +89,7 @@ import { getDefaultBranch, resolveRunContextData } from "./utils/runContextData.
 import { ossEffortFloor } from "./utils/runEffort.ts";
 import { renderRunError } from "./utils/runErrorRenderer.ts";
 import {
+  finalizeRunChecks,
   finalizeSuccessRun,
   persistRunArtifacts,
   writeRunErrorOutputs,
@@ -271,7 +272,7 @@ export async function main(): Promise<MainResult> {
   // not alongside the install: its `spawnSync` tar extraction blocks the event loop, which spent the
   // download's timeout on every first attempt on a hosted runner
   await seedModelsCatalog(tmpdir);
-  captureBaselineModels({ cliPath: opencodeCliPath, tmpdir });
+  await captureBaselineModels({ cliPath: opencodeCliPath, tmpdir });
 
   // DRAGON: nothing above this block may resolve a model or read a provider env var — console-stored
   // config (`OPENAI_COMPATIBLE_MODEL`, `BEDROCK_MODEL_ID`, …) is not in process.env yet. 0.1.85 did, and broke every such run (#1433).
@@ -325,7 +326,7 @@ export async function main(): Promise<MainResult> {
   // decision and the opencode-agent path of validateAgentApiKey — strictly
   // more accurate than the static envVars/managedCredentials catalog,
   // which can miss new auth shapes.
-  captureAuthorizedModels({ cliPath: opencodeCliPath, tmpdir });
+  await captureAuthorizedModels({ cliPath: opencodeCliPath, tmpdir });
 
   // close the window opened before the baseline capture.
   if (preIntrospectionDirty && repoDir) {
@@ -1100,6 +1101,7 @@ export async function main(): Promise<MainResult> {
       toolContext,
       silent: payload.event.silent ?? false,
     });
+    await finalizeRunChecks(toolContext, { runSucceeded: outcome.success });
     succeeded = outcome.success;
     return outcome;
   } catch (error) {

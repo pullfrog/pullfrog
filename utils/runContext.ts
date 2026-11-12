@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import * as yes from "yes";
 import type { PushPermission, ShellPermission } from "../external.ts";
 import type { ProviderConfig, RouterTier } from "../models.ts";
 import { apiFetch } from "./apiFetch.ts";
 import type { CommercialRefusal } from "./billingErrors.ts";
+import { log } from "./cli.ts";
 import type { RepoContext } from "./github.ts";
 import type { CredentialAccess } from "./subscriptionCredentials.ts";
 
@@ -212,10 +214,6 @@ export async function fetchRunContext(params: {
    * applies to the Router proxy mint the same way it applies `runType`. */
   routedTier?: RouterTier | undefined;
 }): Promise<RunContext> {
-  const timeoutMs = 30000;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${params.token}`,
@@ -230,13 +228,20 @@ export async function fetchRunContext(params: {
     if (params.plainPrompt) query.set("prompt", "plain");
     if (params.routedTier) query.set("tier", params.routedTier);
     const search = query.toString();
-    const response = await apiFetch({
-      path: `/api/repo/${params.repoContext.owner}/${params.repoContext.name}/run-context${search ? `?${search}` : ""}`,
-      headers,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    // retried only when we never got an answer; the start record is keyed by START_KEY, so a repeat
+    // adds no row (wiki/run-correlation.md). a slow-egress runner answers inside 30s most of the time (#1637).
+    const response = await yes.query({
+      run: async (path: string, ctx: yes.Context) => {
+        const answer = await apiFetch({ path, headers, signal: ctx.signal });
+        if (answer.status >= 500) throw new Error(`run-context answered ${answer.status}`);
+        return answer;
+      },
+      name: "run-context",
+      timeout: 30_000,
+      retry: [1000, 3000],
+    })(
+      `/api/repo/${params.repoContext.owner}/${params.repoContext.name}/run-context${search ? `?${search}` : ""}`
+    );
 
     // commercial gate refusal (billing model v2): a 402 means the org's Pro
     // plan is paused/unpaid. Surface it so main.ts stops the run — every
@@ -253,8 +258,8 @@ export async function fetchRunContext(params: {
 
     if (!response.ok) {
       // 404 (repo not found / app not installed) and 403 (token rejected) are
-      // definitive; only 5xx leaves the secret state genuinely unknown.
-      return response.status >= 500 ? unknownSecretsRunContext : defaultRunContext;
+      // definitive; only 5xx leaves the secret state genuinely unknown, and those threw above.
+      return defaultRunContext;
     }
 
     const data = (await response.json()) as {
@@ -302,10 +307,11 @@ export async function fetchRunContext(params: {
       trialCreditsLeftUsd: data.trialCreditsLeftUsd,
       modelRegistry: data.modelRegistry,
     };
-  } catch {
-    // network drop, abort at the 30s timeout, or an unparseable body — we never
+  } catch (error) {
+    // network drop, abort at the 30s timeout, a 5xx, or an unparseable body — we never
     // learned anything about this repo's stored secrets.
-    clearTimeout(timeoutId);
+    const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+    log.warning(`» couldn't load run context: ${error}${cause ? ` (${cause})` : ""}`);
     return unknownSecretsRunContext;
   }
 }

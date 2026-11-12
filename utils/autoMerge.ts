@@ -109,7 +109,8 @@ export async function autoMergeAfterApprove(ctx: ToolContext): Promise<void> {
   if (!ctx.prApproveEnabled) return;
 
   const approval = ctx.toolState.approval;
-  if (!approval?.wouldApprove) return;
+  // a verdict GitHub refused to post is not an approval to merge on (#1644)
+  if (!approval?.wouldApprove || approval.refusedByGitHub) return;
 
   const pullNumber = ctx.payload.event.issue_number;
   if (typeof pullNumber !== "number") return;

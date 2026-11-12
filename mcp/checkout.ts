@@ -19,6 +19,7 @@ import {
   $git,
   $gitFetchWithDeepen,
   DEEPEN_RETRY_DEPTH,
+  prefetchPromisedObjects,
   WORKING_TREE_GIT_ENV,
 } from "../utils/gitAuth.ts";
 import { executeLifecycleHook } from "../utils/lifecycle.ts";
@@ -456,6 +457,8 @@ export async function checkoutPrBranch(
   if (!alreadyOnBranch) {
     // checkout base branch first to avoid "refusing to fetch into current branch" error
     // -B creates or resets the branch to match origin/baseBranch
+    const fetchAuth = { token: gitToken, refreshGitToken, signal };
+    await prefetchPromisedObjects({ ...fetchAuth, revs: [`origin/${pr.baseRef}`] });
     $("git", ["checkout", "-B", pr.baseRef, `origin/${pr.baseRef}`], {
       log: false,
       env: WORKING_TREE_GIT_ENV,
@@ -514,6 +517,7 @@ export async function checkoutPrBranch(
     }
 
     // checkout the branch
+    await prefetchPromisedObjects({ ...fetchAuth, revs: [localBranch] });
     $("git", ["checkout", localBranch], { log: false, env: WORKING_TREE_GIT_ENV });
     log.debug(`» checked out PR #${pr.number}`);
     repoState.checkoutSha = pr.headSha;
@@ -842,11 +846,18 @@ export function CheckoutPrTool(ctx: ToolContext) {
       incrementalUnavailableReason = checkoutResult.beforeShaUnavailable;
     } else if (primary.beforeSha) {
       const beforeShort = primary.beforeSha.slice(0, 7);
-      const incremental = computeIncrementalDiff({
+      const incremental = await computeIncrementalDiff({
         baseBranch: pr.baseRef,
         beforeSha: primary.beforeSha,
         headSha: checkoutSha,
         formerBaseTips: await getFormerBaseTips(ctx, pull_number),
+        prefetch: (revs) =>
+          prefetchPromisedObjects({
+            revs,
+            token: ctx.gitToken,
+            refreshGitToken: ctx.refreshGitToken,
+            signal,
+          }),
       });
       if (incremental.status === "ok") {
         incrementalDiffPath = join(

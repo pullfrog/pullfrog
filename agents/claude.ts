@@ -1336,6 +1336,9 @@ export const claude = agent({
     // unset, first-party routes defer every MCP tool behind ToolSearch, a turn spent before the
     // first Pullfrog call. `false` loads them up front, as gateway routes already do.
     env.ENABLE_TOOL_SEARCH ||= "false";
+    // claude-code refuses bypass mode as root unless told it is sandboxed; our policy layer holds at
+    // any uid. undocumented, so revalidate on each claude-code bump (wiki/security.md).
+    if (process.getuid?.() === 0) env.IS_SANDBOX = "1";
     if (isBedrockRoute) {
       env.CLAUDE_CODE_USE_BEDROCK = "1";
     }

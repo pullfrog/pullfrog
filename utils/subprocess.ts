@@ -121,7 +121,7 @@ export interface SpawnOptions {
   cmd: string;
   args: string[];
   env?: NodeJS.ProcessEnv;
-  input?: string;
+  input?: string | undefined;
   timeout?: number;
   // activity timeout: kill process if no stdout for this many ms (default:
   // DEFAULT_ACTIVITY_TIMEOUT_MS, 0 to disable). only stdout resets the timer —

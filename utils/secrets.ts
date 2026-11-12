@@ -24,6 +24,19 @@ export function isSensitiveEnvName(key: string): boolean {
   return SENSITIVE_PATTERNS.some((p) => p.test(key));
 }
 
+/**
+ * Whether a credential sent as an HTTP header holds a character no header can carry: a C0 control
+ * from a line-wrapped paste (#1162), or a smart quote or zero-width space from a document (#1621).
+ * JSON-blob credentials (`CODEX_AUTH_JSON`) legitimately carry newlines, so they never match.
+ */
+export function isUnsendableSecret(name: string, value: string): boolean {
+  if (!name.endsWith("_API_KEY") && name !== "CLAUDE_CODE_OAUTH_TOKEN") return false;
+  return [...value].some((ch) => {
+    const code = ch.charCodeAt(0);
+    return code < 0x20 || code > 0x7e;
+  });
+}
+
 // --- subprocess env filtering ---
 
 // prefixes whose vars are safe to pass through (runner metadata, workflow context).
@@ -134,6 +147,32 @@ const WORKFLOW_COMMAND_ENV_NAMES = [
 export function filterEnvForUntrustedCode(): Record<string, string> {
   const env = filterEnv();
   for (const name of WORKFLOW_COMMAND_ENV_NAMES) delete env[name];
+  return env;
+}
+
+const PROXY_ENV_NAMES = [
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "ALL_PROXY",
+  "all_proxy",
+  "NO_PROXY",
+  "no_proxy",
+  "NODE_USE_ENV_PROXY",
+];
+
+/**
+ * the runner's egress proxy, for an agent process that reaches its model through it, as opencode
+ * and claude already do by inheriting `process.env` (#1677). kept out of SAFE_ENV_NAMES because a
+ * proxy URL can carry credentials: the shell gets it only through the user allowlist.
+ */
+export function proxyEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const name of PROXY_ENV_NAMES) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
   return env;
 }
 

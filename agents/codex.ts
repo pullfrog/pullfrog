@@ -52,7 +52,7 @@ import { OAUTH_WRITEBACK_STATE } from "../utils/oauthWriteback.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { resolveRunEffort } from "../utils/runEffort.ts";
 import { saveSecretState } from "../utils/secretCommands.ts";
-import { filterEnv } from "../utils/secrets.ts";
+import { filterEnv, proxyEnv } from "../utils/secrets.ts";
 import {
   DEFAULT_MAX_RETAINED_BYTES,
   SPAWN_ACTIVITY_TIMEOUT_CODE,
@@ -416,10 +416,10 @@ function repoMcpApprovals(repoDir: string): string[] {
 function warnIfNativeEditsUnavailable(ctx: AgentRunContext): void {
   if (process.platform !== "linux" || ctx.payload.shell !== "disabled") return;
   log.warning(
-    "» this run cannot change files: codex's native write tool depends on bubblewrap, " +
-      "which Ubuntu 24.04 blocks (https://github.com/openai/codex/issues/29908), and the " +
-      "MCP shell is disabled for this repo. read-only work is unaffected — set " +
-      "`shell: restricted` if the agent needs to edit anything."
+    "» this run cannot read or change files: codex has no native read tool, its native write tool " +
+      "depends on bubblewrap, which Ubuntu 24.04 blocks (https://github.com/openai/codex/issues/29908), " +
+      "and the MCP shell is off, either by this repo's `shell: disabled` or because this runner has no " +
+      "PID-namespace sandbox."
   );
 }
 
@@ -933,6 +933,7 @@ export const codex = agent({
     const baseEnv = ctx.payload.shell === "enabled" ? process.env : filterEnv();
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
+      ...proxyEnv(),
       CODEX_HOME: codexHome,
       GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
       PWD: process.cwd(),
