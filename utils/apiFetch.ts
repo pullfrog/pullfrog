@@ -13,27 +13,18 @@ type ApiFetchOptions = {
 /**
  * fetch wrapper for hitting the Pullfrog API with Vercel deployment protection bypass.
  *
- * adds the bypass secret as BOTH a query parameter and a header for maximum reliability.
- * the server-side forwarding code uses query params, and the Vercel docs say both work,
- * so we do both as belt-and-suspenders.
- *
- * the query param approach is the primary bypass mechanism (matches server-side forwarding).
- * the header is added as a fallback.
+ * the bypass secret goes in a header, never the query: Vercel's request log records the
+ * full URL, so a query parameter lands the secret in Better Stack.
  */
 export async function apiFetch(options: ApiFetchOptions): Promise<Response> {
   const apiUrl = getApiUrl();
   const url = new URL(options.path, apiUrl);
 
-  const bypassSecret = vercelBypassSecretFor(url);
-  if (bypassSecret) {
-    url.searchParams.set("x-vercel-protection-bypass", bypassSecret);
-  }
-
   const headers: Record<string, string> = {
     ...options.headers,
   };
 
-  // also add as header for belt-and-suspenders
+  const bypassSecret = vercelBypassSecretFor(url);
   if (bypassSecret) {
     headers["x-vercel-protection-bypass"] = bypassSecret;
   }
