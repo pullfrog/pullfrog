@@ -104,6 +104,7 @@ export {
   type CommercialRefusal,
   commercialPaywallBody,
   GRACE_DAYS,
+  graceNoticeBody,
   TEAM_PRICE_CENTS,
 } from "../utils/billingErrors.ts";
 export type {

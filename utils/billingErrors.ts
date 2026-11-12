@@ -97,6 +97,29 @@ export const TEAM_PRICE_CENTS = 3000;
 /** post-trial grace window: keeps reviewing before the telegraphed pause. */
 export const GRACE_DAYS = 7;
 
+const ORGANIZATION_PLAN = `The Organization plan is $${TEAM_PRICE_CENTS / 100}/month for unlimited runs and unlimited members.`;
+
+/**
+ * the one-time notice a run posts on its PR or issue during the grace week, so the
+ * people using Pullfrog see the pause coming, not only the contact the emails reach.
+ */
+export function graceNoticeBody(params: {
+  ownerLogin: string;
+  pausesAt: Date;
+  url: string;
+}): string {
+  const date = params.pausesAt.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return [
+    `**Pullfrog's free trial for ${params.ownerLogin} has ended.**`,
+    "",
+    `Pullfrog keeps running on private repos through ${date}, then pauses. An org owner can [subscribe](${params.url}) to keep it running. ${ORGANIZATION_PLAN}`,
+  ].join("\n");
+}
+
 /**
  * Canonical paused-run paywall body (billing model v2). Single source of truth so
  * the two surfaces that show it can never drift: the trigger-time comment (a run
@@ -111,14 +134,13 @@ export function commercialPaywallBody(params: {
   freshReply?: boolean | undefined;
 }): string {
   const resume = "to resume private-repo runs.";
-  const plan = `The Organization plan is $${TEAM_PRICE_CENTS / 100}/month for unlimited runs and unlimited members.`;
   let detail: string;
   switch (params.reason) {
     case "commercial":
-      detail = `The free trial and its ${GRACE_DAYS}-day grace period have ended. An org owner can [upgrade](${params.url}) ${resume} ${plan}`;
+      detail = `The free trial and its ${GRACE_DAYS}-day grace period have ended. An org owner can [upgrade](${params.url}) ${resume} ${ORGANIZATION_PLAN}`;
       break;
     case "subscription_ended":
-      detail = `The subscription has ended. An org owner can [resubscribe](${params.url}) ${resume} ${plan}`;
+      detail = `The subscription has ended. An org owner can [resubscribe](${params.url}) ${resume} ${ORGANIZATION_PLAN}`;
       break;
     case "subscription_unpaid":
       detail = `The latest subscription payment failed. An org owner can [update billing](${params.url}) ${resume}`;
