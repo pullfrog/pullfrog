@@ -23,7 +23,11 @@ import { DISCORD_LINK, type FailureLink, renderFailure } from "./failureBody.ts"
 import { keylessRejection } from "./keylessAuth.ts";
 import { getModelsFailure } from "./openCodeModels.ts";
 import { PROVIDER_DASHBOARDS } from "./providerDashboards.ts";
-import type { CredentialCandidate } from "./subscriptionCredentials.ts";
+import {
+  type CredentialCandidate,
+  SUBSCRIPTION_CREDENTIALS,
+  subscriptionFor,
+} from "./subscriptionCredentials.ts";
 import type { ProbeVerdict } from "./subscriptionProbe.ts";
 import {
   GOOGLE_CLOUD_PROJECT_ENV,
@@ -800,46 +804,6 @@ const CLAUDE_SESSION_LIMIT_PATTERN =
 
 export function isClaudeSessionLimitError(text: string): boolean {
   return CLAUDE_SESSION_LIMIT_PATTERN.test(text);
-}
-
-/**
- * Subscription credentials are re-authenticated, never rotated: there is no
- * provider dashboard to visit and no API key to paste. Telling their owner to
- * "rotate the key in your provider dashboard, then update the matching GitHub
- * Actions secret" names three things that do not exist for them — which is what
- * a revoked `CLAUDE_CODE_OAUTH_TOKEN` was answered with 47 times in a row
- * before this existed, because Anthropic's rejection reads `Invalid bearer
- * token` and that is also what a rotated `ANTHROPIC_API_KEY` reads (#782).
- * The credential in play is knowable, so it decides the copy — never the prose.
- */
-const SUBSCRIPTION_CREDENTIALS: Record<
-  string,
-  { label: string; command: string; provider: string }
-> = {
-  CLAUDE_CODE_OAUTH_TOKEN: {
-    label: "Claude subscription",
-    command: "pullfrog auth claude",
-    provider: "anthropic",
-  },
-  CODEX_AUTH_JSON: {
-    label: "ChatGPT subscription",
-    command: "pullfrog auth codex",
-    provider: "openai",
-  },
-  GROK_AUTH_JSON: {
-    label: "Grok subscription",
-    command: "pullfrog auth grok",
-    provider: "xai",
-  },
-};
-
-/** the subscription that serves `model`'s provider, named by the env var that carries it. */
-export function subscriptionFor(model: string | undefined) {
-  const provider = model?.split("/")[0];
-  for (const [env, subscription] of Object.entries(SUBSCRIPTION_CREDENTIALS)) {
-    if (subscription.provider === provider) return { env, ...subscription };
-  }
-  return undefined;
 }
 
 const SIGN_IN_AGAIN = (command: string) => `Sign in again by running \`${command}\` in a terminal`;

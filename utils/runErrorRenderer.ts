@@ -75,7 +75,6 @@ import {
   ROUTER_UNFUNDED_MARKER,
   repoConsoleUrl,
   SECRETS_UNAVAILABLE_MARKER,
-  subscriptionFor,
   TRIAL_SPENT_MARKER,
 } from "./apiKeys.ts";
 import { BillingError, formatBillingErrorSummary } from "./billingErrors.ts";
@@ -93,6 +92,7 @@ import {
   isRouterKeylimitExhaustedError,
   isTransientUpstreamError,
 } from "./providerErrors.ts";
+import { subscriptionFor } from "./subscriptionCredentials.ts";
 
 export type RenderedRunError = {
   summary: string;
