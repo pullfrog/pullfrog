@@ -153,7 +153,9 @@ function writeMcpConfig(ctx: AgentRunContext): string {
     configPath,
     JSON.stringify({
       mcpServers: {
-        [pullfrogMcpName]: { type: "http", url: ctx.mcpServerUrl },
+        // 660s per call, as opencode and codex get. without it an http server's tool is aborted after
+        // 300s with no progress notification, which ours never send (#1685)
+        [pullfrogMcpName]: { type: "http", url: ctx.mcpServerUrl, timeout: 660_000 },
       },
     })
   );
