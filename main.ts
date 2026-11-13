@@ -78,6 +78,7 @@ import {
 import { aggregateUsage, patchWorkflowRunFields } from "./utils/patchWorkflowRunFields.ts";
 import {
   isOutsideAuthor,
+  isOutsideThread,
   resolveOutputSchema,
   resolvePayload,
   resolvePromptInput,
@@ -214,6 +215,7 @@ export async function main(): Promise<MainResult> {
     await using _commentTokenRef = await resolveTokens({
       push: "disabled",
       shell: "disabled",
+      workflows: false,
       authorPermission: undefined,
       oidc: oidcCredentials,
     });
@@ -379,6 +381,7 @@ export async function main(): Promise<MainResult> {
   await using tokenRef = await resolveTokens({
     push: payload.push,
     shell: payload.shell,
+    workflows: !isOutsideThread(payload.event),
     authorPermission: payload.event.authorPermission,
     xrepo: payload.xrepo,
     xrepoGrant: payload.xrepoGrant,
@@ -775,7 +778,7 @@ export async function main(): Promise<MainResult> {
     // on failure toolState.learningsFilePath stays unset, and downstream
     // consumers (`persistLearnings`, agent harnesses, `resolveInstructions`)
     // all treat undefined as "no learnings affordance this run".
-    toolState.learningsLocked = isOutsideAuthor(payload.event);
+    toolState.learningsLocked = isOutsideAuthor(payload.event) || isOutsideThread(payload.event);
     try {
       const learningsPath = await seedLearningsFile({
         tmpdir,

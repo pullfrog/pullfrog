@@ -105,6 +105,12 @@ export function isOutsideAuthor(event: PayloadEvent): boolean {
   return event.authorPermission !== undefined && !isCollaborator(event);
 }
 
+/** a run on an issue or PR opened by someone who cannot push here, whoever triggered it */
+export function isOutsideThread(event: PayloadEvent): boolean {
+  const perm = event.threadAuthorPermission;
+  return perm !== undefined && !COLLABORATOR_PERMISSIONS.includes(perm);
+}
+
 // inputs schema - action inputs from core.getInput()
 // note: tool permissions use .or("undefined") because getInput() || undefined
 // explicitly sets the property to undefined when empty, which is different from

@@ -24,6 +24,7 @@ import {
   WORKING_TREE_GIT_ENV,
 } from "../utils/gitAuth.ts";
 import { executeLifecycleHook, type LifecycleHookFailure } from "../utils/lifecycle.ts";
+import { isOutsideThread } from "../utils/payload.ts";
 import { $ } from "../utils/shell.ts";
 import { resolveRepoCtx } from "./resolveRepoCtx.ts";
 import type { ToolContext } from "./server.ts";
@@ -550,6 +551,13 @@ export function PushBranchTool(ctx: ToolContext) {
               `${integrateStep}\n` +
               `3. resolve any merge conflicts if needed\n` +
               `4. retry push_branch`
+          );
+        }
+        // the git token has no `workflows` permission on such a run (resolveTokens)
+        if (isOutsideThread(ctx.payload.event) && msg.includes(".github/workflows/")) {
+          throw new Error(
+            `push rejected: #${ctx.payload.event.issue_number} was opened by someone without write access, so this run cannot add or change files under .github/workflows/. ` +
+              `drop the workflow change and push the rest; a maintainer can make it themselves or ask from a thread they opened.`
           );
         }
         throw err;

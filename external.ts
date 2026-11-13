@@ -208,6 +208,8 @@ interface BasePayloadEvent {
   comment_ids?: number[] | "all";
   /** permission level of the user who triggered this event */
   authorPermission?: AuthorPermission | undefined;
+  /** permission level of whoever opened the issue or PR, set when someone else triggered the run */
+  threadAuthorPermission?: AuthorPermission | undefined;
   /** when true, runs silently without progress comments (e.g., auto-labeling) */
   silent?: boolean;
   [key: string]: any;

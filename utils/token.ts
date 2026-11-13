@@ -89,6 +89,9 @@ type ResolveTokensParams = {
   authorPermission: AuthorPermission | undefined;
   // a run with no shell has nowhere to put the shell token, so none is minted.
   shell: ShellPermission;
+  // false on a run over an outsider's issue or PR, so text they wrote cannot get a
+  // workflow pushed that runs with the repo's secrets before anyone reviews it.
+  workflows: boolean;
   // cross-repo access sets (server-resolved). when present, gitToken + mcpToken
   // are scoped to the WRITE set (∪ primary) and a readToken is minted over the
   // READ set. absent → single-repo, primary-scoped tokens (unchanged).
@@ -166,7 +169,9 @@ export async function resolveTokens(params: ResolveTokensParams): Promise<TokenR
   const gitPermissions =
     params.push === "disabled"
       ? { contents: "read" as const }
-      : { contents: "write" as const, workflows: "write" as const };
+      : params.workflows
+        ? { contents: "write" as const, workflows: "write" as const }
+        : { contents: "write" as const };
   const gitToken = await acquireNewToken({
     repos: writeRepos,
     xrepoGrant: params.xrepoGrant,
