@@ -43,6 +43,7 @@ import { AddLabelsTool, RemoveLabelsTool } from "./labels.ts";
 import { SetOutputTool } from "./output.ts";
 import { CreatePullRequestTool, UpdatePullRequestBodyTool } from "./pr.ts";
 import { PullRequestInfoTool } from "./prInfo.ts";
+import { ReadFileTool } from "./readFile.ts";
 import { CreatePullRequestReviewTool } from "./review.ts";
 import {
   GetReviewCommentsTool,
@@ -214,6 +215,9 @@ function buildCommonTools(ctx: ToolContext, outputSchema?: JsonSchema): Pullfrog
   if (ctx.payload.shell !== "disabled") {
     tools.push(ShellTool(ctx));
     tools.push(KillBackgroundTool(ctx));
+  } else if (ctx.agentId === "codex") {
+    // the other harnesses keep their native read tools; codex has none (#1623)
+    tools.push(ReadFileTool(ctx));
   }
 
   // above the mirror threshold the triggering user already holds repo-wide

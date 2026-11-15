@@ -416,10 +416,10 @@ function repoMcpApprovals(repoDir: string): string[] {
 function warnIfNativeEditsUnavailable(ctx: AgentRunContext): void {
   if (process.platform !== "linux" || ctx.payload.shell !== "disabled") return;
   log.warning(
-    "» this run cannot read or change files: codex has no native read tool, its native write tool " +
-      "depends on bubblewrap, which Ubuntu 24.04 blocks (https://github.com/openai/codex/issues/29908), " +
-      "and the MCP shell is off, either by this repo's `shell: disabled` or because this runner has no " +
-      "PID-namespace sandbox."
+    "» this run cannot change files: codex's native write tool depends on bubblewrap, which Ubuntu " +
+      "24.04 blocks (https://github.com/openai/codex/issues/29908), and the MCP shell is off, either by " +
+      "this repo's `shell: disabled` or because this runner has no PID-namespace sandbox. it reads " +
+      "files through Pullfrog's `read_file` tool."
   );
 }
 

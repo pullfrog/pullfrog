@@ -1214,6 +1214,7 @@ export function GitTool(ctx: ToolContext) {
       const lineCount = output.split("\n").length;
       if (output.length > MAX_GIT_OUTPUT_CHARS) {
         const spilled = spillGitOutput({ command, args, output, lineCount });
+        ctx.toolState.handedOver.add(spilled.outputPath);
         return { success: true, output: spilled.output, outputPath: spilled.outputPath };
       }
       if (lineCount > COLLAPSE_THRESHOLD) {

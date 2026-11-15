@@ -22,6 +22,7 @@ function makeCtx(overrides: Partial<ToolState> = {}) {
     prepushFailureCount: 0,
     noopReviewSubmissions: 0,
     backgroundProcesses: new Map(),
+    handedOver: new Set(),
     usageEntries: [],
     ...overrides,
   };

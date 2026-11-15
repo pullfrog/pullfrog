@@ -195,6 +195,7 @@ export function GetCheckSuiteLogsTool(ctx: ToolContext) {
             // write full log to disk
             const logPath = join(logsDir, `job-${job.id}.log`);
             writeFileSync(logPath, logsText);
+            ctx.toolState.handedOver.add(logPath);
 
             // analyze log
             const analysis = analyzeLog(logsText, 80);

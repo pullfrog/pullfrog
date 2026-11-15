@@ -865,6 +865,7 @@ export function CheckoutPrTool(ctx: ToolContext) {
           `pr-${pull_number}-${beforeShort}-${headShort}-incremental.diff`
         );
         writeFileSync(incrementalDiffPath, incremental.diff);
+        ctx.toolState.handedOver.add(incrementalDiffPath);
         incrementalDiff = incremental.diff;
         log.info(
           `» incremental diff computed (${incremental.diff.length} bytes) → ${incrementalDiffPath}`
@@ -883,6 +884,7 @@ export function CheckoutPrTool(ctx: ToolContext) {
     log.debug(`formatted diff preview (first 100 lines):\n${diffPreview}`);
     const diffPath = join(tempDir, `pr-${pull_number}-${headShort}.diff`);
     writeFileSync(diffPath, formatResult.content);
+    ctx.toolState.handedOver.add(diffPath);
     log.debug(`wrote diff to ${diffPath} (${formatResult.content.length} bytes)`);
     // a re-review's checklist is the delta since the last review, not the whole PR again, and
     // an unchanged delta has nothing to cover. generated files are never on the checklist.

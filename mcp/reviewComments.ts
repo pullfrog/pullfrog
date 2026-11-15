@@ -937,6 +937,7 @@ export function GetReviewCommentsTool(ctx: ToolContext) {
       const filename = `review-${params.review_id}-threads.md`;
       const commentsPath = join(tempDir, filename);
       writeFileSync(commentsPath, formatted.content);
+      ctx.toolState.handedOver.add(commentsPath);
       log.debug(`wrote ${threadBlocks.length} threads to ${commentsPath}`);
 
       return {

@@ -157,6 +157,9 @@ export interface ToolState {
   // probes the tool with placeholder text. reset by any successful submission.
   noopReviewSubmissions: number;
   backgroundProcesses: Map<string, BackgroundProcess>;
+  // files a tool wrote for the agent and named in its result (diffs, CI logs, review threads,
+  // spilled git output). shell-less codex can read these and the checkouts, nothing else.
+  handedOver: Set<string>;
   browserDaemon?: BrowserDaemon | undefined;
   review?: {
     id: number;
@@ -333,6 +336,7 @@ export function initToolState(params: InitToolStateParams): ToolState {
     prepushFailureCount: 0,
     noopReviewSubmissions: 0,
     backgroundProcesses: new Map(),
+    handedOver: new Set(),
     usageEntries: [],
   };
 }

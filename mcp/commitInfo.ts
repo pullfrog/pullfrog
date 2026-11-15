@@ -39,6 +39,7 @@ export function CommitInfoTool(ctx: ToolContext) {
       // named from the resolved SHA: the input may be a branch like `chore/x` (#1577)
       const diffFile = join(tempDir, `commit-${data.sha.slice(0, 7)}.diff`);
       writeFileSync(diffFile, formatResult.content);
+      ctx.toolState.handedOver.add(diffFile);
       log.debug(`wrote commit diff to ${diffFile} (${formatResult.content.length} bytes)`);
 
       return {

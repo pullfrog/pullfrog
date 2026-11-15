@@ -515,6 +515,7 @@ export async function createChangeImpactArtifact(
   });
   const path = join(ctx.tmpdir, `pr-${params.pullNumber}-${params.headSha.slice(0, 7)}-impact.md`);
   writeFileSync(path, artifact.content);
+  ctx.toolState.handedOver.add(path);
   return {
     path,
     candidateCount: candidates.selected.length,
