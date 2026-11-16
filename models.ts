@@ -1095,15 +1095,13 @@ export const bundledProviders = {
       // is Go-only.
       "qwen-max": {
         displayName: "Qwen Max",
-        resolve: "opencode-go/qwen3.8-max",
-        // both routes publish rungs, and they are different sets rather than
-        // different spellings of one — OpenRouter carries a `minimal` and a
-        // `high` the Go route does not.
-        effort: ["low", "medium", "xhigh"],
-        openRouterEffort: ["minimal", "low", "medium", "high", "xhigh"],
-        // OpenRouter retired the rolling `qwen3.8-max` for a dated snapshot, so
-        // this side has to pin one; the Go route still carries the rolling id.
-        openRouterResolve: "openrouter/qwen/qwen3.8-max-0902",
+        resolve: "opencode-go/qwen4-max",
+        // both routes publish rungs; OpenRouter adds a `none` the Go route does not.
+        effort: ["low", "high", "xhigh"],
+        openRouterEffort: ["none", "low", "high", "xhigh"],
+        // OpenRouter pinned 3.8 Max to a dated snapshot (`-0902`) after retiring
+        // its rolling id; 4 Max is served under the plain id.
+        openRouterResolve: "openrouter/qwen/qwen4-max",
       },
       "qwen-plus": {
         displayName: "Qwen Plus",
