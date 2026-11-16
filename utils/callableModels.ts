@@ -32,7 +32,7 @@ const isSubscription = (name: string) => subscriptionNameSchema.safeParse(name).
 export function callableModels(credentials: readonly string[]): CallableModel[] {
   return modelAliases.flatMap((alias) => {
     if (alias.hidden || alias.fallback || alias.routing) return [];
-    const gateway = PROVIDER_GATEWAY_URL_ENV[getModelProvider(alias.resolve)];
+    const gateway = PROVIDER_GATEWAY_URL_ENV[alias.provider];
     if (gateway && credentials.includes(gateway)) return [];
     const credential = [...getModelManagedCredentials(alias.slug), ...getModelEnvVars(alias.slug)]
       .sort((a, b) => Number(isSubscription(b)) - Number(isSubscription(a)))

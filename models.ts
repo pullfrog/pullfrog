@@ -1670,14 +1670,23 @@ export function modelIdLabel(specifier: string): string {
  * resolved specifiers, and Kimi Code's (`kimi-code-plan-cn/…`) differ from its slugs
  * (`kimi-for-coding/…`). Without the second lookup every Kimi model read as needing no key.
  */
-function getProviderConfig(prefix: string): ProviderConfig | undefined {
+function getProviderKey(prefix: string): string | undefined {
   const all: Record<string, ProviderConfig> = providers;
-  return (
-    all[prefix] ??
-    Object.values(all).find((config) =>
-      Object.values(config.models).some((model) => model.resolve.startsWith(`${prefix}/`))
-    )
-  );
+  if (all[prefix]) return prefix;
+  return Object.entries(all).find((entry) =>
+    Object.values(entry[1].models).some((model) => model.resolve.startsWith(`${prefix}/`))
+  )?.[0];
+}
+
+function getProviderConfig(prefix: string): ProviderConfig | undefined {
+  const key = getProviderKey(prefix);
+  const all: Record<string, ProviderConfig> = providers;
+  return key ? all[key] : undefined;
+}
+
+/** the registry provider a slug or a resolved specifier belongs to: `kimi-code-plan-cn/k3` → `kimi-for-coding`. */
+export function getModelProviderKey(specifier: string): string | undefined {
+  return getProviderKey(getModelProvider(specifier));
 }
 
 export function getModelEnvVars(slug: string): string[] {
@@ -2468,31 +2477,50 @@ export function openAICompatibleSetAlias(set: string): ModelAlias | undefined {
  * Adding a provider that ALREADY has a block in `buildSecurityConfig` needs a
  * merge, not an entry here: that spread replaces the whole key, so listing
  * `openrouter` would silently drop `kimiOpenRouterProviderOverrides()`.
+ *
+ * Keyed by registry provider, each value is the prefix of the provider's API-key
+ * variable: `<prefix>_BASE_URL` and `<prefix>_CUSTOM_HEADERS`.
  */
-export const PROVIDER_GATEWAY_URL_ENV: Record<string, string> = {
-  anthropic: "ANTHROPIC_BASE_URL",
-  openai: "OPENAI_BASE_URL",
+const PROVIDER_GATEWAY_ENV_PREFIX: Record<string, string> = {
+  anthropic: "ANTHROPIC",
+  openai: "OPENAI",
+  google: "GEMINI",
+  xai: "XAI",
+  deepseek: "DEEPSEEK",
+  moonshotai: "MOONSHOT",
+  "kimi-for-coding": "KIMI",
+  meta: "META_MODEL",
 };
 
-/** the customer gateway a model's provider is re-pointed at, if any. */
-export function getProviderGatewayUrl(specifier: string | undefined): string | undefined {
-  const slashIndex = specifier?.indexOf("/") ?? -1;
-  if (!specifier || slashIndex <= 0) return undefined;
-  const envVar = PROVIDER_GATEWAY_URL_ENV[specifier.slice(0, slashIndex)];
-  if (!envVar) return undefined;
-  // a trailing slash doubles up against the path opencode joins onto it
-  return process.env[envVar]?.trim().replace(/\/$/, "") || undefined;
+function gatewayEnv(suffix: string): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(PROVIDER_GATEWAY_ENV_PREFIX).map((entry) => [entry[0], `${entry[1]}${suffix}`])
+  );
 }
+
+export const PROVIDER_GATEWAY_URL_ENV = gatewayEnv("_BASE_URL");
 
 /**
  * The extra request headers a re-pointed provider sends its gateway, scoped per endpoint like its
  * URL. A single variable for every provider would hand a gateway's credential to whichever provider
  * a run falls back to. `ANTHROPIC_CUSTOM_HEADERS` is Claude Code's own name, read natively there.
  */
-export const PROVIDER_GATEWAY_HEADERS_ENV: Record<string, string> = {
-  anthropic: "ANTHROPIC_CUSTOM_HEADERS",
-  openai: "OPENAI_CUSTOM_HEADERS",
-};
+export const PROVIDER_GATEWAY_HEADERS_ENV = gatewayEnv("_CUSTOM_HEADERS");
+
+/** the customer gateway a model's provider is re-pointed at, if any. */
+export function getProviderGatewayUrl(specifier: string | undefined): string | undefined {
+  const provider = specifier?.includes("/") ? getModelProviderKey(specifier) : undefined;
+  const envVar = provider && PROVIDER_GATEWAY_URL_ENV[provider];
+  if (!envVar) return undefined;
+  // a trailing slash doubles up against the path opencode joins onto it
+  return process.env[envVar]?.trim().replace(/\/$/, "") || undefined;
+}
+
+/** a credential a gateway can be sent, which the vendor's own host therefore cannot vouch for. */
+export function isGatewayCredential(envVar: string): boolean {
+  const all: Record<string, ProviderConfig> = providers;
+  return Object.keys(PROVIDER_GATEWAY_URL_ENV).some((key) => all[key]?.envVars.includes(envVar));
+}
 
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 /** what every harness sends: `fetch` throws on a control character, and Codex drops a header past visible ASCII. */

@@ -12,6 +12,7 @@ import {
   AZURE_PROVIDER,
   AZURE_USE_CHAT_COMPLETIONS_ENV,
   getModelManagedCredentials,
+  getModelProviderKey,
   getOpenCodeEnvVars,
   getProviderGatewayUrl,
   modelAliases,
@@ -142,10 +143,12 @@ export function providerGatewayOverride(
   model: string | undefined
 ): Record<string, { options: { baseURL: string; headers: Record<string, string> } }> {
   const gatewayUrl = getProviderGatewayUrl(model);
-  if (!model || !gatewayUrl) return {};
+  const key = model && getModelProviderKey(model);
+  if (!model || !gatewayUrl || !key) return {};
+  // keyed by opencode's provider id, which for Kimi Code is not the registry's
   const provider = model.slice(0, model.indexOf("/"));
   const baseURL = `${gatewayUrl}${OPENCODE_GATEWAY_PATH[provider] ?? ""}`;
-  const headers = readCustomHeaders(PROVIDER_GATEWAY_HEADERS_ENV[provider]);
+  const headers = readCustomHeaders(PROVIDER_GATEWAY_HEADERS_ENV[key]);
   return { [provider]: { options: { baseURL, headers } } };
 }
 

@@ -53,6 +53,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import type { CredentialEntry } from "@opencode/client";
+import { getProviderGatewayUrl } from "../models.ts";
 import { log } from "./cli.ts";
 import { type CodexAuthBody, parseCodexAuthBody, stringifyCodexAuthBody } from "./codexOAuth.ts";
 import { decodeJwtExpMs } from "./oauthShared.ts";
@@ -318,6 +319,12 @@ export interface InstalledXaiAuth {
 export function installXaiAuth(): InstalledXaiAuth | null {
   const raw = process.env[XAI_AUTH_ENV];
   if (!raw) return null;
+  // a gateway takes the API key, as Claude Code's does: opencode would otherwise send the
+  // subscription token in its place, even with XAI_API_KEY set
+  if (getProviderGatewayUrl("xai/") && process.env.XAI_API_KEY) {
+    log.info(`» xAI gateway set: paying with XAI_API_KEY, not ${XAI_AUTH_ENV}`);
+    return null;
+  }
 
   const body = parseXaiAuthBody(raw);
   if (!body) {
