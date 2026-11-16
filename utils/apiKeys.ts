@@ -12,6 +12,7 @@ import {
   modelAliases,
   OPENAI_COMPATIBLE_PROVIDER,
   openAICompatibleEnv,
+  openAICompatibleSets,
   providers,
   resolveDisplayAlias,
   TRIAL_FUNDED_USD_LIMIT,
@@ -248,11 +249,14 @@ function buildMissingApiKeyError(params: {
   const unhosted = params.model?.includes("/")
     ? getModelManagedCredentials(params.model).find((name) => unhostedSubscriptions.has(name))
     : undefined;
+  const remedy = envVarList
+    ? `It needs ${envVarList}. Connect it in Pullfrog or add it as a GitHub Actions secret, or pick a model you already have a key for.`
+    : "Pullfrog needs a key or subscription for at least one model provider. Connect one in Pullfrog, or add a key as a GitHub Actions secret.";
   const detail = unhosted
     ? `Your ${SUBSCRIPTION_CREDENTIALS[unhosted]?.label} is stored, but this runner has no passwordless \`sudo\`, which Pullfrog needs to keep it in \`${PULLFROG_DATA_DIR}\`, out of the agent's reach. Allow passwordless \`sudo\` for the runner user, run on a GitHub-hosted runner, or add an API key.`
-    : envVarList
-      ? `It needs ${envVarList}. Connect it in Pullfrog or add it as a GitHub Actions secret, or pick a model you already have a key for.`
-      : "Pullfrog needs a key or subscription for at least one model provider. Connect one in Pullfrog, or add a key as a GitHub Actions secret.";
+    : hasOpenAICompatibleEndpoint()
+      ? `${remedy} An OpenAI-compatible endpoint is connected: to run on it, pick it under Manual › Custom.`
+      : remedy;
 
   return renderFailure({
     headline:
@@ -262,6 +266,12 @@ function buildMissingApiKeyError(params: {
     detail,
     links: [providerLink(params.owner), pickModelLink(params)],
   });
+}
+
+/** an endpoint's base URL is in env, so a run that found no key for another provider can switch to it. */
+function hasOpenAICompatibleEndpoint(): boolean {
+  const sets = [undefined, ...openAICompatibleSets(Object.keys(process.env))];
+  return sets.some((set) => hasEnvVar(openAICompatibleEnv(set).baseUrl));
 }
 
 /** the setup copy's shared shape: what is missing, where to put it, the env block, a guide. */
