@@ -4,7 +4,7 @@ import { detect } from "package-manager-detector";
 import { resolveCommand } from "package-manager-detector/commands";
 import { log } from "../utils/cli.ts";
 import { provisionPackageManager, resolvePackageManagerSpec } from "../utils/packageManager.ts";
-import { buildSandboxedCommand } from "../utils/sandbox.ts";
+import { buildSandboxedCommand, getSandboxMethod } from "../utils/sandbox.ts";
 import { filterEnvForUntrustedCode } from "../utils/secrets.ts";
 import { spawn } from "../utils/subprocess.ts";
 import type { NodePackageManager, NodePrepResult, PrepDefinition, PrepOptions } from "./types.ts";
@@ -47,6 +47,20 @@ export const installNodeDependencies: PrepDefinition = {
       log.info(`» detected package manager: ${packageManager} (${agent})`);
     } else {
       log.info(`» no package manager declared, defaulting to npm`);
+    }
+
+    // a package manager runs repo code even with --ignore-scripts (pnpm loads `.pnpmfile.cjs`
+    // before it reads the lockfile, yarn runs the `yarnPath` a repo names), and a CI runner with
+    // no PID namespace has nothing to contain it in. python is skipped there already (shell disabled).
+    if (process.env.CI === "true" && getSandboxMethod() === "none") {
+      return {
+        language: "node",
+        packageManager,
+        dependenciesInstalled: false,
+        issues: [
+          "skipped: this runner has no PID namespace to contain a package manager, which runs repository code even with --ignore-scripts",
+        ],
+      };
     }
 
     // provisioning: corepack for pnpm/yarn, legacy npm-install-g for bun/deno.
@@ -125,8 +139,8 @@ export const installNodeDependencies: PrepDefinition = {
     // the installer executes arbitrary repo postinstall scripts, so run it inside
     // the PID+mount-namespace sandbox: those scripts land in a fresh PID namespace
     // (cannot read the action process's /proc/<pid>/environ) and see only the
-    // already-filtered env. no namespace available → run directly (there is no
-    // agent shell to plant malicious scripts in that case either).
+    // already-filtered env. no namespace available → run directly, which only
+    // happens outside CI (the check above skips a CI runner with none).
     const result = await spawn(
       buildSandboxedCommand({
         cmd: resolved.command,

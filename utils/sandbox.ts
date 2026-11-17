@@ -684,8 +684,8 @@ export function spawnGitSandboxedSync(params: {
 /**
  * Build the `spawn` options for an ASYNC caller (e.g. `action/utils/subprocess.ts`
  * `spawn`) that run `cmd args` inside the sandbox, or `cmd args` themselves when no PID
- * namespace is available (where there is no namespace there is also no agent shell to
- * plant the config the sandbox defends against). `shimWritable` lifts the read-only bind
+ * namespace is available: outside CI, or on a CI runner whose callers skip repo code
+ * (shell disabled; installNodeDependencies refuses to run there). `shimWritable` lifts the read-only bind
  * on the corepack shim dir for `corepack enable`, the one command that writes it.
  * The dependency installer routes its `pnpm/npm install` through this so
  * repo `postinstall` scripts run in a fresh PID namespace (cannot read the action

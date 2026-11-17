@@ -1,5 +1,4 @@
 // changes to prompt assembly should be reflected in wiki/prompt.md
-import { execSync } from "node:child_process";
 import { encode as toonEncode } from "@toon-format/toon";
 import {
   type AgentId,
@@ -15,6 +14,8 @@ import type { RunRepo } from "./runContextData.ts";
 
 interface InstructionsContext {
   payload: ResolvedPayload;
+  /** `git status --short` of the checkout (see `gitStatusSummary`). */
+  gitStatus: string | undefined;
   repo: RunRepo;
   modes: Mode[];
   agentId: AgentId;
@@ -70,21 +71,13 @@ function buildRuntimeContext(ctx: InstructionsContext): string {
     ...payloadRest
   } = ctx.payload;
 
-  let gitStatus: string | undefined;
-  try {
-    gitStatus =
-      execSync("git status --short", { encoding: "utf-8", stdio: "pipe" }).trim() || "(clean)";
-  } catch {
-    // git not available or not in a repo
-  }
-
   const data: Record<string, unknown> = {
     ...payloadRest,
     repo: `${ctx.repo.owner}/${ctx.repo.name}`,
     default_branch: ctx.repo.defaultBranch,
     working_directory: process.cwd(),
     log_level: process.env.LOG_LEVEL,
-    git_status: gitStatus,
+    git_status: ctx.gitStatus,
     github_event_name: process.env.GITHUB_EVENT_NAME,
     github_ref: process.env.GITHUB_REF,
     github_sha: process.env.GITHUB_SHA?.slice(0, 7),

@@ -2,6 +2,19 @@ import { log } from "./cli.ts";
 import { $ } from "./shell.ts";
 
 /**
+ * `git status --short` for the prompt. through `$()`, so a fsmonitor left in `.git/config` on a
+ * reused self-hosted workspace runs in the sandbox, not with this process's whole environment.
+ */
+export function gitStatusSummary(): string | undefined {
+  try {
+    return $("git", ["status", "--short"], { log: false }) || "(clean)";
+  } catch {
+    // git not available or not in a repo
+    return undefined;
+  }
+}
+
+/**
  * tracked paths with staged or unstaged modifications.
  *
  * `cwd` is not optional decoration: the CLI does NOT start inside the checkout.

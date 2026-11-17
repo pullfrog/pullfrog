@@ -42,7 +42,7 @@ import {
 } from "./utils/credentialPool.ts";
 import { recordDiffReadFromToolUse } from "./utils/diffCoverage.ts";
 import { onExitSignal } from "./utils/exitHandler.ts";
-import { resolveGit, setGitAuthServer } from "./utils/gitAuth.ts";
+import { resolveGit, setGitAuthServer, snapshotGitHooks } from "./utils/gitAuth.ts";
 import { startGitAuthServer } from "./utils/gitAuthServer.ts";
 import {
   createOctokit,
@@ -76,6 +76,7 @@ import {
   resolvePackageManagerSpec,
 } from "./utils/packageManager.ts";
 import { aggregateUsage, patchWorkflowRunFields } from "./utils/patchWorkflowRunFields.ts";
+import { getPathSandbox, unsandboxedRunnerSummary } from "./utils/pathSandbox.ts";
 import {
   isOutsideAuthor,
   isOutsideThread,
@@ -96,7 +97,12 @@ import {
   writeRunErrorOutputs,
 } from "./utils/runLifecycle.ts";
 import { logRunStartup } from "./utils/runStartupLog.ts";
-import { getSandboxMethod, narrowProcessPath, recordGitDir } from "./utils/sandbox.ts";
+import {
+  getSandboxMethod,
+  getUsernsProbeError,
+  narrowProcessPath,
+  recordGitDir,
+} from "./utils/sandbox.ts";
 import { setEnvAllowlist } from "./utils/secrets.ts";
 import { createTempDirectory, setupGit, wipeRunnerLeakSurface } from "./utils/setup.ts";
 import { reportStatusChecks } from "./utils/statusChecks.ts";
@@ -116,7 +122,7 @@ import {
   type VertexCredentials,
 } from "./utils/vertex.ts";
 import { resolveRun } from "./utils/workflow.ts";
-import { dirtyTrackedPaths, restoreDirtiedSince } from "./utils/worktree.ts";
+import { dirtyTrackedPaths, gitStatusSummary, restoreDirtiedSince } from "./utils/worktree.ts";
 
 export { Inputs } from "./utils/payload.ts";
 
@@ -248,6 +254,32 @@ export async function main(): Promise<MainResult> {
   // below have persisted the PR summary and learnings they read from here.
   using tempDir = createTempDirectory();
   const tmpdir = tempDir.path;
+
+  // probed here, before the agent can touch what either sandbox reads. with neither, the MCP git tool
+  // runs unconfined as this process: a hook or config it plants reads this process's environment and
+  // writes anywhere the job can, so the run stops before anything is minted for the agent.
+  const pathSandbox = getPathSandbox();
+  if (process.env.CI === "true" && getSandboxMethod() === "none" && pathSandbox === "none") {
+    await using _commentTokenRef = await resolveTokens({
+      push: "disabled",
+      shell: "disabled",
+      workflows: false,
+      authorPermission: undefined,
+      oidc: oidcCredentials,
+    });
+    const body = unsandboxedRunnerSummary(getUsernsProbeError());
+    log.error("» this runner can sandbox neither shell nor git commands");
+    await writeRunErrorOutputs({ rendered: { summary: body, comment: body }, toolState });
+    return { success: false, error: "this runner can sandbox neither shell nor git commands" };
+  }
+
+  // wipe the GHA runner's known credential leak surface inside $RUNNER_TEMP
+  // before the agent spawns, and before the first git call: the path sandbox
+  // cannot read actions/checkout@v6's credential file, and git dies on an
+  // include it cannot read where it skips one that is gone. setupGit's
+  // includeIf strip handles the matching dangling references in the user's
+  // .git/config. see wipeRunnerLeakSurface for the leak inventory and threat model.
+  wipeRunnerLeakSurface();
 
   // install OpenCode + capture the BASELINE model set BEFORE dbSecrets and
   // Codex auth.json are in scope. this is the set of models OpenCode can
@@ -387,13 +419,6 @@ export async function main(): Promise<MainResult> {
     xrepoGrant: payload.xrepoGrant,
     oidc: oidcCredentials,
   });
-
-  // wipe the GHA runner's known credential leak surface inside $RUNNER_TEMP
-  // before the agent spawns. our installation token is already in memory
-  // (tokenRef above), and setupGit's includeIf strip handles the matching
-  // dangling references in the user's .git/config. see wipeRunnerLeakSurface
-  // for the leak inventory and threat model.
-  wipeRunnerLeakSurface();
 
   // clear the OIDC request env so the agent can't mint installation tokens itself.
   // mid-run token refresh uses the `oidcCredentials` snapshot above, not process.env,
@@ -860,6 +885,7 @@ export async function main(): Promise<MainResult> {
 
     const instructions = resolveInstructions({
       payload,
+      gitStatus: gitStatusSummary(),
       repo,
       modes,
       agentId,
@@ -1007,6 +1033,9 @@ export async function main(): Promise<MainResult> {
       log.warning(`invalid timeout "${payload.timeout}" (use --notimeout to disable), using 1h`);
     }
     const deadlineAt = runTimeout && Date.now() + runTimeout.ms;
+
+    // last thing before the agent: the hooks `$git` runs from now on, including any setup installed
+    snapshotGitHooks(process.cwd());
 
     const agentPromise = agent.run({
       payload,

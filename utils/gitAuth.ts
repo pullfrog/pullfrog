@@ -13,13 +13,14 @@
  * see wiki/askpass.md for full security documentation.
  */
 
-import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
+import { AGENT_BIN_DIR_RELPATH } from "../agents/nativeFsDenies.ts";
 import { log } from "./cli.ts";
 import type { GitAuthServer } from "./gitAuthServer.ts";
-import { CHECKOUT_MOVED, checkoutMoved } from "./sandbox.ts";
+import { confineGit, realGit } from "./pathSandbox.ts";
+import { CHECKOUT_MOVED, checkoutMoved, resolveRepoRoot } from "./sandbox.ts";
 import { filterEnv } from "./secrets.ts";
 import { $ } from "./shell.ts";
 import { spawn } from "./subprocess.ts";
@@ -89,8 +90,7 @@ function hashFile(path: string): string {
  * caught by verifyGitBinary() before each authenticated call.
  */
 export function resolveGit(): void {
-  const whichPath = execSync("which git", { encoding: "utf-8" }).trim();
-  const resolvedPath = realpathSync(whichPath);
+  const resolvedPath = realGit();
   const sha256 = hashFile(resolvedPath);
   gitBinary = { path: resolvedPath, sha256 };
   log.debug(`» git binary: ${resolvedPath} (sha256: ${sha256.slice(0, 12)}...)`);
@@ -120,43 +120,60 @@ function verifyGitBinary(): string {
 
 // --- hooks isolation ---
 
-const hooksDirCache = new Map<string, string>();
+/** `$git`'s copy of each checkout's hooks, keyed by `checkoutKey`. */
+const hookSnapshots = new Map<string, string>();
+let snapshotCount = 0;
 
 /**
- * resolve the repo's REAL hooks dir (`<git-common-dir>/hooks`) so every
- * authenticated `$git()` call can pin `core.hooksPath` to it.
+ * copy the repo's REAL hooks dir (`<git-common-dir>/hooks`) so every
+ * authenticated `$git()` call can pin `core.hooksPath` to the copy.
  *
  * a `pre-push` hook fires inside `$git push` while GIT_ASKPASS is live, so an
  * agent-controlled hook would receive the installation token (the token isn't
  * in env, but a hook can ask the loopback auth server for it just like git
  * does — and the replay trap only catches use after the call returns). the
- * agent can't write the real `.git/hooks` (RO bind-mount in the shell sandbox +
- * native-tool `.git` write deny), but it CAN redirect `core.hooksPath` to a dir
- * it controls via `~/.gitconfig`, husky's tracked `.husky/`, or repo
- * `.git/config`. pinning `core.hooksPath` on the command line (highest config
- * precedence) ignores every such redirect while still firing legit hooks in the
- * sealed `.git/hooks` — notably git-lfs `pre-push`, which is why we pin to the
- * dir rather than `/dev/null` (empty/`/dev/null` disables ALL hooks and breaks
- * LFS).
+ * agent can redirect `core.hooksPath` to a dir it controls via `~/.gitconfig`,
+ * husky's tracked `.husky/`, or repo `.git/config`. pinning `core.hooksPath`
+ * on the command line (highest config precedence) ignores every such redirect
+ * while still firing legit hooks — notably git-lfs `pre-push`, which is why we
+ * pin to the dir rather than `/dev/null` (empty/`/dev/null` disables ALL hooks
+ * and breaks LFS).
+ *
+ * the pin goes to a copy because the MCP git tool writes `.git` itself
+ * (`git add --chmod=+x f && git checkout-index --prefix=.git/hooks/ f` plants
+ * an executable hook). main.ts copies the main checkout's just before the agent
+ * starts, into agent-bin, which nothing the agent runs can write; a cross-repo
+ * checkout's are copied on the first fetch, which xrepo.ts makes before the
+ * agent can reach it. outside a run (no tmpdir) the real dir is returned.
  *
  * derived from `--git-common-dir`, which is structural and NOT influenced by
  * `core.hooksPath` (unlike `--git-path hooks`, which honors the override).
- * memoized per cwd.
  *
  * runs the tamper-verified git binary (the value it returns becomes the pinned
  * `core.hooksPath`, so resolving `git` from PATH here would let a substituted
  * binary choose the hooks dir and reopen the very hole this pin closes).
  */
-function resolveHooksDir(cwd: string, gitPath: string): string {
-  const cached = hooksDirCache.get(cwd);
-  if (cached) return cached;
-  const commonDir = $(gitPath, ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+export function snapshotGitHooks(cwd: string): string {
+  const commonDir = $(trustedGit(), ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
     cwd,
     log: false,
   }).trim();
   const hooksDir = join(commonDir, "hooks");
-  hooksDirCache.set(cwd, hooksDir);
-  return hooksDir;
+  const tempDir = process.env.PULLFROG_TEMP_DIR;
+  if (!tempDir) return hooksDir;
+  const snapshot = join(tempDir, AGENT_BIN_DIR_RELPATH, "git-hooks", String(snapshotCount++));
+  mkdirSync(snapshot, { recursive: true });
+  if (existsSync(hooksDir)) cpSync(hooksDir, snapshot, { recursive: true, dereference: true });
+  hookSnapshots.set(checkoutKey(cwd), snapshot);
+  return snapshot;
+}
+
+/** the main checkout is one key, whichever of its directories a call runs in. */
+function checkoutKey(cwd: string): string {
+  const root = realpathSync(resolveRepoRoot());
+  const dir = realpathSync(cwd);
+  const rel = relative(root, dir);
+  return rel.startsWith("..") || isAbsolute(rel) ? dir : root;
 }
 
 // --- auth server ---
@@ -199,15 +216,17 @@ export async function $git(
   }
 
   const cwd = options.cwd ?? process.cwd();
+  const hooksDir = hookSnapshots.get(checkoutKey(cwd)) ?? snapshotGitHooks(cwd);
 
   const code = authServer.register(options.token);
   const scriptPath = authServer.writeAskpassScript(code);
 
   // -c flags override local .git/config — defense-in-depth against
   // agent-set config that could spawn subprocesses before ASKPASS runs.
-  // core.hooksPath is pinned to the repo's real hooks dir so an
-  // agent-redirected hooksPath (~/.gitconfig, husky, .git/config) can't run
-  // attacker code with the token live — see resolveHooksDir.
+  // core.hooksPath is pinned to a copy of the repo's hooks dir so an
+  // agent-redirected hooksPath (~/.gitconfig, husky, .git/config) or an
+  // agent-planted hook can't run attacker code with the token live — see
+  // snapshotGitHooks.
   const fullArgs = [
     ...(options.config ?? []).flatMap((entry) => ["-c", entry]),
     "-c",
@@ -219,35 +238,44 @@ export async function $git(
     "-c",
     "core.sshCommand=ssh",
     "-c",
-    `core.hooksPath=${resolveHooksDir(cwd, gitPath)}`,
+    `core.hooksPath=${hooksDir}`,
     subcommand,
     ...args,
   ];
 
   log.debug(`git ${fullArgs.join(" ")}`);
 
+  const env = {
+    ...filterEnv(),
+    GIT_ASKPASS: scriptPath,
+    GIT_TERMINAL_PROMPT: "0",
+    // blocks env-based git config injection from outer processes.
+    // GIT_CONFIG_COUNT=0 blocks the newer KEY_n/VALUE_n mechanism.
+    // GIT_CONFIG_PARAMETERS="" clears the legacy quoted-list mechanism.
+    // both are needed — they are independent systems.
+    GIT_CONFIG_COUNT: "0",
+    GIT_CONFIG_PARAMETERS: "",
+    // transport allowlist (overrides config): refuses non-https transports, so a
+    // planted `~/.gitconfig` url.*.insteadOf → ext:: / remote-helper / ssh can't
+    // exec on this unsandboxed fetch. all callers use github.com https. see
+    // wiki/askpass.md "-c hardening".
+    GIT_ALLOW_PROTOCOL: "https",
+  };
+  // config the agent wrote to `.git/config` can still run code here (`core.alternateRefsCommand`,
+  // an LFS custom transfer), so the call runs in the path sandbox wherever the runner has one.
+  const invocation = confineGit({
+    args: fullArgs,
+    env,
+    auth: { askpass: scriptPath, hooks: hooksDir },
+  }) ?? { cmd: gitPath, args: fullArgs, env };
+
   const startedAt = Date.now();
   try {
     const result = await spawn({
-      cmd: gitPath,
-      args: fullArgs,
+      cmd: invocation.cmd,
+      args: invocation.args,
       cwd,
-      env: {
-        ...filterEnv(),
-        GIT_ASKPASS: scriptPath,
-        GIT_TERMINAL_PROMPT: "0",
-        // blocks env-based git config injection from outer processes.
-        // GIT_CONFIG_COUNT=0 blocks the newer KEY_n/VALUE_n mechanism.
-        // GIT_CONFIG_PARAMETERS="" clears the legacy quoted-list mechanism.
-        // both are needed — they are independent systems.
-        GIT_CONFIG_COUNT: "0",
-        GIT_CONFIG_PARAMETERS: "",
-        // transport allowlist (overrides config): refuses non-https transports, so a
-        // planted `~/.gitconfig` url.*.insteadOf → ext:: / remote-helper / ssh can't
-        // exec on this unsandboxed fetch. all callers use github.com https. see
-        // wiki/askpass.md "-c hardening".
-        GIT_ALLOW_PROTOCOL: "https",
-      },
+      env: invocation.env,
       activityTimeout: 0,
       signal: options.signal,
       input: options.input,

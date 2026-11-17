@@ -109,4 +109,10 @@ writeFileSync(cliPath, `#!/usr/bin/env node\n${cliContent}`);
 // directly from action/skills/ instead. see utils/skills.ts.
 cpSync("./skills", "./dist/skills", { recursive: true });
 
+// the Landlock helper binaries, without their source and build script. see utils/pathSandbox.ts.
+cpSync("./sandbox", "./dist/sandbox", {
+  recursive: true,
+  filter: (path) => !/\.(c|sh)$/.test(path),
+});
+
 console.log("» build completed successfully");

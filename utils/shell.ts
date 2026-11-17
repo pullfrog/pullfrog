@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
+import { confineGit } from "./pathSandbox.ts";
 import { getSandboxMethod, spawnGitSandboxedSync } from "./sandbox.ts";
 import { type EnvMode, resolveEnv } from "./secrets.ts";
 
@@ -65,17 +66,21 @@ export function $(cmd: string, args: string[], options?: ShellOptions): string {
   // filter / config (core.fsmonitor, core.hooksPath, filter.*.clean, diff.external)
   // that fires on the MCP server's own git call then runs in a FRESH PID namespace —
   // it cannot read the action process's /proc/<pid>/environ (OIDC mint ticket, job
-  // token, customer `env:` secrets) and sees only the already-filtered env. where no
-  // namespace is available (local dev, CI=false, a runner without unshare) there is
-  // no shell for the agent to plant such config either, so fall back to a plain spawn.
+  // token, customer `env:` secrets) and sees only the already-filtered env. a runner
+  // with no namespace still has the MCP git tool, which can plant that config itself
+  // (`git checkout-index --prefix=.git/`), so its git runs in the path sandbox
+  // (action/utils/pathSandbox.ts) instead; main.ts refuses a CI runner with neither.
   // non-git commands keep the plain path. $git() (authenticated fetch/push) does not
   // go through here — see action/utils/gitAuth.ts.
   //
   // CRITICAL: use "ignore" for stdin instead of "inherit" to avoid breaking MCP transport
   // when running inside an MCP server, stdin is used for JSON-RPC protocol
   const sandboxMethod = getSandboxMethod();
+  const isGit = basename(cmd) === "git";
+  const confined = isGit && sandboxMethod === "none" ? confineGit({ args, env }) : undefined;
+  const direct = confined ?? { cmd, args, env };
   const result =
-    basename(cmd) === "git" && sandboxMethod !== "none"
+    isGit && sandboxMethod !== "none"
       ? spawnGitSandboxedSync({
           cmd,
           args,
@@ -85,11 +90,11 @@ export function $(cmd: string, args: string[], options?: ShellOptions): string {
           maxBuffer: MAX_BUFFER_BYTES,
           method: sandboxMethod,
         })
-      : spawnSync(cmd, args, {
+      : spawnSync(direct.cmd, direct.args, {
           stdio: ["ignore", "pipe", "pipe"],
           encoding,
           cwd: options?.cwd,
-          env,
+          env: direct.env,
           maxBuffer: MAX_BUFFER_BYTES,
         });
 
