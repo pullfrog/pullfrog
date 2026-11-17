@@ -260,7 +260,7 @@ export async function main(): Promise<MainResult> {
   // probed here, before the agent can touch what either sandbox reads. with neither, the MCP git tool
   // runs unconfined as this process: a hook or config it plants reads this process's environment and
   // writes anywhere the job can, so the run stops before anything is minted for the agent.
-  const pathSandbox = getPathSandbox();
+  const pathSandbox = getPathSandbox({ cwd: payload.cwd });
   if (process.env.CI === "true" && getSandboxMethod() === "none" && pathSandbox === "none") {
     await using _commentTokenRef = await resolveTokens({
       push: "disabled",

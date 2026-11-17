@@ -6,9 +6,16 @@
  * hooks and config run while the token is live. changes here should be reflected in wiki/security.md.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, isAbsolute, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AGENT_BIN_DIR_RELPATH } from "../agents/nativeFsDenies.ts";
 import { renderFailure } from "./failureBody.ts";
@@ -70,6 +77,7 @@ let probeError: string | undefined;
 let tempDir: string | undefined;
 let gitPath: string | undefined;
 let baseRules: Rules | undefined;
+let checkoutDir: string | undefined;
 
 /**
  * the git every call runs, resolved once at startup. Apple's `/usr/bin/git` is an xcrun shim that
@@ -89,7 +97,8 @@ export function realGit(): string {
 }
 
 /** the path sandbox this runner supports, probed once by running git in it, over https too. */
-export function getPathSandbox(): PathSandbox {
+export function getPathSandbox(params?: { cwd: string | undefined }): PathSandbox {
+  checkoutDir ??= params?.cwd ?? resolveRepoRoot();
   detected ??= detectPathSandbox();
   return detected;
 }
@@ -247,6 +256,7 @@ function getBaseRules(): Rules {
   const scratch = [GIT_TMP_RELPATH, "xrepo"].map((rel) => join(dir, rel));
   for (const path of scratch) mkdirSync(path, { recursive: true });
   const lfs = findOnPath("git-lfs", process.env.PATH);
+  const repo = gitDirs();
   baseRules = {
     read: [
       ...(process.platform === "darwin" ? DARWIN_READ : LINUX_READ),
@@ -258,9 +268,10 @@ function getBaseRules(): Rules {
       join(process.env.XDG_CONFIG_HOME || join(home, ".config"), "git"),
       ...CA_ENV.flatMap((name) => process.env[name] ?? []),
       ...configuredPaths(git),
+      ...alternateStores(repo),
       ...lfs,
     ].map(canonical),
-    write: [...scratch, resolveRepoRoot(), "/dev/null"].map(canonical),
+    write: [...scratch, resolveRepoRoot(), ...repo.dirs, "/dev/null"].map(canonical),
     // a hook, and a filter such as `git-lfs filter-process`, runs through `sh`, which on macOS
     // starts the shell `/private/var/select/sh` names
     exec: [git, execPath, "/bin/sh", "/private/var/select/sh", ...lfs].map(canonical),
@@ -285,6 +296,55 @@ function configuredPaths(git: string): string[] {
     if (/^http\..*sslca(info|path)$/.test(key)) paths.push(value.replace(/^~\//, `${homedir()}/`));
   }
   return paths.filter((path) => isAbsolute(path));
+}
+
+/**
+ * the checkout's git dir and common dir, which a worktree, `--separate-git-dir` or a symlink puts
+ * outside the workspace, and its object store.
+ */
+function gitDirs(): { dirs: string[]; objects: string | undefined } {
+  const result = spawnSync(
+    realGit(),
+    ["rev-parse", "--path-format=absolute", "--absolute-git-dir", "--git-common-dir"],
+    { cwd: checkoutDir, encoding: "utf-8" }
+  );
+  const [gitDir, commonDir] = result.status === 0 ? result.stdout.split("\n") : [];
+  if (!gitDir || !commonDir) return { dirs: [], objects: undefined };
+  const objects = join(commonDir, "objects");
+  return { dirs: [gitDir, commonDir, objects], objects };
+}
+
+/**
+ * object stores the checkout borrows from (a self-hosted runner's git cache, a `--reference`
+ * clone), read before the agent can edit the alternates file. a store's own repo too, whose refs
+ * a fetch or push reads through `core.alternateRefsCommand`.
+ */
+function alternateStores(repo: { objects: string | undefined }): string[] {
+  const fromEnv = (process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .map((entry) => resolve(checkoutDir ?? "", entry));
+  const listed = repo.objects ? listedAlternates({ objects: repo.objects, depth: 0 }) : [];
+  return [
+    ...fromEnv,
+    ...fromEnv.flatMap((objects) => listedAlternates({ objects, depth: 1 })),
+    ...listed,
+  ].flatMap((store) => (basename(store) === "objects" ? [store, dirname(store)] : [store]));
+}
+
+/** the stores `objects/info/alternates` names, and theirs, as deep as git follows them. */
+function listedAlternates(params: { objects: string; depth: number }): string[] {
+  const file = join(params.objects, "info", "alternates");
+  if (params.depth > 5 || !existsSync(file)) return [];
+  const stores = readFileSync(file, "utf-8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => resolve(params.objects, line));
+  return stores.flatMap((objects) => [
+    objects,
+    ...listedAlternates({ objects, depth: params.depth + 1 }),
+  ]);
 }
 
 /** the helper, copied where nothing the agent runs can replace it before the first confined call. */
