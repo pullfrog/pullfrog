@@ -57,6 +57,20 @@ const DARWIN_READ = [
   "/private/var/select",
 ];
 
+const SEATBELT_BASE = '(version 1)\n(deny default)\n(import "system.sb")';
+
+/** what every Seatbelt profile allows besides its paths, one form per rule. */
+const SEATBELT_ALLOW = [
+  "(allow process-fork)",
+  "(allow signal (target same-sandbox))",
+  "(allow process-info* (target same-sandbox))",
+  "(allow file-read-metadata)",
+  "(allow network-outbound (remote ip))",
+  '(allow network-outbound (literal "/private/var/run/mDNSResponder"))',
+  "(allow network-inbound (local ip))",
+  "(allow system-socket)",
+];
+
 /** git's TMPDIR, private to the run. */
 const GIT_TMP_RELPATH = "git-tmp";
 
@@ -78,6 +92,8 @@ let tempDir: string | undefined;
 let gitPath: string | undefined;
 let baseRules: Rules | undefined;
 let checkoutDir: string | undefined;
+/** Seatbelt forms, operations and paths this macOS does not compile, left out of every profile. */
+const uncompiled = new Set<string>();
 
 /**
  * the git every call runs, resolved once at startup. Apple's `/usr/bin/git` is an xcrun shim that
@@ -130,7 +146,8 @@ function detectPathSandbox(): PathSandbox {
   }
   try {
     if (method === "landlock") installHelper();
-    probeError = probeGit({ method, args: ["--version"] }) ?? probeHttps(method);
+    probeError = probe(method);
+    if (probeError && method === "seatbelt" && leaveOutUncompiled()) probeError = probe(method);
   } catch (error) {
     probeError = error instanceof Error ? error.message : String(error);
   }
@@ -138,8 +155,17 @@ function detectPathSandbox(): PathSandbox {
     log.debug(`» git path sandbox: ${method}`);
     return method;
   }
+  if (method === "seatbelt") probeError += ` (macOS ${macosVersion()})`;
   log.info(`» git path sandbox (${method}) not available: ${probeError}`);
   return "none";
+}
+
+function probe(method: Exclude<PathSandbox, "none">): string | undefined {
+  return probeGit({ method, args: ["--version"] }) ?? probeHttps(method);
+}
+
+function macosVersion(): string {
+  return execFileSync("sw_vers", ["-productVersion"], { encoding: "utf-8" }).trim();
 }
 
 /**
@@ -374,24 +400,66 @@ function scratchDir(): string {
  * `sysctl(KERN_PROCARGS2)`, which is what `ps eww` does, so nothing runs but what `exec` names.
  */
 function seatbeltProfile(rules: Rules): string {
-  const paths = (list: string[]) =>
-    list.map((path) => `(subpath ${JSON.stringify(path)})`).join(" ");
   return [
-    "(version 1)",
-    "(deny default)",
-    '(import "system.sb")',
-    "(allow process-fork)",
-    "(allow signal (target same-sandbox))",
-    "(allow process-info* (target same-sandbox))",
-    "(allow file-read-metadata)",
-    `(allow process-exec ${paths(rules.exec)})`,
-    `(allow file-map-executable ${paths(rules.read)})`,
-    `(allow file-read* ${paths([...rules.read, ...rules.write])})`,
-    `(allow file-write* ${paths(rules.write)})`,
-    '(allow network-outbound (remote ip) (literal "/private/var/run/mDNSResponder"))',
-    "(allow network-inbound (local ip))",
-    "(allow system-socket)",
+    SEATBELT_BASE,
+    ...SEATBELT_ALLOW.filter((form) => !uncompiled.has(form)),
+    ...pathOperations(rules).flatMap(allowPaths),
   ].join("\n");
+}
+
+function pathOperations(rules: Rules): { operation: string; paths: string[] }[] {
+  return [
+    { operation: "process-exec", paths: rules.exec },
+    { operation: "file-map-executable", paths: rules.read },
+    { operation: "file-read*", paths: [...rules.read, ...rules.write] },
+    { operation: "file-write*", paths: rules.write },
+  ];
+}
+
+/** an allow with no filter allows everything, so an operation left with no path gets no rule. */
+function allowPaths(params: { operation: string; paths: string[] }): string[] {
+  const paths = params.paths.filter((path) => !uncompiled.has(path));
+  if (uncompiled.has(params.operation) || !paths.length) return [];
+  return [`(allow ${params.operation} ${paths.map(subpath).join(" ")})`];
+}
+
+function subpath(path: string): string {
+  return `(subpath ${JSON.stringify(path)})`;
+}
+
+/**
+ * sandbox-exec refuses a whole profile over one rule its macOS does not know, and a rule this
+ * macOS compiles another may not. allow rules only add, so leaving out the forms, operations and
+ * paths it refuses only narrows the sandbox, and the probe decides whether git still runs.
+ */
+function leaveOutUncompiled(): boolean {
+  const rules = getBaseRules();
+  if (compiles(seatbeltProfile(rules)) || !compiles(SEATBELT_BASE)) return false;
+  const tests = [
+    ...SEATBELT_ALLOW.map((form) => ({ rule: form, form })),
+    ...pathOperations(rules).map((op) => ({
+      rule: op.operation,
+      form: `(allow ${op.operation} ${subpath("/usr")})`,
+    })),
+    ...[...new Set([...rules.read, ...rules.write, ...rules.exec])].map((path) => ({
+      rule: path,
+      form: `(allow file-read* ${subpath(path)})`,
+    })),
+  ];
+  for (const test of tests) {
+    if (!compiles(`${SEATBELT_BASE}\n${test.form}`)) uncompiled.add(test.rule);
+  }
+  if (!uncompiled.size) return false;
+  log.info(
+    `» git path sandbox: macOS ${macosVersion()} does not compile ${[...uncompiled].join(", ")}, so Seatbelt goes without them`
+  );
+  return true;
+}
+
+/** sandbox-exec shows a profile compiles by running `true` under it. */
+function compiles(profile: string): boolean {
+  const run = `${profile}\n(allow process-exec (literal "/usr/bin/true"))`;
+  return spawnSync("/usr/bin/sandbox-exec", ["-p", run, "/usr/bin/true"]).status === 0;
 }
 
 /** Seatbelt matches resolved paths, and Landlock rules land on the target anyway. */
