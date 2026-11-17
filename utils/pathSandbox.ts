@@ -314,16 +314,24 @@ function getBaseRules(): Rules {
  * so a runner's corporate CA or an included config still loads.
  */
 function configuredPaths(git: string): string[] {
+  // in the checkout and env a confined call has, so a conditional include matches as it will there
   const listed = spawnSync(git, ["config", "--list", "--null", "--show-scope", "--show-origin"], {
+    cwd: checkoutDir,
+    env: filterEnv(),
     encoding: "utf-8",
   });
   const fields = (listed.stdout ?? "").split("\0");
   const paths: string[] = [];
   for (let i = 0; i + 2 < fields.length; i += 3) {
     if (fields[i] !== "system" && fields[i] !== "global") continue;
-    if (fields[i + 1]?.startsWith("file:")) paths.push(fields[i + 1]?.slice(5) ?? "");
+    const origin = fields[i + 1]?.startsWith("file:") ? fields[i + 1]?.slice(5) : undefined;
+    if (!origin) continue;
+    paths.push(origin);
     const [key = "", value = ""] = fields[i + 2]?.split("\n") ?? [];
-    if (/^http\..*sslca(info|path)$/.test(key)) paths.push(value.replace(/^~\//, `${homedir()}/`));
+    const path = value.replace(/^~\//, `${homedir()}/`);
+    if (/^http\..*sslca(info|path)$/.test(key)) paths.push(path);
+    // git opens an empty include, and one whose condition (`gitdir:`, `onbranch:`) matches only in a later call
+    if (/^include(if\..*)?\.path$/.test(key)) paths.push(resolve(dirname(origin), path));
   }
   return paths.filter((path) => isAbsolute(path));
 }
