@@ -68,6 +68,7 @@ import {
   formatApiKeyErrorSummary,
   isApiKeyAuthError,
   isByokSetupError,
+  isClaudeSessionLimitError,
   KEYLESS_UNUSABLE_MARKER,
   pickModelLink,
   providerDisplayName,
@@ -91,6 +92,7 @@ import {
   isProviderUsageLimit,
   isRouterKeylimitExhaustedError,
   isTransientUpstreamError,
+  PROVIDER_USAGE_LIMIT_LABEL,
 } from "./providerErrors.ts";
 import { subscriptionFor } from "./subscriptionCredentials.ts";
 
@@ -471,27 +473,14 @@ function renderRunErrorBody(ctx: RenderContext): string {
   // agent started, the credential pool's refusal). ahead of the api-key branch,
   // which rebuilds any body carrying provider wording into the generic "rotate
   // your key" copy — and the rejection bodies QUOTE the provider's wording.
-  if (
-    [
-      MODEL_ACCESS_MARKER,
-      SECRETS_UNAVAILABLE_MARKER,
-      ROUTER_UNFUNDED_MARKER,
-      TRIAL_SPENT_MARKER,
-      CREDENTIAL_REJECTED_MARKER,
-      CREDENTIAL_POOL_REFUSED_MARKER,
-      KEYLESS_UNUSABLE_MARKER,
-    ].some((marker) => message.includes(marker))
-  ) {
-    return message;
-  }
+  if (isPreRendered(message)) return message;
 
   // gated on isHang because the harness sets `agentDiagnostic` on entry, so
   // any non-hang throw that hits the outer catch (e.g. post-success
   // output_schema validator, or a late cleanup throw after the run already
   // succeeded) would otherwise render a stall with a stale diagnostic and
   // silently drop the real errorMessage.
-  const isHang =
-    message.startsWith("activity timeout") || message.startsWith("agent still pending");
+  const isHang = isHangMessage(message);
   const hangBody = isHang
     ? formatAgentHangBody({ diagnostic: ctx.agentDiagnostic, errorMessage: message })
     : null;
@@ -617,6 +606,41 @@ function renderRunErrorBody(ctx: RenderContext): string {
   }
 
   return formatUnrecognized(ctx);
+}
+
+function isPreRendered(message: string): boolean {
+  return [
+    MODEL_ACCESS_MARKER,
+    SECRETS_UNAVAILABLE_MARKER,
+    ROUTER_UNFUNDED_MARKER,
+    TRIAL_SPENT_MARKER,
+    CREDENTIAL_REJECTED_MARKER,
+    CREDENTIAL_POOL_REFUSED_MARKER,
+    KEYLESS_UNUSABLE_MARKER,
+  ].some((marker) => message.includes(marker));
+}
+
+function isHangMessage(message: string): boolean {
+  return message.startsWith("activity timeout") || message.startsWith("agent still pending");
+}
+
+/**
+ * The run died on a usage window that lifts on its own: the bodies above that say to re-trigger
+ * once it resets, checked in their order so a billing refusal that also says "limit" stays one.
+ * The credential pool's refusal is pre-rendered and carries its own verdicts, so it is read there.
+ */
+export function isUsageLimitFailure(input: {
+  errorMessage: string;
+  agentDiagnostic: AgentDiagnostic | undefined;
+}): boolean {
+  const message = input.errorMessage;
+  if (isPreRendered(message) || isProviderBillingExhausted(message)) return false;
+  if (isProviderNoRoutableEndpoints(message)) return false;
+  if (isProviderUsageLimit(message) || isClaudeSessionLimitError(message)) return true;
+  return (
+    isHangMessage(message) &&
+    input.agentDiagnostic?.lastProviderError === PROVIDER_USAGE_LIMIT_LABEL
+  );
 }
 
 export function renderRunError(input: RenderRunErrorInput): RenderedRunError {

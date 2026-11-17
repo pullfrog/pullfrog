@@ -39,6 +39,7 @@ import { persistSummary } from "./prSummary.ts";
 import { postReviewCleanup } from "./reviewCleanup.ts";
 import { type RenderedRunError, renderRunError } from "./runErrorRenderer.ts";
 import { reportStatusChecks } from "./statusChecks.ts";
+import { reportUsageLimit } from "./usageLimit.ts";
 
 /**
  * Best-effort cleanup shared by both run-end paths:
@@ -121,6 +122,7 @@ export async function finalizeSuccessRun(input: {
     }).catch((error) => {
       log.debug(`failure error report failed: ${error}`);
     });
+    await reportUsageLimit(input.toolContext, input.result.error ?? "");
   }
 
   // create_pull_request_review owns its own deletion (see mcp/review.ts), so

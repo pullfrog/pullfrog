@@ -116,6 +116,7 @@ import {
   getMcpTokenRefresh,
   resolveTokens,
 } from "./utils/token.ts";
+import { reportUsageLimit } from "./utils/usageLimit.ts";
 import {
   cleanupVertexCredentials,
   materializeVertexCredentials,
@@ -1157,6 +1158,10 @@ export async function main(): Promise<MainResult> {
       modelsCatalogFailure: getModelsCatalogFailure(),
     });
     await writeRunErrorOutputs({ rendered, toolState });
+    await reportUsageLimit(
+      { runId: runInfo.runId, apiToken: runContext.apiToken, toolState },
+      error
+    );
 
     // best-effort cleanup: review dispatch, summary persist, learnings persist.
     // a partial edit before the crash is still worth keeping.

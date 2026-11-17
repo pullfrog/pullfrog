@@ -16,7 +16,9 @@ import { START_KEY } from "./runContext.ts";
  *    for router/oss, post-fallback slug otherwise; NOT the configured
  *    `Repo.model` slug), PATCHed once at end-of-run so per-model cost analytics
  *    don't parse the audit-only `payload`.
- * Keep in sync with `STRING_FIELDS` in `app/api/workflow-run/[runId]/route.ts`.
+ *  - `limitResetAt` — when the provider says the usage window this run failed
+ *    on lifts, as an ISO string.
+ * Keep in sync with `STRING_FIELDS` and `DATE_FIELDS` in `app/api/workflow-run/[runId]/route.ts`.
  * `succeeded` and the usage fields below are this start's own report: a custom
  * workflow can start the action several times in one run, and the server keeps
  * one row per start, keyed by `START_KEY`, and sums them onto the run.
@@ -31,6 +33,7 @@ const STRING_KEYS = [
   "model",
   "agent",
   "credential",
+  "limitResetAt",
 ] as const;
 
 /**
@@ -48,15 +51,15 @@ const NUMBER_KEYS = [
 ] as const;
 
 /** one-way flags, only ever sent as `true`. Keep in sync with `BOOLEAN_FIELDS` in the server route. */
-const FLAG_KEYS = ["reviewSkipped"] as const;
+const FLAG_KEYS = ["reviewSkipped", "usageLimited"] as const;
 
 export type WorkflowRunPatch = Partial<Record<(typeof STRING_KEYS)[number], string | undefined>> &
   Partial<Record<(typeof NUMBER_KEYS)[number], number>> &
   Partial<Record<(typeof FLAG_KEYS)[number], true>> & { succeeded?: boolean };
 
-/** PATCH workflow-run fields (Pullfrog JWT, not GitHub). */
+/** PATCH workflow-run fields (Pullfrog JWT, not GitHub). a run that failed before its tool context exists reports through the three fields it does have. */
 export async function patchWorkflowRunFields(
-  ctx: ToolContext,
+  ctx: Pick<ToolContext, "runId" | "apiToken" | "toolState">,
   fields: WorkflowRunPatch
 ): Promise<void> {
   if (ctx.runId === undefined || !ctx.apiToken) return;

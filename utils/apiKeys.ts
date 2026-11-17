@@ -957,6 +957,15 @@ export function buildCredentialPoolRefusedError(params: {
   });
 }
 
+/** the pool's refusal with the verdicts it rendered, so the run can tell an exhausted subscription from a dead key. */
+export class CredentialPoolRefusedError extends Error {
+  readonly refused: RefusedCredential[];
+  constructor(params: Parameters<typeof buildCredentialPoolRefusedError>[0]) {
+    super(buildCredentialPoolRefusedError(params));
+    this.refused = params.refused;
+  }
+}
+
 function describeRefusal(params: { credential: RefusedCredential; owner: string; name: string }) {
   const credential = params.credential;
   const verdict = credential.verdict;

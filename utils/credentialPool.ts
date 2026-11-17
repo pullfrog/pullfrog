@@ -12,8 +12,8 @@ import {
 import { resolveAgent } from "./agent.ts";
 import { apiFetch } from "./apiFetch.ts";
 import {
-  buildCredentialPoolRefusedError,
   buildSecretsUnavailableError,
+  CredentialPoolRefusedError,
   type RefusedCredential,
 } from "./apiKeys.ts";
 import { log } from "./cli.ts";
@@ -212,14 +212,12 @@ export async function selectConfiguredCredential(input: {
     });
     log.info(`» ${option.name} from ${from} unavailable; trying the next credential`);
   }
-  throw new Error(
-    buildCredentialPoolRefusedError({
-      model,
-      refused,
-      owner: input.ctx.repo.owner,
-      name: input.ctx.repo.name,
-    })
-  );
+  throw new CredentialPoolRefusedError({
+    model,
+    refused,
+    owner: input.ctx.repo.owner,
+    name: input.ctx.repo.name,
+  });
 }
 
 const UNSENDABLE = {
