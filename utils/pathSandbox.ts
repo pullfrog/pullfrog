@@ -155,7 +155,7 @@ function detectPathSandbox(): PathSandbox {
     log.debug(`» git path sandbox: ${method}`);
     return method;
   }
-  if (method === "seatbelt") probeError += ` (macOS ${macosVersion()})`;
+  if (method === "seatbelt") probeError += ` (${seatbeltNote()})`;
   log.info(`» git path sandbox (${method}) not available: ${probeError}`);
   return "none";
 }
@@ -164,8 +164,11 @@ function probe(method: Exclude<PathSandbox, "none">): string | undefined {
   return probeGit({ method, args: ["--version"] }) ?? probeHttps(method);
 }
 
-function macosVersion(): string {
-  return execFileSync("sw_vers", ["-productVersion"], { encoding: "utf-8" }).trim();
+/** the macOS version, and the rules its Seatbelt does not compile. */
+function seatbeltNote(): string {
+  const version = execFileSync("sw_vers", ["-productVersion"], { encoding: "utf-8" }).trim();
+  if (!uncompiled.size) return `macOS ${version}`;
+  return `macOS ${version}, which does not compile ${[...uncompiled].join(", ")}`;
 }
 
 /**
@@ -429,30 +432,31 @@ function subpath(path: string): string {
 
 /**
  * sandbox-exec refuses a whole profile over one rule its macOS does not know, and a rule this
- * macOS compiles another may not. allow rules only add, so leaving out the forms, operations and
- * paths it refuses only narrows the sandbox, and the probe decides whether git still runs.
+ * macOS compiles another may not. allow rules only add, so leaving out the forms and operations it
+ * refuses only narrows the sandbox, and the probe decides whether git still runs. the probe never
+ * reads the checkout, its alternates or what `$git` adds, so losing a path or file access refuses.
  */
 function leaveOutUncompiled(): boolean {
   const rules = getBaseRules();
   if (compiles(seatbeltProfile(rules)) || !compiles(SEATBELT_BASE)) return false;
+  // what `$git` adds outside the temp dir. its askpass, hooks copy and agent-bin node are untested
+  // siblings of the temp-dir write paths, so they share the prefix those test
+  const run = [process.execPath, "/usr/bin/env"].map(canonical);
+  const paths = [...new Set([...rules.read, ...rules.write, ...rules.exec, ...run])];
   const tests = [
     ...SEATBELT_ALLOW.map((form) => ({ rule: form, form })),
     ...pathOperations(rules).map((op) => ({
       rule: op.operation,
       form: `(allow ${op.operation} ${subpath("/usr")})`,
     })),
-    ...[...new Set([...rules.read, ...rules.write, ...rules.exec])].map((path) => ({
-      rule: path,
-      form: `(allow file-read* ${subpath(path)})`,
-    })),
+    ...paths.map((path) => ({ rule: path, form: `(allow file-read* ${subpath(path)})` })),
   ];
   for (const test of tests) {
     if (!compiles(`${SEATBELT_BASE}\n${test.form}`)) uncompiled.add(test.rule);
   }
-  if (!uncompiled.size) return false;
-  log.info(
-    `» git path sandbox: macOS ${macosVersion()} does not compile ${[...uncompiled].join(", ")}, so Seatbelt goes without them`
-  );
+  const needed = ["file-read*", "file-write*", ...paths];
+  if (!uncompiled.size || needed.some((rule) => uncompiled.has(rule))) return false;
+  log.info(`» git path sandbox: ${seatbeltNote()}, so Seatbelt goes without them`);
   return true;
 }
 
