@@ -202,7 +202,8 @@ function probeGit(params: {
     encoding: "utf-8",
   });
   if (result.status === 0) return undefined;
-  return result.stderr.trim() || result.error?.message || `git exited ${result.status}`;
+  const error = [result.error?.message, result.stderr.trim()].filter(Boolean).join("\n");
+  return `git ${params.args[0]}: ${error || `exited ${result.status}`}`;
 }
 
 /**
@@ -463,7 +464,10 @@ function leaveOutUncompiled(): boolean {
 /** sandbox-exec shows a profile compiles by running `true` under it. */
 function compiles(profile: string): boolean {
   const run = `${profile}\n(allow process-exec (literal "/usr/bin/true"))`;
-  return spawnSync("/usr/bin/sandbox-exec", ["-p", run, "/usr/bin/true"]).status === 0;
+  const result = spawnSync("/usr/bin/sandbox-exec", ["-p", run, "/usr/bin/true"], {
+    timeout: 10_000,
+  });
+  return result.status === 0;
 }
 
 /** Seatbelt matches resolved paths, and Landlock rules land on the target anyway. */
