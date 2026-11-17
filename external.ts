@@ -149,6 +149,7 @@ export {
   resolvePickModel,
   resolveRoutedModel,
   routerProxyOptOut,
+  smartModels,
   TRIAL_FUNDED_USD_LIMIT,
 } from "./models.ts";
 
@@ -421,6 +422,8 @@ export interface PayloadRouting {
   source: RouterSource;
   /** the chat scorer's own sentence or two on what a reviewer must reconstruct; Jev's tier probabilities and axes instead */
   rationale: string;
+  /** the model the run takes, which the maintainers' guidance may name off the ladder; forwarded as `?model=` */
+  model?: string | undefined;
 }
 
 export type RouterSource = "jev" | "scorer" | "heuristic" | "fixed";

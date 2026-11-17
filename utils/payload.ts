@@ -52,6 +52,7 @@ export const JsonPayload = type({
     workload: "number",
     source: "'jev' | 'scorer' | 'heuristic' | 'fixed'",
     rationale: "string",
+    "model?": "string | undefined",
   }).or("undefined"),
   "effort?": "number | string | undefined",
   "debug?": "boolean | undefined",

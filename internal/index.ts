@@ -84,12 +84,14 @@ export {
   rungLabel,
   rungPosition,
   SUBSIDY_RUNG,
+  smartModels,
   TRIAL_FUNDED_USD_LIMIT,
 } from "../external.ts";
 export {
   bundledProviders,
   installProviders,
   isOpenAICompatibleSetName,
+  OPENAI_COMPATIBLE_PROVIDER,
   openAICompatibleEnv,
   openAICompatibleSetAlias,
   openAICompatibleSetName,

@@ -1981,6 +1981,18 @@ export const ROUTER_LADDER: Ladder = {
 };
 
 /**
+ * an OpenAI-compatible endpoint on Smart: it serves models nothing catalogs, so
+ * every tier runs the endpoint's own model and the guidance names any others by
+ * ID (`smartModels`). outside `PROVIDER_LADDERS`, whose check wants two models.
+ */
+const CUSTOM_LADDER: Ladder = {
+  minimal: "openai-compatible/byok",
+  light: "openai-compatible/byok",
+  standard: "openai-compatible/byok",
+  deep: "openai-compatible/byok",
+};
+
+/**
  * the `repo.model` sentinel that turns the router on: `auto/<provider>` runs
  * each piece of work on that provider's ladder, `auto/router` on the Pullfrog
  * Router's. distinct from the two managed tiers above, which each name ONE
@@ -1994,7 +2006,23 @@ const AUTO_PREFIX = "auto/";
 export function autoLadder(slug: string | null | undefined): Ladder | undefined {
   if (!slug || !slug.startsWith(AUTO_PREFIX) || isAutoTier(slug)) return undefined;
   const target = slug.slice(AUTO_PREFIX.length);
-  return target === "router" ? ROUTER_LADDER : PROVIDER_LADDERS[target];
+  if (target === "router") return ROUTER_LADDER;
+  return target === OPENAI_COMPATIBLE_PROVIDER ? CUSTOM_LADDER : PROVIDER_LADDERS[target];
+}
+
+/**
+ * the models a Smart sentinel's guidance can name: every current model of its
+ * provider, and of OpenRouter on the Router. none on an OpenAI-compatible
+ * endpoint, whose guidance names the model IDs the endpoint serves.
+ */
+export function smartModels(slug: string | null | undefined): ModelAlias[] {
+  if (!slug || !isAutoRouted(slug)) return [];
+  const target = slug.slice(AUTO_PREFIX.length);
+  const provider = target === "router" ? "openrouter" : target;
+  if (provider === OPENAI_COMPATIBLE_PROVIDER) return [];
+  return modelAliases.filter(
+    (alias) => alias.provider === provider && !alias.fallback && !alias.hidden
+  );
 }
 
 export function isAutoRouted(slug: string | null | undefined): boolean {
@@ -2010,7 +2038,7 @@ export function autoRoutedSlug(provider: string): string {
   return `${AUTO_PREFIX}${provider}`;
 }
 
-/** the providers a BYOK repo can put on Auto — exactly the ones with a ladder */
+/** the providers a BYOK repo can put on Auto: the ones with a ladder, and an OpenAI-compatible endpoint */
 export let ROUTED_PROVIDERS: readonly { key: string; displayName: string }[];
 
 /**
@@ -2275,7 +2303,8 @@ function deriveFromProviders(): void {
   TRIAL_PROXY_MODEL = trial.openRouterResolve;
   TRIAL_PROXY_DISPLAY_NAME = trial.displayName;
   ossAllowedTargets = new Set(allowed);
-  ROUTED_PROVIDERS = Object.keys(PROVIDER_LADDERS).map((key) => ({
+  // a literal: `OPENAI_COMPATIBLE_PROVIDER` is declared below this call
+  ROUTED_PROVIDERS = [...Object.keys(PROVIDER_LADDERS), "openai-compatible"].map((key) => ({
     key,
     displayName: providers[key]?.displayName ?? key,
   }));

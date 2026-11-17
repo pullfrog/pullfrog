@@ -213,6 +213,9 @@ export async function fetchRunContext(params: {
   /** `payload.routing.tier` — the model router's tier, which run-context
    * applies to the Router proxy mint the same way it applies `runType`. */
   routedTier?: RouterTier | undefined;
+  /** `payload.routing.model` — the model the router picked, which the maintainers'
+   * guidance may name off the tier's ladder rung. */
+  routedModel?: string | undefined;
 }): Promise<RunContext> {
   try {
     const headers: Record<string, string> = {
@@ -227,6 +230,7 @@ export async function fetchRunContext(params: {
     if (params.runType) query.set("type", params.runType);
     if (params.plainPrompt) query.set("prompt", "plain");
     if (params.routedTier) query.set("tier", params.routedTier);
+    if (params.routedModel) query.set("model", params.routedModel);
     const search = query.toString();
     // retried only when we never got an answer; the start record is keyed by START_KEY, so a repeat
     // adds no row (wiki/run-correlation.md). a slow-egress runner answers inside 30s most of the time (#1637).

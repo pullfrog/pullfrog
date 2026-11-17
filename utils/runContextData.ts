@@ -50,6 +50,8 @@ interface ResolveRunContextDataParams {
   plainPrompt: boolean;
   /** the model router's tier from the payload, forwarded so run-context applies it to the proxy mint. */
   routedTier?: RouterTier | undefined;
+  /** the model the router picked, forwarded with its tier. */
+  routedModel?: string | undefined;
 }
 
 /**
@@ -114,6 +116,7 @@ export async function resolveRunContextData(
     runType: params.runType,
     plainPrompt: params.plainPrompt,
     routedTier: params.routedTier,
+    routedModel: params.routedModel,
   });
 
   if (runContext.apiToken) maskSecret(runContext.apiToken);

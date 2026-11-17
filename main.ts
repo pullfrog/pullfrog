@@ -174,12 +174,13 @@ export async function main(): Promise<MainResult> {
 
   // the job token is only run-context's bearer; GitHub reads use the installation token (#1584)
   const jobToken = getJobToken();
+  const routing = typeof resolvedPromptInput === "string" ? undefined : resolvedPromptInput.routing;
   const runContext = await resolveRunContextData({
     token: jobToken,
     runType: typeof resolvedPromptInput === "string" ? undefined : resolvedPromptInput.type,
     plainPrompt: typeof resolvedPromptInput === "string",
-    routedTier:
-      typeof resolvedPromptInput === "string" ? undefined : resolvedPromptInput.routing?.tier,
+    routedTier: routing?.tier,
+    routedModel: routing?.model,
   });
   timer.checkpoint("runContextData");
   setBotLogin(runContext.repoSettings.botLogin);
