@@ -2441,6 +2441,7 @@ export const OPENAI_COMPATIBLE_FIELDS = [
   "context",
   "maxOutput",
   "headers",
+  "imageInput",
 ] as const;
 
 /** the env var names one endpoint is configured by: a named set's, or the default's. */
@@ -2455,6 +2456,7 @@ export function openAICompatibleEnv(
     context: `${prefix}CONTEXT`,
     maxOutput: `${prefix}MAX_OUTPUT`,
     headers: `${prefix}HEADERS`,
+    imageInput: `${prefix}IMAGE_INPUT`,
   };
 }
 
@@ -2469,7 +2471,7 @@ function openAICompatibleSetEnvVars(slug: string): string[] {
 /** the set a variable belongs to: `OPENAI_COMPATIBLE_VLLM_A_API_KEY` → `vllm-a`. */
 export function openAICompatibleSetOf(envName: string): string | undefined {
   const match =
-    /^OPENAI_COMPATIBLE_([A-Z0-9]+(?:_[A-Z0-9]+)*)_(?:BASE_URL|API_KEY|MODEL|CONTEXT|MAX_OUTPUT|HEADERS)$/.exec(
+    /^OPENAI_COMPATIBLE_([A-Z0-9]+(?:_[A-Z0-9]+)*)_(?:BASE_URL|API_KEY|MODEL|CONTEXT|MAX_OUTPUT|HEADERS|IMAGE_INPUT)$/.exec(
       envName
     );
   const name = match?.[1]?.toLowerCase().replaceAll("_", "-");

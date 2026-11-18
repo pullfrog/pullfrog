@@ -50,7 +50,12 @@ interface OpenAICompatibleProviderEntry {
     apiKey: string | undefined;
     headers: Record<string, string>;
   };
-  models: Record<string, { name: string; limit: ModelLimit }>;
+  models: Record<string, { name: string; limit: ModelLimit; modalities: Modalities | undefined }>;
+}
+
+interface Modalities {
+  input: string[];
+  output: string[];
 }
 
 interface ModelLimit {
@@ -83,6 +88,18 @@ function openAICompatibleLimit(set: string | undefined): ModelLimit {
 }
 
 /**
+ * What the endpoint's model takes as input, declared only when `IMAGE_INPUT` is set. Unset keeps
+ * each generation's own default for a config model: V2 assumes images and V1 assumes text only.
+ * Declaring `["text"]` is what makes V2 tell the agent it can't read a screenshot instead of
+ * sending it to a text-only endpoint, which rejects the whole turn (pullfrog/app#1706).
+ */
+function openAICompatibleModalities(set: string | undefined): Modalities | undefined {
+  const value = process.env[openAICompatibleEnv(set).imageInput]?.trim().toLowerCase();
+  if (value !== "true" && value !== "false") return undefined;
+  return { input: value === "true" ? ["text", "image"] : ["text"], output: ["text"] };
+}
+
+/**
  * OpenAI-compatible provider block for OPENCODE_CONFIG_CONTENT. opencode has no
  * native provider for an arbitrary gateway, so inject one via
  * `@ai-sdk/openai-compatible` when the run targets `openai-compatible/<model>`;
@@ -108,7 +125,13 @@ export function openAICompatibleProvider(
         apiKey: process.env[env.apiKey],
         headers: readCustomHeaders(env.headers),
       },
-      models: { [modelId]: { name: modelId, limit: openAICompatibleLimit(set) } },
+      models: {
+        [modelId]: {
+          name: modelId,
+          limit: openAICompatibleLimit(set),
+          modalities: openAICompatibleModalities(set),
+        },
+      },
     },
   };
 }
