@@ -61,6 +61,7 @@ const BYOK_ONLY_MODELS = new Set<string>([
   "vercel/gemini-pro",
   "vercel/gemini-carbon",
   "vercel/gemini-hydrogen",
+  "vercel/gemini-neon",
   "vercel/gemini-flash",
   "vercel/deepseek-pro",
   "vercel/deepseek-flash",
