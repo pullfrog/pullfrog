@@ -189,16 +189,16 @@ export const bundledProviders = {
       // / GPT Mini tiering and are carried below as deprecated aliases.
       "gpt-astra": {
         displayName: "GPT Astra",
-        resolve: "openai/gpt-6-astra",
+        resolve: "openai/gpt-6.2-astra",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-astra",
+        openRouterResolve: "openrouter/openai/gpt-6.2-astra",
         subagentModel: "gpt-sol",
       },
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "openai/gpt-6.1-sol",
+        resolve: "openai/gpt-6.2-sol",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6.1-sol",
+        openRouterResolve: "openrouter/openai/gpt-6.2-sol",
         preferred: true,
         subagentModel: "gpt-terra",
       },
@@ -208,9 +208,9 @@ export const bundledProviders = {
       "gpt-sol-pro": {
         displayName: "GPT Sol Pro",
         description: "Maximum reasoning effort",
-        resolve: "openai/gpt-6.1-sol",
+        resolve: "openai/gpt-6.2-sol",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6.1-sol-pro",
+        openRouterResolve: "openrouter/openai/gpt-6.2-sol-pro",
         subagentModel: "gpt-sol",
         pinned: true,
       },
@@ -641,25 +641,25 @@ export const bundledProviders = {
       },
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "opencode/gpt-6.1-sol",
+        resolve: "opencode/gpt-6.2-sol",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6.1-sol",
+        openRouterResolve: "openrouter/openai/gpt-6.2-sol",
         subagentModel: "gpt-terra",
       },
       "gpt-astra": {
         displayName: "GPT Astra",
-        resolve: "opencode/gpt-6-astra",
+        resolve: "opencode/gpt-6.2-astra",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-astra",
+        openRouterResolve: "openrouter/openai/gpt-6.2-astra",
         subagentModel: "gpt-sol",
       },
       // see openai/gpt-sol-pro — Zen has no -pro id, so direct resolves to plain Sol.
       "gpt-sol-pro": {
         displayName: "GPT Sol Pro",
         description: "Maximum reasoning effort",
-        resolve: "opencode/gpt-6.1-sol",
+        resolve: "opencode/gpt-6.2-sol",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6.1-sol-pro",
+        openRouterResolve: "openrouter/openai/gpt-6.2-sol-pro",
         subagentModel: "gpt-sol",
         pinned: true,
       },
@@ -764,15 +764,11 @@ export const bundledProviders = {
       },
       "kimi-k2": {
         displayName: "Kimi K2",
-        // k2.7-code is UNDEPLOYED on Zen — still listed in /zen/v1/models, but
-        // the endpoint answers 400 `[NOT_FOUND] Model not found, inaccessible,
-        // and/or not deployed` (measured 2026-08-28; k2.6 200 on the same key).
-        // opencode-go is no escape: its own kimi-k2 resolves to the SAME model
-        // id. k2.6 is the newest build Zen will actually serve, and the mirror
-        // guard permits the step down because k2.7-code is in ZEN_UNDEPLOYED.
-        resolve: "opencode/kimi-k2.6",
+        resolve: "opencode/kimi-k2.7-code",
         openRouterResolve: "openrouter/moonshotai/kimi-k2.7-code",
-        pinned: true,
+        // Zen serves no K2 build since 2026-11-20: k2.6 answers 410 ModelDeprecated and k2.7-code
+        // 410 "Endpoint is unavailable", while k3 answers on the same key. drop this once one returns.
+        fallback: "opencode/kimi-k3",
       },
       // M3 is its own line beside M2, not a bump of it — same reason `kimi-k3`
       // sits beside `kimi-k2` rather than replacing it.
@@ -1310,25 +1306,25 @@ export const bundledProviders = {
       // the chosen tiers across funding paths.
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "openrouter/openai/gpt-6.1-sol",
+        resolve: "openrouter/openai/gpt-6.2-sol",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6.1-sol",
+        openRouterResolve: "openrouter/openai/gpt-6.2-sol",
         subagentModel: "gpt-terra",
       },
       "gpt-astra": {
         displayName: "GPT Astra",
-        resolve: "openrouter/openai/gpt-6-astra",
+        resolve: "openrouter/openai/gpt-6.2-astra",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6-astra",
+        openRouterResolve: "openrouter/openai/gpt-6.2-astra",
         subagentModel: "gpt-sol",
       },
       // see openai/gpt-sol-pro. openrouter serves sol-pro directly on both routes.
       "gpt-sol-pro": {
         displayName: "GPT Sol Pro",
         description: "Maximum reasoning effort",
-        resolve: "openrouter/openai/gpt-6.1-sol-pro",
+        resolve: "openrouter/openai/gpt-6.2-sol-pro",
         effort: ["low", "medium", "high", "xhigh", "max"],
-        openRouterResolve: "openrouter/openai/gpt-6.1-sol-pro",
+        openRouterResolve: "openrouter/openai/gpt-6.2-sol-pro",
         subagentModel: "gpt-sol",
         pinned: true,
       },
@@ -1566,13 +1562,13 @@ export const bundledProviders = {
       },
       "gpt-sol": {
         displayName: "GPT Sol",
-        resolve: "vercel/openai/gpt-6.1-sol",
+        resolve: "vercel/openai/gpt-6.2-sol",
         effort: ["low", "medium", "high", "xhigh", "max"],
         subagentModel: "gpt-terra",
       },
       "gpt-astra": {
         displayName: "GPT Astra",
-        resolve: "vercel/openai/gpt-6-astra",
+        resolve: "vercel/openai/gpt-6.2-astra",
         effort: ["low", "medium", "high", "xhigh", "max"],
         subagentModel: "gpt-sol",
       },

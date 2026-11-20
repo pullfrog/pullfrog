@@ -72,7 +72,7 @@ const isRoute = (provider: string): provider is RouteProvider =>
  * one when `models-live` catches it, and delete it once the model completes a run again.
  */
 export const ZEN_UNDEPLOYED: readonly string[] = [
-  // 2026-08-28: 400 on both tiers, while kimi-k2.6 and kimi-k3 answer 200 on the same key.
+  // 400 not deployed on 2026-08-28; 410 "Endpoint is unavailable" on 2026-11-20, kimi-k3 200 on the same key.
   "kimi-k2.7-code",
 ];
 

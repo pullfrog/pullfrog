@@ -810,7 +810,7 @@ export function isKimiPlanTierError(text: string): boolean {
  * renders `9:20pm (UTC)","type":...` into the user-facing copy.
  */
 const CLAUDE_SESSION_LIMIT_PATTERN =
-  /hit your (?:session|weekly|five-hour|Opus|Sonnet|Haiku)\s+limit(?:\s*·\s*resets\s+([^"\n]+))?/i;
+  /hit your (?:session|weekly|(?:five|5)-hour|Opus|Sonnet|Haiku)\s+limit(?:\s*·\s*resets\s+([^"\n]+))?/i;
 
 export function isClaudeSessionLimitError(text: string): boolean {
   return CLAUDE_SESSION_LIMIT_PATTERN.test(text);

@@ -16,9 +16,9 @@ describe("GPT Astra routing and effort", () => {
     ["vercel", "vercel/openai"],
   ])("resolves %s without offering disabled reasoning", (provider, route) => {
     const slug = `${provider}/gpt-astra`;
-    expect(resolveCliModel(slug)).toBe(`${route}/gpt-6-astra`);
+    expect(resolveCliModel(slug)).toBe(`${route}/gpt-6.2-astra`);
     expect(resolveOpenRouterModel(slug)).toBe(
-      provider === "vercel" ? undefined : "openrouter/openai/gpt-6-astra"
+      provider === "vercel" ? undefined : "openrouter/openai/gpt-6.2-astra"
     );
     for (const useOpenRouter of [false, true]) {
       expect(resolveModelRung({ slug, useOpenRouter, position: 0 })).toBe("low");

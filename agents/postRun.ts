@@ -612,7 +612,8 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
     const onlySummaryStale =
       issues.summaryStale !== undefined &&
       issues.stopHook === undefined &&
-      issues.dirtyTree === undefined;
+      issues.dirtyTree === undefined &&
+      issues.unsubmittedReview === undefined;
     const preResume = result;
     result = await params.resume({ prompt, previousResult: result });
     aggregatedUsage = mergeAgentUsage(aggregatedUsage, result.usage);

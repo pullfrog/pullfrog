@@ -260,6 +260,10 @@ function securityOverrideFlags(params: {
       ? ["-c", `model_reasoning_effort=${JSON.stringify(params.effortRung)}`]
       : []),
     ...features.flatMap((entry) => ["-c", `features.${entry}`]),
+    // `multi_agent*=false` alone leaves subagents on: codex adopts the model's own
+    // `multi_agent_version` (v2 for every gpt-6 model) unless `agents.enabled` is false.
+    "-c",
+    "agents.enabled=false",
   ];
 }
 
@@ -599,7 +603,9 @@ const CODEX_MODEL_PRICING: Record<
   string,
   { input: number; cacheRead: number; cacheWrite: number; output: number }
 > = {
+  "gpt-6.2-astra": { input: 8, cacheRead: 0.4, cacheWrite: 10, output: 40 },
   "gpt-6-astra": { input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
+  "gpt-6.2-sol": { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
   "gpt-6.1-sol": { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
   "gpt-6-luna": { input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
   "gpt-6.1-terra": { input: 1, cacheRead: 0.05, cacheWrite: 1.25, output: 5 },

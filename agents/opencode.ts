@@ -93,7 +93,7 @@ import {
 import { opencode1 } from "./opencode1.ts";
 import { opencode2 } from "./opencode2.ts";
 import { opencodeGeneration } from "./opencodeGeneration.ts";
-import { PULLFROG_OPENCODE_GATE_PLUGIN_FILENAME } from "./opencodePlugin.ts";
+import { lensStoppedFile, PULLFROG_OPENCODE_GATE_PLUGIN_FILENAME } from "./opencodePlugin.ts";
 import {
   type OpencodeSession,
   type RunState,
@@ -533,6 +533,8 @@ function enforceLensBudgets(ctx: AgentRunContext, session: OpencodeSession): voi
     const overBudget = dispatch.subagentType === REVIEWER_AGENT_NAME && elapsedMs > budgetMs;
     if (!overBudget && !nearDeadline) continue;
     const why = overBudget ? "over budget" : "the run is near its time limit";
+    // before the interrupt, so the gate already refuses a retry when the failed `task` reaches the model
+    if (overBudget) writeFileSync(lensStoppedFile(ctx.tmpdir), dispatch.label);
     // re-sent every tick until the `task` call ends: V1's abort reports success even before the child starts
     session.interrupt(dispatch.child.sessionID).then(
       () => {

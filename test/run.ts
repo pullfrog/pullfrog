@@ -325,6 +325,8 @@ async function runTestForAgent(ctx: RunContext): Promise<ValidationResult> {
       const defaultModels: Record<string, string> = {
         claude: "anthropic/claude-sonnet-4-6",
         opencode: "anthropic/claude-sonnet-4-6",
+        // GPT-6.2 Sol declines the adversarial probes, so the fixtures pin a model that runs them
+        codex: "openai/gpt-6.1-sol",
       };
       const model = defaultModels[ctx.agent];
       if (model) {

@@ -55,6 +55,7 @@ import { OPENAI_COMPATIBLE_PROVIDER } from "../models.ts";
 import { openCodeHomeEnv } from "../utils/openCodeModels.ts";
 import { resolveRepoRoot } from "../utils/sandbox.ts";
 import { HOOK_ASSET_TMPDIR_RELPATHS } from "./nativeFsDenies.ts";
+import { REVIEWER_AGENT_NAME } from "./reviewer.ts";
 import { type AgentRunContext, DEADLINE_RESERVE_MS } from "./shared.ts";
 
 export const PULLFROG_BUS_EVENT_TYPE = "pullfrog_bus_event" as const;
@@ -183,7 +184,7 @@ export function buildOpencodeSubagentGateSource(ctx: AgentRunContext): string {
 // inside the per-run tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside
 // the user's working tree.
 ${realPathGateSource(ctx)}
-${reserveGateSource(ctx)}
+${dispatchGateSource(ctx)}
 // embedded at template-render time so the plugin source has no project imports.
 // the denied set is derived from each tool's \`mutates\` flag — see
 // action/agents/subagentToolGates.ts.
@@ -226,7 +227,7 @@ export default async function pullfrogSubagentGatePlugin() {
         throw new Error(${JSON.stringify(bashRefusal)});
       }
       refuseEscape(tool, output?.args);
-      if (tool === "task" && Date.now() >= RESERVE_STARTS_AT) throw new Error(RESERVE_REFUSAL);
+      if (tool === "task") refuseDispatch(output?.args?.subagent_type);
       if (!sessionID || !tool) return;
       if (orchestratorSessionID === undefined) orchestratorSessionID = sessionID;
       if (sessionID === orchestratorSessionID) return;
@@ -312,14 +313,32 @@ const SUBAGENT_DENIAL =
   "report_progress, etc.) are reserved for the orchestrator. " +
   "report findings back to the orchestrator and let it perform the mutation.";
 
-/** inside the deadline reserve only submitting is left, so a new subagent is refused (#1666). */
-function reserveGateSource(ctx: AgentRunContext): string {
+/** written by the harness when it stops a lens for its budget, and read by the gate. */
+export function lensStoppedFile(tmpdir: string): string {
+  return join(tmpdir, "pullfrog-lens-stopped");
+}
+
+/**
+ * Inside the deadline reserve only submitting is left, so a new subagent is refused (#1666). Once a lens
+ * has been stopped for its budget, so is another lens: a retry starts a fresh 20 minutes on the same
+ * work, and the bare cancellation reads as transient to the model, on V1 with nothing to say otherwise (#1718).
+ */
+function dispatchGateSource(ctx: AgentRunContext): string {
   const startsAt =
     ctx.deadlineAt === undefined ? Number.POSITIVE_INFINITY : ctx.deadlineAt - DEADLINE_RESERVE_MS;
-  const refusal =
+  const reserveRefusal =
     "the run is within 5 minutes of its time limit, so no subagent may start. Submit your work now, with what you have.";
-  return `const RESERVE_STARTS_AT = ${startsAt};
-const RESERVE_REFUSAL = ${JSON.stringify(refusal)};`;
+  const lensRefusal =
+    "Pullfrog stopped a review specialist in this run for exceeding its time budget, so no other may start. Continue with the findings you have.";
+  return `import { existsSync } from "node:fs";
+
+const RESERVE_STARTS_AT = ${startsAt};
+const LENS_STOPPED_FILE = ${JSON.stringify(lensStoppedFile(ctx.tmpdir))};
+
+function refuseDispatch(agent: unknown) {
+  if (Date.now() >= RESERVE_STARTS_AT) throw new Error(${JSON.stringify(reserveRefusal)});
+  if (agent === ${JSON.stringify(REVIEWER_AGENT_NAME)} && existsSync(LENS_STOPPED_FILE)) throw new Error(${JSON.stringify(lensRefusal)});
+}`;
 }
 
 /** the id the V2 gate registers under, which the harness requires `plugin.list` to report active. */
@@ -338,7 +357,7 @@ export function buildOpencode2GateSource(ctx: AgentRunContext): string {
 // action/agents/opencodePlugin.ts in pullfrog/app. lives inside the per-run
 // tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside the user's working tree.
 ${realPathGateSource(ctx)}
-${reserveGateSource(ctx)}
+${dispatchGateSource(ctx)}
 const SUBAGENT_DENIED_TOOLS = new Set(${JSON.stringify(ctx.subagentDeniedTools)});
 
 // the orchestrator calls a tool (its \`subagent\` dispatch) before any subagent
@@ -348,7 +367,7 @@ let orchestratorSessionID: string | undefined;
 export default {
   id: ${JSON.stringify(OPENCODE_V2_GATE_PLUGIN_ID)},
   async setup(ctx: {
-    tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string; input?: unknown }) => void) => Promise<unknown> };
+    tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string; input?: Record<string, unknown> }) => void) => Promise<unknown> };
     session: { hook: (name: string, fn: (event: { options: { maxTokens?: number } }) => void, options: { providerID: string }) => Promise<unknown> };
   }) {
     // V2 fails the run on a summary cut off at the output limit, and a custom endpoint's limit can be
@@ -359,7 +378,7 @@ export default {
       const sessionID = typeof event?.sessionID === "string" ? event.sessionID : "";
       if (tool === "shell") throw new Error(${JSON.stringify(nativeShellRefusal(ctx, "shell"))});
       refuseEscape(tool, event.input);
-      if (tool === "subagent" && Date.now() >= RESERVE_STARTS_AT) throw new Error(RESERVE_REFUSAL);
+      if (tool === "subagent") refuseDispatch(event.input?.agent);
       if (!sessionID || !tool) return;
       if (orchestratorSessionID === undefined) orchestratorSessionID = sessionID;
       if (sessionID === orchestratorSessionID) return;

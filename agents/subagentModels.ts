@@ -1,4 +1,4 @@
-import { modelAliases } from "../models.ts";
+import { modelAliases, resolveDisplayAlias } from "../models.ts";
 
 /**
  * Derive a cheaper subagent model override from the orchestrator's resolved
@@ -33,7 +33,8 @@ export function deriveSubagentModels(orchestratorSpec: string | undefined): {
     const matchedOR = source.openRouterResolve === orchestratorSpec;
     if (!matchedDirect && !matchedOR) continue;
     if (!source.subagentModel) return { reviewer: undefined };
-    const target = modelAliases.find((a) => a.slug === source.subagentModel);
+    // a target that falls back runs its fallback, as a pick of it would
+    const target = resolveDisplayAlias(source.subagentModel);
     if (!target) return { reviewer: undefined };
     const reviewer = matchedOR ? target.openRouterResolve : target.resolve;
     return { reviewer };
