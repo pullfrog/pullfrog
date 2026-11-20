@@ -43,7 +43,7 @@
  *     a stdout sentinel envelope.
  *
  * What stays identical:
- *   - native bash blocked (listed as "ask", thrown on by the gate plugin)
+ *   - native bash blocked (unlisted, or "ask" on Zen and Go, thrown on by the gate plugin)
  *   - OPENCODE_PERMISSION filesystem sandbox — deny-all + allow /tmp
  *   - MCP Pullfrog server injected via `mcp.<name> = { type: "remote", url }`
  *   - ASKPASS for git auth
@@ -111,6 +111,7 @@ import {
   openRouterDataCollection,
   openRouterProvider,
   providerGatewayOverride,
+  reachesOpenCodeGateway,
 } from "./opencodeShared.ts";
 import { hasDeliveredReview, runPostRunRetryLoop } from "./postRun.ts";
 import { REVIEWER_AGENT_NAME } from "./reviewer.ts";
@@ -132,8 +133,10 @@ function buildSecurityConfig(ctx: AgentRunContext, model: string | undefined): O
       // listed but never run: Zen's free tier 403s a tool list missing `bash`,
       // `glob`, `grep` or `read` (2026-09-17), so the gate plugin throws on
       // every bash call and "ask" (no responder in serve mode) fails closed.
-      // never switch one of those four to "deny". see wiki/security.md.
-      bash: "ask",
+      // never "deny" one of those four on a route that can reach OpenCode's own
+      // gateways. elsewhere bash is unlisted, so no model wastes a turn on the
+      // refusal (pullfrog/pullfrog#134). see wiki/security.md.
+      bash: reachesOpenCodeGateway(model) ? "ask" : "deny",
       edit: "allow",
       read: "allow",
       webfetch: "allow",

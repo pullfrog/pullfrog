@@ -170,7 +170,8 @@ export default async function pullfrogEventsPlugin() {
  * truth: `action/agents/subagentToolGates.ts`.
  *
  * Also hard-blocks the native `bash` tool for EVERY session. bash stays in the
- * tool list because Zen's free tier rejects a request without it (2026-09-17);
+ * tool list on routes that can reach Zen, whose free tier rejects a request
+ * without it (2026-09-17), and is unlisted elsewhere; there
  * `permission.bash: "ask"` is the fail-closed backstop should this plugin ever
  * not load. the refusal names the replacement, because a bare one left models
  * retrying bash until the 1h cap (#1476). see wiki/security.md.

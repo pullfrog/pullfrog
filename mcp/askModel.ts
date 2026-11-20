@@ -15,6 +15,7 @@ import {
   openAICompatibleProvider,
   openRouterDataCollection,
   openRouterProvider,
+  reachesOpenCodeGateway,
 } from "../agents/opencodeShared.ts";
 import type { AgentUsage } from "../agents/shared.ts";
 import { pullfrogMcpName } from "../external.ts";
@@ -358,10 +359,15 @@ async function askOpenCode(ctx: ToolContext, ask: Ask): Promise<Answer> {
     if (ask.model.credential === "GEMINI_API_KEY") env.GOOGLE_GENERATIVE_AI_API_KEY = ask.value;
   }
   // the run's own posture (buildSecurityConfig and its sandbox in opencode.ts): native bash stays
-  // listed for Zen's free tier but off, since `run` rejects every "ask", and the loop carries on past
-  // the rejection to the pullfrog shell rather than ending the turn unanswered.
+  // listed only where Zen's free tier needs it, and off there, since `run` rejects every "ask", and the
+  // loop carries on past the rejection to the pullfrog shell rather than ending the turn unanswered.
   const config: OpenCodeConfig = {
-    permission: { bash: "ask", edit: "allow", read: "allow", webfetch: "allow" },
+    permission: {
+      bash: reachesOpenCodeGateway(ask.model.resolve) ? "ask" : "deny",
+      edit: "allow",
+      read: "allow",
+      webfetch: "allow",
+    },
     experimental: { continue_loop_on_deny: true },
     enabled_providers: [getModelProvider(ask.model.resolve)],
     provider: {

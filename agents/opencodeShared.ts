@@ -148,6 +148,14 @@ export function openAICompatibleProvider(
 const OPENCODE_GATEWAY_PATH: Record<string, string> = { anthropic: "/v1" };
 
 /**
+ * Whether a run can reach Zen or Go, whose free tier 403s a tool list without native bash. with
+ * no model opencode picks one itself; a set one is limited to its provider by `enabled_providers`.
+ */
+export function reachesOpenCodeGateway(model: string | undefined): boolean {
+  return !model || model.startsWith("opencode/") || model.startsWith("opencode-go/");
+}
+
+/**
  * Customer-gateway block for OPENCODE_CONFIG_CONTENT. opencode resolves a
  * provider's endpoint as `options.baseURL ?? model.api.url` (`getSDK`), and
  * models.dev declares no base-URL env var for any provider we catalog — so a
