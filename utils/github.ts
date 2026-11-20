@@ -506,7 +506,7 @@ export async function acquireNewToken(opts?: AcquireTokenOptions): Promise<strin
         "        id-token: write   # mint Pullfrog installation tokens via OIDC\n" +
         "        contents: read    # for actions/checkout\n" +
         "\n" +
-        "see https://docs.pullfrog.com/headless-action#required-permissions for the full template."
+        "see https://pullfrog.com/docs/custom-workflows#required-permissions for the full template."
     );
   }
   // local development via GitHub App

@@ -121,7 +121,7 @@ function getShellInstructions(payload: ResolvedPayload, t: (name: string) => str
       if (payload.shellUnsandboxable) {
         return `### Shell commands
 
-Shell commands are unavailable: this runner can't sandbox them, so you can't run tests, builds, linters or \`gh\`. Never imply they ran. If that leaves your result unverified, say so in one sentence in your final comment or review, linking https://docs.pullfrog.com/security#self-hosted-runners for the fix. Otherwise don't mention it.`;
+Shell commands are unavailable: this runner can't sandbox them, so you can't run tests, builds, linters or \`gh\`. Never imply they ran. If that leaves your result unverified, say so in one sentence in your final comment or review, linking https://pullfrog.com/docs/self-hosted-runners for the fix. Otherwise don't mention it.`;
       }
       return `### Shell commands
 

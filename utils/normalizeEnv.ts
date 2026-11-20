@@ -61,7 +61,7 @@ export function readCustomHeaders(envVar: string): Record<string, string> {
   if (parsed.badLine) {
     throw new Error(
       `Line ${parsed.badLine} of \`${envVar}\` is not a header. Write one \`Name: Value\` per line, in ASCII. ` +
-        "[Custom headers guide](https://docs.pullfrog.com/keys#custom-headers)"
+        "[Custom headers guide](https://pullfrog.com/docs/gateways#custom-headers)"
     );
   }
   for (const value of Object.values(parsed.headers)) {

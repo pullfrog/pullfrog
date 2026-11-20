@@ -310,7 +310,7 @@ function buildBedrockSetupError(params: {
       `${BEDROCK_MODEL_ID_ENV}: \${{ secrets.${BEDROCK_MODEL_ID_ENV} }}`,
     ],
     note: "`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (plus `AWS_SESSION_TOKEN` if you use one) can replace the bearer token.",
-    guide: "https://docs.pullfrog.com/bedrock",
+    guide: "https://pullfrog.com/docs/bedrock",
   });
 }
 
@@ -325,7 +325,7 @@ function buildVertexSetupError(params: { owner: string; name: string; missing: s
       `${VERTEX_LOCATION_ENV}: global`,
       `${VERTEX_MODEL_ID_ENV}: <vertex-model-id>`,
     ],
-    guide: "https://docs.pullfrog.com/vertex",
+    guide: "https://pullfrog.com/docs/vertex",
   });
 }
 
@@ -347,7 +347,7 @@ function buildOpenAICompatibleSetupError(params: {
       `${params.env.maxOutput}: "16384"`,
     ],
     note: "Use the real context and output limits of the model your endpoint serves: Pullfrog can't discover them, and without them long runs grow until the endpoint refuses them.",
-    guide: "https://docs.pullfrog.com/openai-compatible",
+    guide: "https://pullfrog.com/docs/openai-compatible",
   });
 }
 
@@ -364,7 +364,7 @@ function buildAzureSetupError(params: { owner: string; name: string; missing: st
       `${AZURE_MAX_OUTPUT_ENV}: "128000"`,
     ],
     note: `\`${AZURE_RESOURCE_NAME_ENV}\` is the \`<name>\` in \`https://<name>.openai.azure.com\`, and \`${AZURE_DEPLOYMENT_ENV}\` is the deployment's name, not the model it serves. Use that model's real context and output limits: Pullfrog can't discover them, and without them long runs grow until Azure refuses them.`,
-    guide: "https://docs.pullfrog.com/azure",
+    guide: "https://pullfrog.com/docs/azure",
   });
 }
 

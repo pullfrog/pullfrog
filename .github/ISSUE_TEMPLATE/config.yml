@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Pullfrog documentation
-    url: https://docs.pullfrog.com
+    url: https://pullfrog.com/docs
     about: Browse setup, configuration, and usage guides before opening an issue.

@@ -1,4 +1,4 @@
-// changes to shell security (filterEnv, spawnShell) should be reflected in wiki/security.md and docs/security.mdx
+// changes to shell security (filterEnv, spawnShell) should be reflected in wiki/security.md and docs/content/docs/security.mdx
 import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -68,7 +68,7 @@ function spawnShell(params: SpawnParams): ChildProcess {
         "kernel disallows unprivileged user namespaces (Ubuntu >= 23.10, Bottlerocket, Talos). " +
         "elsewhere, check that `unshare` and `setpriv` (util-linux >= 2.31, which is what " +
         "added --ambient-caps) are on PATH in a directory only root can write. " +
-        "see https://docs.pullfrog.com/security#self-hosted-runners"
+        "see https://pullfrog.com/docs/self-hosted-runners"
     );
   }
 

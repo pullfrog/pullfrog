@@ -70,7 +70,7 @@ function resolveSlug(slug: string): string | undefined {
       throw new Error(
         `\`${BEDROCK_MODEL_ID_ENV}\` ${BYOK_SLUG_MARKER} \`${slug}\`. ` +
           "Set it in the workflow's `env:` block to a Bedrock model ID from the AWS console. " +
-          "[Amazon Bedrock setup guide](https://docs.pullfrog.com/bedrock)"
+          "[Amazon Bedrock setup guide](https://pullfrog.com/docs/bedrock)"
       );
     }
     return bedrockId;
@@ -81,7 +81,7 @@ function resolveSlug(slug: string): string | undefined {
       throw new Error(
         `\`${VERTEX_MODEL_ID_ENV}\` ${BYOK_SLUG_MARKER} \`${slug}\`. ` +
           "Set it in the workflow's `env:` block to a Vertex AI model ID from Model Garden. " +
-          "[Google Vertex AI setup guide](https://docs.pullfrog.com/vertex)"
+          "[Google Vertex AI setup guide](https://pullfrog.com/docs/vertex)"
       );
     }
     return vertexId;
@@ -92,7 +92,7 @@ function resolveSlug(slug: string): string | undefined {
       throw new Error(
         `\`${AZURE_DEPLOYMENT_ENV}\` ${BYOK_SLUG_MARKER} \`${slug}\`. ` +
           "Set it to your deployment's name, not the model it serves, on the Azure OpenAI provider in Pullfrog or in the workflow's `env:` block. " +
-          "[Azure OpenAI setup guide](https://docs.pullfrog.com/azure)"
+          "[Azure OpenAI setup guide](https://pullfrog.com/docs/azure)"
       );
     }
     return `${AZURE_PROVIDER}/${deployment}`;
@@ -105,7 +105,7 @@ function resolveSlug(slug: string): string | undefined {
       throw new Error(
         `\`${modelEnv}\` ${BYOK_SLUG_MARKER} \`${slug}\`. ` +
           "Set it to the model ID your endpoint serves, on the OpenAI-compatible provider in Pullfrog or in the workflow's `env:` block. " +
-          "[OpenAI-compatible setup guide](https://docs.pullfrog.com/openai-compatible)"
+          "[OpenAI-compatible setup guide](https://pullfrog.com/docs/openai-compatible)"
       );
     }
     return `${OPENAI_COMPATIBLE_PROVIDER}/${modelId}`;

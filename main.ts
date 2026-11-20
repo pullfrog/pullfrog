@@ -405,7 +405,7 @@ export async function main(): Promise<MainResult> {
       "» shell commands and the `gh` tool are disabled for this run: this runner provides no PID-namespace isolation " +
         "(unprivileged unshare, sudo unshare and userns-nested unshare all failed). " +
         "on a self-hosted Kubernetes/ARC runner, allow user-namespace creation in the pod's seccomp " +
-        "profile — see https://docs.pullfrog.com/security#self-hosted-runners"
+        "profile — see https://pullfrog.com/docs/self-hosted-runners"
     );
   }
   // `enabled` gives the agent the environment this protects, and needs the customer's PATH natively

@@ -1,4 +1,4 @@
-// changes to mode definitions should be reflected in docs/modes.mdx
+// changes to mode definitions should be reflected in docs/content/docs/instructions.mdx
 import { REVIEWER_AGENT_NAME } from "./agents/reviewer.ts";
 import { type AgentId, formatMcpToolRef, pullfrogMcpName } from "./external.ts";
 

@@ -129,7 +129,7 @@ export function unsandboxedRunnerSummary(namespaceError: string | undefined): st
     links: [
       {
         label: "Self-hosted runners",
-        url: "https://docs.pullfrog.com/security#self-hosted-runners",
+        url: "https://pullfrog.com/docs/self-hosted-runners",
       },
     ],
   });

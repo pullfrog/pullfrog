@@ -2267,7 +2267,7 @@ function checkLadders(): void {
 // but the sentences AROUND them are hand-written, so re-read all four:
 //   - `app/for-oss/page.tsx` (derived) — the pitch + the OG/meta blurb.
 //   - `emails/ossAccepted.ts` (derived) — what an accepted maintainer holds us to.
-//   - `docs/models.mdx` (hand-written) — the "Pullfrog for OSS" table.
+//   - `docs/content/docs/models.mdx` (hand-written) — the "Pullfrog for OSS" table.
 //   - `app/blog/ModelUsageSection.tsx` (hand-written) — the pricing-post aside.
 // the two derived ones are derived because #1190 updated the other two and
 // missed these, leaving the application page selling one model the program had

@@ -561,7 +561,7 @@ function renderRunErrorBody(ctx: RenderContext): string {
         "Give runs longer with `--timeout=2h` (or `--notimeout`) in this repo's instructions, or raise the workflow's `timeout` input if it sets one, since that input wins. A smaller PR or a lower effort also finishes sooner.",
       links: [
         { label: "Repo settings", url: repoConsoleUrl(ctx.repo) },
-        { label: "Flags", url: "https://docs.pullfrog.com/flags" },
+        { label: "Flags", url: "https://pullfrog.com/docs/flags" },
       ],
     });
   }

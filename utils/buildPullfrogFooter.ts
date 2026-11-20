@@ -107,7 +107,7 @@ function formatModelLabel(params: {
     // the clamp only fires for an OFF-allowlist pick now, so switching to a
     // funded model is the cheap remedy and has to be named first — naming only
     // BYOK is what left maintainers thinking the console offered them nothing.
-    return `${ossBase} (${configured} not used — pick one of the [funded models](https://docs.pullfrog.com/models#pullfrog-for-oss) or add a [provider key](https://docs.pullfrog.com/keys) to run your own)`;
+    return `${ossBase} (${configured} not used — pick one of the [funded models](https://pullfrog.com/docs/models#pullfrog-for-oss) or add a [provider key](https://pullfrog.com/docs/api-keys) to run your own)`;
   }
   const base = alias?.isFree ? `\`${modelName}\` (free)` : `\`${modelName}\``;
   if (params.clamped?.reason === "trial") {
@@ -123,11 +123,11 @@ function formatModelLabel(params: {
       ? "the intelligent tier"
       : `\`${resolveDisplayAlias(params.clamped.from)?.displayName ?? params.clamped.from}\``;
     return params.clamped.reason === "card"
-      ? `${base} (${target} needs a [card on file](https://docs.pullfrog.com/models))`
-      : `${base} (${target} needs a [provider key](https://docs.pullfrog.com/models) — no Router support yet)`;
+      ? `${base} (${target} needs a [card on file](https://pullfrog.com/docs/router))`
+      : `${base} (${target} needs a [provider key](https://pullfrog.com/docs/api-keys) — no Router support yet)`;
   }
   if (params.unselectedProxyDefault) {
-    return `${base} (default — [pick a model](https://docs.pullfrog.com/models) for stronger reviews)`;
+    return `${base} (default — [pick a model](https://pullfrog.com/docs/models) for stronger reviews)`;
   }
   return base;
 }

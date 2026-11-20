@@ -1,7 +1,7 @@
 // the PID+mount-namespace sandbox primitives, shared by the async shell path
 // (action/mcp/shell.ts `spawnShell` / `runSandboxed`) and the sync MCP git path
 // (action/utils/shell.ts `$`). changes here should be reflected in
-// wiki/security.md and docs/security.mdx.
+// wiki/security.md, docs/content/docs/security.mdx and self-hosted-runners.mdx.
 import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import {
   copyFileSync,
