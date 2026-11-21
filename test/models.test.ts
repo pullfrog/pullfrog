@@ -80,6 +80,8 @@ const BYOK_ONLY_MODELS = new Set<string>([
   "kimi-for-coding/kimi-k3-256k",
   "kimi-for-coding/kimi-k2",
   "kimi-for-coding/kimi-k2-highspeed",
+  // OpenRouter dropped every LongCat on 2026-11-21.
+  "opencode-go/longcat",
 ]);
 
 describe("openRouterResolve completeness", () => {

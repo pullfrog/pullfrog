@@ -1152,11 +1152,10 @@ export const bundledProviders = {
         resolve: "opencode-go/mimo-v2.6-pro",
         openRouterResolve: "openrouter/xiaomi/mimo-v2.6-pro",
       },
-      // Meituan — Go-only.
+      // Meituan — Go-only, and BYOK since OpenRouter dropped every LongCat (2026-11-21).
       longcat: {
         displayName: "LongCat",
         resolve: "opencode-go/longcat-2.0",
-        openRouterResolve: "openrouter/meituan/longcat-2.0",
       },
       // Tencent — Go-only (0.14/0.58). Hy3 succeeds the Hunyuan 2.0 line, so the
       // generation is part of the product name the way Kimi K2/K3 is.
