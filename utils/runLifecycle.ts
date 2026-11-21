@@ -34,7 +34,7 @@ import type { ToolState } from "../toolState.ts";
 import { autoMergeAfterApprove } from "./autoMerge.ts";
 import { formatUsageSummary, log, writeSummary } from "./cli.ts";
 import { reportErrorToComment } from "./errorReport.ts";
-import { persistLearnings } from "./learnings.ts";
+import { persistLearnings, persistXrepoLearnings } from "./learnings.ts";
 import { persistSummary } from "./prSummary.ts";
 import { postReviewCleanup } from "./reviewCleanup.ts";
 import { type RenderedRunError, renderRunError } from "./runErrorRenderer.ts";
@@ -46,6 +46,7 @@ import { reportUsageLimit } from "./usageLimit.ts";
  *   1. post-review cleanup (dispatch follow-up re-review on submitted reviews)
  *   2. persist the agent-edited PR summary tmpfile
  *   3. persist the agent-edited repo-level learnings tmpfile
+ *   4. persist the agent-edited cross-repo learnings tmpfile (--xrepo runs)
  *
  * Each step is idempotent and swallows its own errors. Safe to call from
  * both `main()`'s success path and its catch path.
@@ -56,6 +57,7 @@ export async function persistRunArtifacts(toolContext: ToolContext): Promise<voi
   });
   await persistSummary(toolContext);
   await persistLearnings(toolContext);
+  await persistXrepoLearnings(toolContext);
 }
 
 /**

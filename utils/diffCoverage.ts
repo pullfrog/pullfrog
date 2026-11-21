@@ -47,8 +47,6 @@ type ReadTarget = {
   endLine?: number | undefined;
 };
 
-type OffsetBase = "zero" | "one";
-
 export function countLines(params: { content: string }): number {
   const content = params.content;
   if (content.length === 0) return 0;
@@ -134,7 +132,6 @@ export function recordDiffReadFromToolUse(params: {
     limit: readTarget.limit,
     startLine: readTarget.startLine,
     endLine: readTarget.endLine,
-    offsetBase: resolveOffsetBase({ toolName: params.toolName }),
   });
   if (!range) return false;
 
@@ -181,14 +178,6 @@ export function getDiffCoverageBreakdown(params: {
     unreadRanges,
     files,
   };
-}
-
-function resolveOffsetBase(params: { toolName: string }): OffsetBase {
-  const lower = params.toolName.toLowerCase();
-  if (lower === "readfile" || lower.endsWith(".readfile")) {
-    return "one";
-  }
-  return "zero";
 }
 
 function isReadTool(toolName: string): boolean {
@@ -250,7 +239,6 @@ function resolveReadRange(params: {
   limit?: number | undefined;
   startLine?: number | undefined;
   endLine?: number | undefined;
-  offsetBase: OffsetBase;
 }): DiffLineRange | null {
   const totalLines = params.totalLines;
   if (totalLines <= 0) return null;
@@ -267,8 +255,8 @@ function resolveReadRange(params: {
   let startLine = 1;
   if (params.offset !== undefined) {
     if (params.offset >= 0) {
-      const normalizedOffset =
-        params.offsetBase === "zero" ? params.offset + 1 : params.offset === 0 ? 1 : params.offset;
+      // every read tool counts lines from 1 (OpenCode since its #13198); 0 means the first line too
+      const normalizedOffset = params.offset === 0 ? 1 : params.offset;
       startLine = clampLine({ value: normalizedOffset, totalLines });
     } else {
       startLine = clampLine({ value: totalLines + params.offset + 1, totalLines });

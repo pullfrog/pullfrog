@@ -246,6 +246,10 @@ export interface ToolState {
   // the error-path / exit-signal callers from a redundant second PATCH
   // after the success path already persisted.
   learningsPersistAttempted?: boolean;
+  // which lines of the learnings file the agent read before the reflection turn, for the
+  // end-of-run `» learnings:` line. `learningsReflected` stops the count there.
+  learningsReads?: DiffCoverageState;
+  learningsReflected?: boolean;
   // org-level cross-repo learnings tmpfile — same lifecycle as the repo-level
   // learnings file but seeded from `Account.xrepoLearnings` and only on
   // --xrepo runs. persisted to /api/account/[owner]/xrepo-learnings.

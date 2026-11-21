@@ -53,10 +53,13 @@ import { resolveInstructions } from "./utils/instructions.ts";
 import { setBotLogin } from "./utils/isPullfrog.ts";
 import { startKeylessAuth } from "./utils/keylessAuth.ts";
 import {
+  learningsWithheld,
   persistLearnings,
   persistXrepoLearnings,
+  recordLearningsRead,
   seedLearningsFile,
   seedXrepoLearningsFile,
+  trackLearningsReads,
 } from "./utils/learnings.ts";
 import { describeSetupFailure, executeLifecycleHook } from "./utils/lifecycle.ts";
 import { buildModelAccessError, decideModelAccess } from "./utils/modelAccess.ts";
@@ -806,31 +809,40 @@ export async function main(): Promise<MainResult> {
     // consumers (`persistLearnings`, agent harnesses, `resolveInstructions`)
     // all treat undefined as "no learnings affordance this run".
     toolState.learningsLocked = isOutsideAuthor(payload.event) || isOutsideThread(payload.event);
-    try {
-      const learningsPath = await seedLearningsFile({
-        tmpdir,
-        current: runContext.repoSettings.learnings,
-      });
-      toolState.learningsFilePath = learningsPath;
-      // file on disk is the verbatim DB body, so the seed used for
-      // change-detection is just `current ?? ""` (trimmed). persistLearnings
-      // byte-compares against the trimmed read-back to skip no-op PATCHes.
-      toolState.learningsSeed = (runContext.repoSettings.learnings ?? "").trim();
-      log.info(
-        `» learnings seeded at ${learningsPath} (existing=${runContext.repoSettings.learnings ? "yes" : "no"})`
-      );
-      const ctxForExit = toolContext;
-      onExitSignal(() => persistLearnings(ctxForExit));
-    } catch (err) {
-      log.warning(
-        `» learnings seed failed: ${err instanceof Error ? err.message : String(err)} — continuing without learnings file`
-      );
+    if (learningsWithheld(payload)) {
+      log.info("» learnings: withheld (rollout no-learnings)");
+    } else {
+      try {
+        const learningsPath = await seedLearningsFile({
+          tmpdir,
+          current: runContext.repoSettings.learnings,
+        });
+        toolState.learningsFilePath = learningsPath;
+        // file on disk is the verbatim DB body, so the seed used for
+        // change-detection is just `current ?? ""` (trimmed). persistLearnings
+        // byte-compares against the trimmed read-back to skip no-op PATCHes.
+        toolState.learningsSeed = (runContext.repoSettings.learnings ?? "").trim();
+        toolState.learningsReads = trackLearningsReads({
+          path: learningsPath,
+          body: runContext.repoSettings.learnings ?? "",
+          headings: runContext.repoSettings.learningsHeadings,
+        });
+        log.info(
+          `» learnings seeded at ${learningsPath} (existing=${runContext.repoSettings.learnings ? "yes" : "no"})`
+        );
+        const ctxForExit = toolContext;
+        onExitSignal(() => persistLearnings(ctxForExit));
+      } catch (err) {
+        log.warning(
+          `» learnings seed failed: ${err instanceof Error ? err.message : String(err)} — continuing without learnings file`
+        );
+      }
     }
 
     // on --xrepo runs, seed the org-level cross-repo learnings tmpfile too.
     // same lifecycle as repo learnings (read at startup, agent-editable,
     // persisted at end), but org-scoped and only present cross-repo.
-    if (payload.xrepo) {
+    if (payload.xrepo && !learningsWithheld(payload)) {
       try {
         const xrepoPath = await seedXrepoLearningsFile({
           tmpdir,
@@ -1063,6 +1075,7 @@ export async function main(): Promise<MainResult> {
       onActivityTimeout: onInnerActivityTimeout,
       onTurnRecovered,
       onToolUse: (event) => {
+        recordLearningsRead(toolState, event);
         const wasTracked = recordDiffReadFromToolUse({
           state: primaryRepoState(toolState).diffCoverage,
           toolName: event.toolName,

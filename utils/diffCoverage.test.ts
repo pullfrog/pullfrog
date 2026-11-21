@@ -16,7 +16,7 @@ const toc = `## Files (2)
 const tocEntries = parseDiffTocEntries({ toc });
 
 describe("diff coverage line checker", () => {
-  it("treats Read offsets as zero based", () => {
+  it("treats a Read offset of 0 as the first line", () => {
     const state = createDiffCoverageState({
       diffPath,
       totalLines: 30,

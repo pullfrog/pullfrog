@@ -486,7 +486,7 @@ export function buildLearningsSection(ctx: {
   if (!ctx.filePath) return "";
   // intro is neutral about whether content exists so an empty fresh-repo
   // file doesn't open with "accumulated by previous agent runs" (false).
-  const intro = `The repo-level learnings file at \`${ctx.filePath}\` holds durable context (test commands, conventions, gotchas, architecture notes) maintained across runs.`;
+  const intro = `The repo-level learnings file at \`${ctx.filePath}\` holds durable context (test commands, conventions, gotchas, architecture notes) maintained across runs. If a bullet proves wrong or stale while you work, fix or delete it in the file then.`;
   const tocBody =
     ctx.headings.length === 0
       ? "(no headings yet — the file is empty or contains a flat list. read the whole file if it has content. during the post-run reflection turn, structure it with `## ` / `### ` headings so future runs can read targeted ranges.)"

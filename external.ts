@@ -429,7 +429,7 @@ export interface PayloadRouting {
 export type RouterSource = "jev" | "scorer" | "heuristic" | "fixed";
 
 /** a rollout the server can assign a run to (`utils/rollouts.ts`). see wiki/rollouts.md. */
-export type Rollout = "opencode-v2" | "opencode-v1" | "codenav";
+export type Rollout = "opencode-v2" | "opencode-v1" | "codenav" | "no-learnings";
 
 // writeable payload type for building payloads
 export interface WriteablePayload {

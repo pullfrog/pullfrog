@@ -24,6 +24,11 @@
  * tight byte ceiling. 100k holds ~400-500 short bullets. */
 export const MAX_LEARNINGS_LENGTH = 100_000;
 
+/** past this size the reflection turn must shrink the file before adding to it. half the cap,
+ * because a file that reaches the cap loses its tail on every write: 310 repos sat there, where
+ * 89% of additions did not survive to the next run. see wiki/learnings.md. */
+export const LEARNINGS_BUDGET = 50_000;
+
 /** truncate at the last newline boundary before `cap` so we don't leave
  * a partial line at the tail (a half-truncated `## Headi` confuses the
  * server's next-seed TOC parse and shrinks visible structure). falls

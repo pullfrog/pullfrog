@@ -4,6 +4,7 @@ import { LIFECYCLE_HOOK_TIMEOUT_MS } from "../lifecycle.ts";
 import { NON_COMMITTING_MODES } from "../modes.ts";
 import type { ToolState } from "../toolState.ts";
 import { log } from "../utils/cli.ts";
+import { LEARNINGS_BUDGET } from "../utils/learningsTruncate.ts";
 import { $ } from "../utils/shell.ts";
 import {
   SPAWN_ACTIVITY_TIMEOUT_CODE,
@@ -422,7 +423,12 @@ export function buildReflectionPrompt(ctx: AgentRunContext): string | undefined 
   if (!shouldRunReflection(toolState.selectedMode) || toolState.learningsLocked) return undefined;
   const parts: string[] = [];
   if (toolState.learningsFilePath) {
-    parts.push(buildLearningsReflectionPrompt(toolState.learningsFilePath));
+    parts.push(
+      buildLearningsReflectionPrompt({
+        filePath: toolState.learningsFilePath,
+        seedLength: toolState.learningsSeed?.length ?? 0,
+      })
+    );
   }
   if (toolState.xrepoLearningsFilePath) {
     parts.push(buildXrepoLearningsReflectionPrompt(toolState.xrepoLearningsFilePath));
@@ -436,6 +442,7 @@ export function buildReflectionPrompt(ctx: AgentRunContext): string | undefined 
     );
     return undefined;
   }
+  toolState.learningsReflected = true;
   return parts.join("\n\n---\n\n");
 }
 
@@ -462,39 +469,31 @@ export function buildReflectionPrompt(ctx: AgentRunContext): string | undefined 
  *  - sections growing into giant flat lists with no internal structure,
  *    forcing future runs to read kilobytes to find one fact
  *
- * single litmus delivered in the prompt: "would a future run on this repo
- * do its work better because this bullet exists?". tool-quirk workarounds
- * are explicitly allowed when the agent burned calls discovering the
- * quirk this run — recording the workaround prevents next run from
- * repeating the waste. tradeoff: the same quirk gets duplicated across
- * repos, so when a quirk is fixed upstream in tool descriptions the
- * per-repo bullets go stale and we have no batch-invalidation path.
+ * the litmus was "would a future run on this repo do its work better because
+ * this bullet exists?" until a fleet audit (wiki/learnings.md) found it too
+ * easy to pass: 76% of reviews added bullets and almost none removed any. it
+ * now asks what the run would have been saved, defaults to changing nothing,
+ * takes nothing on a thread's say-so, and refuses tool-quirk workarounds,
+ * which were allowed and reached 15,621 bullets that no fix to the tool could
+ * retire. a file over `LEARNINGS_BUDGET` gets the shrink-first opening.
  */
-function buildLearningsReflectionPrompt(filePath: string): string {
+function buildLearningsReflectionPrompt(params: { filePath: string; seedLength: number }): string {
+  const opening =
+    params.seedLength > LEARNINGS_BUDGET
+      ? `REFLECTION — the learnings file is ${params.seedLength} chars, over its ${LEARNINGS_BUDGET}-char budget, so leave it shorter than you found it. work only on the sections you read this run, or on the longest one if you read none, and leave the rest as they are: delete bullets a future run can read straight off the code, bullets about one PR or about Pullfrog's own tools, and anything this run showed to be stale or wrong, and merge the ones that overlap.`
+      : `REFLECTION — before you finish: did this run surface something about this repo that would have saved it a failed command, a wrong turn or a long search, and that a future run cannot read straight off the files it will have open anyway? most runs do not: reply "done" and stop.`;
   return [
-    `REFLECTION — before you finish, think back over this task: did you discover anything about this repo's setup, test commands, conventions, or patterns that is high-confidence and would reliably help future runs?`,
+    opening,
     "",
-    `the rolling learnings file is at \`${filePath}\`. read it first if you haven't already, then edit it in place using your native file tools. the server reads this file at end-of-run and persists any changes — there is no tool to call.`,
+    `the learnings file is at \`${params.filePath}\`. read the section you would change, then edit it in place with your native file tools. it is saved when the run ends; there is no tool to call.`,
     "",
-    `structure:`,
-    `- markdown hierarchy: \`## \` for top-level themes, \`### \` and deeper for sub-themes when a section grows. there is no fixed taxonomy — choose headings that fit THIS repo (e.g. for one repo \`## Migrations\` / \`## Local dev\` may make sense; for another, \`## API quirks\` / \`## Failure modes\`).`,
-    `- **no section over ~300 lines.** when a section is approaching that, split it: introduce \`### \` subsections grouping related bullets, or hoist a coherent group into a new top-level \`## \` section. granular sections mean future runs read targeted line ranges instead of slurping the whole file. this is the most important hygiene rule on long-lived repos.`,
-    `- if you find a flat unstructured list (legacy content from before this format), restructure it: read it, group related bullets, rewrite the file with \`## \` / \`### \` headings around them. don't preserve bad structure — fix it.`,
+    `- add only what you verified this run, in the code or by running it: never a review finding, or a claim from a PR, issue or review thread, on its say-so.`,
+    `- nothing about Pullfrog's own tools or this runner: that is the same in every repo.`,
+    `- a bullet this run showed to be wrong or stale: fix or delete it. a bullet already there on the same topic: edit it instead of adding a second.`,
+    `- one fact per \`- \` line, ≤ 240 chars, under \`## \` / \`### \` headings that fit this repo. split a section before it passes ~300 lines.`,
+    `- no PR, review, commit or branch refs, dates, version pins or line numbers. state the rule directly.`,
     "",
-    `the only test: would a future run on this repo do its work better because this bullet exists? useful for future runs in this repo — prevent wasted tool calls, rabbit holes, and mistakes.`,
-    "",
-    `bullet hygiene:`,
-    `- one fact per line starting with \`- \`, ≤ 240 chars.`,
-    `- only add when high-confidence, broadly useful, evergreen.`,
-    `- prune wrong or low-signal bullets; merge overlaps; dedupe across sections.`,
-    "",
-    `don't anchor facts to repo state that will move: PR / review / commit / branch refs, dates, version pins, line numbers. state the rule directly. if it needs the anchor to be load-bearing, it isn't evergreen.`,
-    "",
-    `tool-quirk bullets are fine when you burned calls discovering the quirk and a future run would repeat them. write the workaround, not the war story.`,
-    "",
-    `if you have nothing substantively new to add AND the existing entries still look healthy and well-structured, leave the file alone — just reply "done" and stop. silence is a valid outcome.`,
-    "",
-    `do NOT call \`set_output\` during this turn. the task's result output was already set on the previous turn; this reflection is a meta-turn for the learnings file only. ignore any standing instruction to call \`set_output\` "when done" — it does not apply here.`,
+    `do NOT call \`set_output\` during this turn: the task's output is already set, and any standing instruction to call it "when done" does not apply here.`,
   ].join("\n");
 }
 
