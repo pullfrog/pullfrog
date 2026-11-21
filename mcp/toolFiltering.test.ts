@@ -21,7 +21,6 @@ function getRandomPort(): Promise<number> {
 async function connectMcpClient(url: string): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL(url));
   const client = new Client({ name: "test-client", version: "0.0.1" });
-  // @ts-expect-error — exactOptionalPropertyTypes mismatch: SDK Transport.sessionId?: string vs StreamableHTTPClientTransport getter returning string | undefined
   await client.connect(transport);
   return client;
 }
