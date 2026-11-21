@@ -389,6 +389,12 @@ export function isDegenerateReviewBody(body: string): boolean {
 export const MAX_CONSECUTIVE_NOOP_SUBMISSIONS = 4;
 
 /**
+ * refusals of an inline comment with no text before the tool drops it and posts the rest. models
+ * that kept their comments fixed them within 7 tries; one that never did resent ~450 times (#1728).
+ */
+export const MAX_EMPTY_COMMENT_REFUSALS = 8;
+
+/**
  * decide whether to skip a review submission before any network call.
  *
  * GitHub rejects `event: "COMMENT"` reviews with no body and no inline comments
@@ -452,9 +458,7 @@ export function formatDroppedCommentsNote(dropped: DroppedComment[]): string {
   const remainder = dropped.length - shown.length;
   if (remainder > 0) shown.push(`- …and ${remainder} more dropped comment(s) not shown`);
   return (
-    `\n\n---\n\n` +
-    `**Note:** ${dropped.length} inline comment(s) dropped because they did not anchor to lines inside the PR diff:\n` +
-    shown.join("\n")
+    `\n\n---\n\n` + `**Note:** ${dropped.length} inline comment(s) dropped:\n` + shown.join("\n")
   );
 }
 
@@ -509,7 +513,7 @@ export const CreatePullRequestReview = type({
       )
       .optional(),
     body: type.string
-      .describe("Explanatory comment text (optional if suggestion is provided)")
+      .describe("a string, required unless `suggestion` is a string. Explanatory comment text.")
       .optional(),
     // `null` means "no suggestion" — the shape models reach for when they are
     // filling every key of a schema. rejecting it re-emitted the whole review
@@ -565,10 +569,15 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
         // with an empty message and the agent resends the same payload blind (#1628).
         const emptyComments = comments.filter((c) => !c.body?.trim() && c.suggestion == null);
         if (emptyComments.length > 0) {
-          const where = emptyComments.map((c) => `${c.path}:${c.line}`).join(", ");
-          throw new Error(
-            `inline comment(s) at ${where} have no \`body\` and no \`suggestion\`. each needs non-empty \`body\` text or a \`suggestion\`. nothing was posted; resend with the comment text filled in.`
-          );
+          ctx.toolState.emptyCommentRefusals += 1;
+          if (ctx.toolState.emptyCommentRefusals <= MAX_EMPTY_COMMENT_REFUSALS) {
+            const where = emptyComments.map((c) => `${c.path}:${c.line}`).join(", ");
+            throw new Error(
+              `inline comment(s) at ${where} have no \`body\` and no \`suggestion\`. each needs non-empty \`body\` text or a \`suggestion\`. nothing was posted; resend with the comment text filled in.`
+            );
+          }
+          log.info(`dropping ${emptyComments.length} inline comment(s) with no text`);
+          comments = comments.filter((c) => !emptyComments.includes(c));
         }
         if (body) body = fixDoubleEscapedString(body);
 
@@ -658,7 +667,8 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
           approved: approved ?? false,
           requestChanges: request_changes ?? false,
           body,
-          hasComments: comments.length > 0,
+          // a dropped comment still posts as the note naming it, which is what ends the resend loop.
+          hasComments: comments.length > 0 || emptyComments.length > 0,
           // a self-authored approve downgrades to COMMENT (GitHub blocks a
           // self-APPROVE), so treat it as non-binding here — an empty self-
           // approve is then skipped (the verdict is still recorded above)
@@ -758,14 +768,20 @@ export function CreatePullRequestReviewTool(ctx: ToolContext) {
         // pre-validate inline comments against the current PR diff. drop any
         // comment that does not anchor to a line inside a hunk, rather than
         // letting GitHub 422 and sink the whole review.
-        let droppedComments: DroppedComment[] = [];
+        const droppedComments: DroppedComment[] = emptyComments.map((c) => ({
+          path: c.path,
+          line: c.line,
+          startLine: c.start_line ?? undefined,
+          side: c.side ?? "RIGHT",
+          reason: "no comment text",
+        }));
         if (reviewComments.length > 0) {
           const commentableMap = await buildCommentableMap(ctx, pull_number);
           const validation = validateInlineComments(reviewComments, commentableMap);
-          droppedComments = validation.dropped;
-          if (droppedComments.length > 0) {
+          droppedComments.push(...validation.dropped);
+          if (validation.dropped.length > 0) {
             log.info(
-              `dropping ${droppedComments.length}/${reviewComments.length} inline comment(s) that do not anchor to PR diff lines`
+              `dropping ${validation.dropped.length}/${reviewComments.length} inline comment(s) that do not anchor to PR diff lines`
             );
           }
           // always reassign so all-dropped reviews leave params.comments empty

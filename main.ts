@@ -1129,7 +1129,7 @@ export async function main(): Promise<MainResult> {
     }
 
     // validate this before writing job summary to avoid masking the error
-    if (outputSchema && !toolState.output) {
+    if (result.success && outputSchema && !toolState.output) {
       throw new Error(
         "output_schema was provided but agent did not call set_output — structured output is required"
       );

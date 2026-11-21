@@ -156,6 +156,9 @@ export interface ToolState {
   // model that cannot serialize `body` fails loudly instead of looping until it
   // probes the tool with placeholder text. reset by any successful submission.
   noopReviewSubmissions: number;
+  // create_pull_request_review calls refused for an inline comment with no text,
+  // bounded by MAX_EMPTY_COMMENT_REFUSALS.
+  emptyCommentRefusals: number;
   backgroundProcesses: Map<string, BackgroundProcess>;
   // files a tool wrote for the agent and named in its result (diffs, CI logs, review threads,
   // spilled git output). shell-less codex can read these and the checkouts, nothing else.
@@ -339,6 +342,7 @@ export function initToolState(params: InitToolStateParams): ToolState {
     hadProgressComment: !!resolved,
     prepushFailureCount: 0,
     noopReviewSubmissions: 0,
+    emptyCommentRefusals: 0,
     backgroundProcesses: new Map(),
     handedOver: new Set(),
     usageEntries: [],
