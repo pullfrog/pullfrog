@@ -6,9 +6,9 @@
  *   computer use, plugins, lifecycle hooks) are turned off in `config.toml`'s
  *   `[features]` table. shell goes through the MCP `shell` tool, which runs
  *   with a filtered, secret-free env.
- * - subagent fan-out (`multi_agent*`) is off: codex exposes no pre-tool hook
- *   carrying a subagent marker, so there is no way to reproduce the
- *   mutating-MCP-tool gate the other two harnesses enforce on subagents. an
+ * - subagent fan-out (`multi_agent*`) is off: the mutating-MCP-tool gate the
+ *   other two harnesses enforce on subagents would need codex's `hooks`
+ *   feature, which stays off (see wiki/codex-agent.md). an
  *   ungated subagent could call `checkout_pr` / `push_branch` behind the
  *   orchestrator's back — see action/agents/subagentToolGates.ts.
  * - the sandbox stays ON (`approval_policy = "never"` rather than
@@ -31,10 +31,22 @@
  * settings also ride as `-c` flags (`securityOverrideFlags`) as defence in
  * depth, since those outrank every layer and cost nothing.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { ThreadEvent, ThreadItem } from "@openai/codex-sdk";
+import * as yes from "yes";
 import { pullfrogMcpName } from "../external.ts";
 import {
   getModelProvider,
@@ -53,6 +65,7 @@ import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { resolveRunEffort } from "../utils/runEffort.ts";
 import { saveSecretState } from "../utils/secretCommands.ts";
 import { filterEnv, proxyEnv } from "../utils/secrets.ts";
+import { addSkill, installBundledSkills } from "../utils/skills.ts";
 import {
   DEFAULT_MAX_RETAINED_BYTES,
   SPAWN_ACTIVITY_TIMEOUT_CODE,
@@ -107,6 +120,28 @@ async function installCodexCli(): Promise<string> {
     executablePath: `node_modules/@openai/codex-${process.platform}-${process.arch}/vendor/${target}/bin/${binary}`,
     installDependencies: true,
   });
+}
+
+/** the slugs the pinned CLI ships in its catalog. an empty `CODEX_HOME` keeps every credential out. */
+async function readCodexCatalog(): Promise<string[]> {
+  const cliPath = await installCodexCli();
+  const codexHome = mkdtempSync(join(tmpdir(), "pullfrog-codex-catalog-"));
+  const result = await spawn({
+    cmd: cliPath,
+    args: ["debug", "models", "--bundled"],
+    env: { PATH: process.env.PATH ?? "", HOME: codexHome, CODEX_HOME: codexHome },
+  });
+  rmSync(codexHome, { recursive: true, force: true });
+  const catalog: { models: { slug: string }[] } = JSON.parse(result.stdout);
+  return catalog.models.map((model) => model.slug);
+}
+
+/** false too when the CLI cannot be installed or read: opencode can still serve the run. */
+export async function codexKnowsModel(specifier: string): Promise<boolean> {
+  const slugs = await yes.try(readCodexCatalog());
+  if (!(slugs instanceof Error)) return slugs.includes(stripProviderPrefix(specifier));
+  log.warning(`» couldn't read the bundled codex catalog: ${slugs.message}`);
+  return false;
 }
 
 // ── config ─────────────────────────────────────────────────────────────────────
@@ -549,6 +584,37 @@ function writeCodexConfig(params: {
   log.info(`» codex config: sandbox=${sandboxMode}, nativeShell=${shellEnabled}`);
 }
 
+/**
+ * The bundled skills, plus the repo's `.claude/skills`, which codex does not scan. They live in the
+ * tmpdir because codex reads a skill through the MCP shell, whose mount namespace hides `CODEX_HOME`;
+ * the link resolves, so its catalog names the tmpdir path. Like `repoMcpApprovals`, this runs before
+ * any PR is checked out, so it copies the default branch.
+ */
+function installCodexSkills(ctx: AgentRunContext, codexHome: string): void {
+  const home = join(ctx.tmpdir, "codex-skills");
+  const skillsDir = join(home, ".agents", "skills");
+  mkdirSync(skillsDir, { recursive: true });
+  addSkill({
+    ref: `vercel-labs/agent-browser@v${getDevDependencyVersion("agent-browser")}`,
+    skill: "agent-browser",
+    env: { HOME: home, CODEX_HOME: join(home, ".agents") },
+    agent: "codex",
+  });
+  installBundledSkills({ home });
+  const repoSkills = join(process.cwd(), ".claude", "skills");
+  const entries = existsSync(repoSkills) ? readdirSync(repoSkills, { withFileTypes: true }) : [];
+  for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+    cpSync(join(repoSkills, entry.name), join(skillsDir, entry.name), {
+      recursive: true,
+      force: false,
+      verbatimSymlinks: true,
+    });
+  }
+  const link = join(codexHome, "skills");
+  rmSync(link, { recursive: true, force: true });
+  symlinkSync(skillsDir, link, "junction");
+}
+
 // ── runner ─────────────────────────────────────────────────────────────────────
 
 type RunParams = {
@@ -607,9 +673,13 @@ const CODEX_MODEL_PRICING: Record<
   "gpt-6-astra": { input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
   "gpt-6.2-sol": { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
   "gpt-6.1-sol": { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
+  "gpt-6-sol": { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 10 },
   "gpt-6-luna": { input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
   "gpt-6.1-terra": { input: 1, cacheRead: 0.05, cacheWrite: 1.25, output: 5 },
+  "gpt-5.6-sol": { input: 4, cacheRead: 0.4, cacheWrite: 5, output: 20 },
   "gpt-5.6-terra": { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 12 },
+  "gpt-5.6-luna": { input: 0.2, cacheRead: 0.02, cacheWrite: 0.25, output: 1.2 },
+  "gpt-5.5": { input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 30 },
 };
 
 /** modelled USD for a codex run; `undefined` when we hold no price for the model. */
@@ -911,6 +981,7 @@ export const codex = agent({
       // valid only at ChatGPT's own backend
       gatewayUrl: codexHomeAuth ? undefined : getProviderGatewayUrl("openai/"),
     });
+    installCodexSkills(ctx, codexHome);
 
     if (codexHomeAuth) {
       // the CLI rewrites auth.json in place when the chain rotates; the post

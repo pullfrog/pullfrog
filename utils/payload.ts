@@ -83,9 +83,6 @@ export const JsonPayload = type({
   // against a newer action across a rolling deploy.
   "checkRun?": type({ id: "string" }).or("undefined"),
   "generateSummary?": "boolean | undefined",
-  // optional so a payload from a pre-canary server build still parses against a
-  // newer action across a rolling deploy.
-  "codexArm?": "boolean | undefined",
   "rollouts?": "string[] | undefined",
 });
 
@@ -412,7 +409,6 @@ export function resolvePayload(
     progressComment: jsonPayload?.progressComment,
     checkRun: jsonPayload?.checkRun,
     generateSummary: jsonPayload?.generateSummary,
-    codexArm: jsonPayload?.codexArm,
     rollouts: jsonPayload?.rollouts,
     // the `codenav` rollout, which `PULLFROG_CODENAV=1|0` forces either way for e2e runs. never
     // without a shell to run it in

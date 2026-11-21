@@ -12,6 +12,13 @@ const CONFIG_FILES = [
   ".opencode/opencode.jsonc",
 ];
 
+/** the checkout configures OpenCode itself, which no other harness would honor. */
+export function hasOpenCodeSetup(cwd: string): boolean {
+  return (
+    existsSync(join(cwd, ".opencode")) || CONFIG_FILES.some((file) => existsSync(join(cwd, file)))
+  );
+}
+
 /** top-level keys only V2 reads: V1 refuses `permissions` and silently ignores the rest. */
 const V2_CONFIG_KEYS = [
   "permissions",

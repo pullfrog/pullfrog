@@ -56,10 +56,10 @@ export interface RepoSettings {
   // the `isAutonomousMaintenanceEnabled()` kill switch), so the runtime treats it
   // as the final "may auto-merge" verdict. see autoMergeAfterApprove.
   autoMergeEnabled: boolean;
-  // opt-in for the EXPERIMENTAL codex harness, already ANDed server-side with
-  // the `isCodexAgentEnabled()` kill switch — so the runtime treats it as the
-  // final "may route to codex" verdict. see resolveAgent + wiki/codex-agent.md.
-  codexAgent: boolean;
+  // the account's codex-harness toggle, already ANDed server-side with the
+  // `isCodexAgentEnabled()` kill switch. runners up to 0.1.141 read the old
+  // `codexAgent` key, so they never see the default-on verdict. see wiki/codex-agent.md.
+  codexHarness: boolean;
   signedCommits: boolean;
   repoIntelligence: boolean;
   // the App's bot user, `<slug>[bot]` and its numeric id: the git author for
@@ -159,7 +159,7 @@ const defaultSettings: RepoSettings = {
   prApproveEnabled: false,
   reviewDrafts: false,
   autoMergeEnabled: false,
-  codexAgent: false,
+  codexHarness: false,
   signedCommits: false,
   repoIntelligence: false,
   botLogin: "pullfrog[bot]",

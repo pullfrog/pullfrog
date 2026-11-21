@@ -429,7 +429,7 @@ export interface PayloadRouting {
 export type RouterSource = "jev" | "scorer" | "heuristic" | "fixed";
 
 /** a rollout the server can assign a run to (`utils/rollouts.ts`). see wiki/rollouts.md. */
-export type Rollout = "opencode-v2" | "opencode-v1" | "codenav" | "no-learnings";
+export type Rollout = "opencode-v2" | "opencode-v1" | "codenav" | "no-learnings" | "no-codex";
 
 // writeable payload type for building payloads
 export interface WriteablePayload {
@@ -513,13 +513,6 @@ export interface WriteablePayload {
   checkRun?: { id: string } | undefined;
   /** when true, seed the PR summary tmpfile + persist edits at run end */
   generateSummary?: boolean | undefined;
-  /**
-   * the codex canary assigned this run to the EXPERIMENTAL codex harness. rolled
-   * once server-side at reservation and stamped on the run row, so the row and the
-   * run always agree on which arm this was. ORed with the account opt-in in
-   * `resolveAgent` — it widens who reaches codex, never narrows it.
-   */
-  codexArm?: boolean | undefined;
   /**
    * the rollouts this run was assigned to, drawn once server-side at reservation and stamped on the
    * run row. a name this build does not know is ignored, so the server may run ahead of a release.

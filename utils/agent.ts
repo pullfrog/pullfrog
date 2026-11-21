@@ -1,13 +1,19 @@
+import { codexKnowsModel } from "../agents/codex.ts";
 import type { Agent } from "../agents/index.ts";
 import { agents } from "../agents/index.ts";
+import { hasOpenCodeSetup } from "../agents/opencodeGeneration.ts";
+import type { Rollout, ShellPermission } from "../external.ts";
 import {
   AZURE_DEPLOYMENT_ENV,
   AZURE_PROVIDER,
   BEDROCK_MODEL_ID_ENV,
   CLAUDE_CODE_ONLY_CREDENTIALS,
+  getModelEnvVars,
+  getModelManagedCredentials,
   getModelProvider,
   isBedrockAnthropicId,
   isVertexAnthropicId,
+  modelAliases,
   OPENAI_COMPATIBLE_FIELDS,
   OPENAI_COMPATIBLE_PROVIDER,
   openAICompatibleEnv,
@@ -183,21 +189,49 @@ export function resolveModel(ctx: { slug?: string | undefined }): string | undef
   return undefined;
 }
 
-export function resolveAgent(ctx: {
+type ResolveAgentInput = {
   model?: string | undefined;
   /** set on router / OSS runs, where the model is served by OpenRouter. those
    * pin no `model`, so without this the auto-select branches below would read
    * a stored Anthropic or OpenAI credential as the routing signal for a run
    * that isn't using it. */
   proxyModel?: string | undefined;
-  /** the account opted in to the EXPERIMENTAL codex harness, already ANDed
-   * server-side with the global kill switch. false — the default for every
-   * account — routes OpenAI models to opencode exactly as before the harness
-   * existed. see wiki/codex-agent.md. */
+  /** the server's verdict on the codex harness: the account toggle ANDed with the
+   * global kill switch. false, as on a degraded run-context, routes OpenAI models
+   * to opencode. see wiki/codex-agent.md. */
   codexAgent?: boolean | undefined;
-}): Agent {
+  /** the run's effective shell, after any downgrade for a runner with no sandbox. */
+  shell?: ShellPermission | undefined;
+};
+
+/**
+ * whether codex can do this run's job. on Linux it changes files only through the MCP shell
+ * (openai/codex#29908), and a checkout's own OpenCode setup means nothing to another harness.
+ */
+function canRunCodex(ctx: ResolveAgentInput): boolean {
+  if (!ctx.codexAgent || !hasCodexAuth()) return false;
+  if (process.platform === "linux" && ctx.shell === "disabled") return false;
+  return !hasOpenCodeSetup(process.cwd());
+}
+
+/** a credential for anything but OpenAI, which gives opencode's auto-select a real choice. */
+function hasNonOpenAIAuth(): boolean {
+  return (
+    hasClaudeCodeAuth() ||
+    modelAliases.some(
+      (alias) =>
+        alias.provider !== "openai" &&
+        !alias.routing &&
+        [...getModelEnvVars(alias.resolve), ...getModelManagedCredentials(alias.resolve)].some(
+          hasEnvVar
+        )
+    )
+  );
+}
+
+export function resolveAgent(ctx: ResolveAgentInput): Agent {
   // 1. explicit env var override (escape hatch). deliberately NOT gated on the
-  //    opt-in: an operator who sets PULLFROG_AGENT in their own workflow is
+  //    server's verdict: an operator who sets PULLFROG_AGENT in their own workflow is
   //    asking for a specific harness, which is what the escape hatch is for.
   const envAgent = process.env.PULLFROG_AGENT?.trim();
   if (envAgent) {
@@ -231,7 +265,7 @@ export function resolveAgent(ctx: {
     try {
       const provider = getModelProvider(ctx.model);
       if (provider === "anthropic" && hasClaudeCodeAuth()) return agents.claude;
-      if (provider === "openai" && ctx.codexAgent && hasCodexAuth()) return agents.codex;
+      if (provider === "openai" && canRunCodex(ctx)) return agents.codex;
     } catch {
       // invalid model format — fall through
     }
@@ -246,14 +280,34 @@ export function resolveAgent(ctx: {
   //    this is the last point at which the credential can pick the harness that
   //    matches it. a plain API key stays on opencode, whose ranking across
   //    providers beats guessing from whichever env var we tested first — which is
-  //    also why a Codex/OpenAI credential yields to any Anthropic one.
+  //    also why a Codex/OpenAI credential yields to any other provider's.
   if (!ctx.model) {
     if (!hasEnvVar("ANTHROPIC_API_KEY") && CLAUDE_CODE_ONLY_CREDENTIALS.some(hasEnvVar)) {
       return agents.claude;
     }
-    if (ctx.codexAgent && hasCodexAuth() && !hasClaudeCodeAuth()) return agents.codex;
+    if (canRunCodex(ctx) && !hasNonOpenAIAuth()) return agents.codex;
   }
 
   // 7. default: OpenCode (universal, supports all providers)
+  return agents.opencode;
+}
+
+/** the server's codex verdict, less a run the `no-codex` rollout holds on opencode. see wiki/rollouts.md. */
+export function codexAllowed(input: { granted: boolean; rollouts: readonly string[] }): boolean {
+  if (!input.granted || !input.rollouts.includes("no-codex" satisfies Rollout))
+    return input.granted;
+  log.info("» codex: withheld (rollout no-codex)");
+  return false;
+}
+
+/**
+ * `resolveAgent`, plus the one check that needs the codex binary: a ChatGPT plan refuses a model
+ * newer than the pinned CLI, so that model runs on opencode until a release bumps the pin.
+ */
+export async function resolveRunAgent(ctx: ResolveAgentInput): Promise<Agent> {
+  const agent = resolveAgent(ctx);
+  if (agent.name !== "codex" || !ctx.model || process.env.PULLFROG_AGENT?.trim()) return agent;
+  if (await codexKnowsModel(ctx.model)) return agent;
+  log.info(`» the bundled codex doesn't list ${ctx.model}, so it runs on opencode`);
   return agents.opencode;
 }

@@ -22,7 +22,13 @@ import {
   createProcessOutputActivityTimeout,
   DEFAULT_ACTIVITY_CHECK_INTERVAL_MS,
 } from "./utils/activity.ts";
-import { activateOpenAICompatibleSet, resolveAgent, resolveModel } from "./utils/agent.ts";
+import {
+  activateOpenAICompatibleSet,
+  codexAllowed,
+  resolveAgent,
+  resolveModel,
+  resolveRunAgent,
+} from "./utils/agent.ts";
 import {
   buildRejectedCredentialError,
   buildTrialSpentError,
@@ -485,10 +491,15 @@ export async function main(): Promise<MainResult> {
     await using gitAuthServer = await startGitAuthServer(tmpdir);
     setGitAuthServer(gitAuthServer);
 
+    const codexAgent = codexAllowed({
+      granted: runContext.repoSettings.codexHarness,
+      rollouts: payload.rollouts ?? [],
+    });
     let resolvedModel = resolveModel({ slug: payload.model });
     if (!resolvedModel && !payload.proxyModel && runContext.credentialAccess?.candidates.length) {
       resolvedModel = resolvePoolModel({
-        codexAgent: runContext.repoSettings.codexAgent || payload.codexArm === true,
+        codexAgent,
+        shell: payload.shell,
       });
     }
     let poolSelected =
@@ -566,17 +577,15 @@ export async function main(): Promise<MainResult> {
     }
     vertexCredentials = materializeVertexCredentials({ model: resolvedModel });
 
-    let agent = resolveAgent({
+    let agent = await resolveRunAgent({
       model: resolvedModel,
       proxyModel: payload.proxyModel,
-      // the account opt-in and the canary arm are both admissions to codex, so
-      // they OR: an account that opted in explicitly always gets it, and the
-      // canary widens the pool without ever demoting a run that already had it.
-      codexAgent: runContext.repoSettings.codexAgent || payload.codexArm === true,
+      codexAgent,
+      shell: payload.shell,
     });
 
     // record the harness that actually ran. `agent` is what the run DID;
-    // `WorkflowRun.codexArm` is what it was ASSIGNED — comparing arms on the
+    // `WorkflowRun.rolloutsAssigned` is what it was ASSIGNED — comparing arms on the
     // assignment is what keeps runs that die before this PATCH in the analysis.
     toolState.agent = agent.name;
 
@@ -659,7 +668,8 @@ export async function main(): Promise<MainResult> {
         agent = resolveAgent({
           model: resolvedModel,
           proxyModel: payload.proxyModel,
-          codexAgent: runContext.repoSettings.codexAgent || payload.codexArm === true,
+          codexAgent,
+          shell: payload.shell,
         });
         toolState.agent = agent.name;
       }

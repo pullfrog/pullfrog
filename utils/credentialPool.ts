@@ -1,5 +1,6 @@
 import * as yes from "yes";
 import { autoSelectModel } from "../agents/opencodeShared.ts";
+import type { ShellPermission } from "../external.ts";
 import {
   CLAUDE_CODE_ONLY_CREDENTIALS,
   getModelEnvVars,
@@ -140,11 +141,12 @@ function discoveryModel(slug: string | undefined) {
   return resolveCliModel(value) ?? (value.includes("/") ? value : undefined);
 }
 
-export function resolvePoolModel(input: { codexAgent: boolean }) {
+export function resolvePoolModel(input: { codexAgent: boolean; shell: ShellPermission }) {
   const agent = resolveAgent({
     model: undefined,
     proxyModel: undefined,
     codexAgent: input.codexAgent,
+    shell: input.shell,
   });
   if (agent.name === "opencode") return autoSelectModel();
   const provider = agent.name === "claude" ? "anthropic" : "openai";
