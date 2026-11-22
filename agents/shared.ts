@@ -54,6 +54,11 @@ export interface PostRunIssues {
    * `MAX_POST_RUN_RETRIES`.
    */
   unsubmittedReview?: UnsubmittedReview;
+  /**
+   * the run has an `output_schema` and nothing has called `set_output`. nudged like
+   * `unsubmittedReview`; if it outlasts the retries, `main.ts` fails the run (#1733).
+   */
+  missingOutput?: true;
 }
 
 /** `ReviewOnIssue` is Review mode on an issue target, which cannot owe a pull request review. */
@@ -64,7 +69,8 @@ export function hasPostRunIssues(issues: PostRunIssues): boolean {
     issues.stopHook !== undefined ||
     issues.dirtyTree !== undefined ||
     issues.summaryStale !== undefined ||
-    issues.unsubmittedReview !== undefined
+    issues.unsubmittedReview !== undefined ||
+    issues.missingOutput !== undefined
   );
 }
 
@@ -164,6 +170,8 @@ export interface AgentRunContext {
    * guidance. null when the repo has no stop hook configured.
    */
   stopScript?: string | null | undefined;
+  /** the workflow set `output_schema`, so the run fails unless the agent calls `set_output`. */
+  outputRequired: boolean;
   /**
    * mutable per-run state shared with the MCP server (by reference). post-run
    * gates read fresh values from it after each agent attempt — `summaryFilePath`,

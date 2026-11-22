@@ -1079,6 +1079,7 @@ export async function main(): Promise<MainResult> {
       instructions,
       todoTracker,
       stopScript: runContext.repoSettings.stopScript,
+      outputRequired: outputSchema !== undefined,
       toolState,
       adoptPostedReview: adoptPostedReview.bind(null, toolContext),
       apiToken: runContext.apiToken,

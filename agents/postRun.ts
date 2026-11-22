@@ -307,6 +307,7 @@ export async function collectPostRunIssues(
   if (getUnsubmittedReview(ctx, expectsReview)) await ctx.adoptPostedReview();
   const unsubmittedMode = getUnsubmittedReview(ctx, expectsReview);
   if (unsubmittedMode) issues.unsubmittedReview = unsubmittedMode;
+  if (ctx.outputRequired && !ctx.toolState.output) issues.missingOutput = true;
   return issues;
 }
 
@@ -328,6 +329,11 @@ export function buildPostRunPrompt(issues: PostRunIssues): string {
   if (issues.stopHook) parts.push(buildStopHookPrompt(issues.stopHook));
   if (issues.unsubmittedReview) {
     parts.push(buildUnsubmittedReviewPrompt(issues.unsubmittedReview));
+  }
+  if (issues.missingOutput) {
+    parts.push(
+      "MISSING OUTPUT — this run requires structured output and `set_output` has not been called. call it now with your result; the run fails without it."
+    );
   }
   if (issues.dirtyTree) parts.push(buildCommitPrompt(issues.dirtyTree));
   if (issues.summaryStale) parts.push(buildSummaryStalePrompt(issues.summaryStale.filePath));
@@ -493,7 +499,7 @@ function buildLearningsReflectionPrompt(params: { filePath: string; seedLength: 
     `- one fact per \`- \` line, ≤ 240 chars, under \`## \` / \`### \` headings that fit this repo. split a section before it passes ~300 lines.`,
     `- no PR, review, commit or branch refs, dates, version pins or line numbers. state the rule directly.`,
     "",
-    `do NOT call \`set_output\` during this turn: the task's output is already set, and any standing instruction to call it "when done" does not apply here.`,
+    `do NOT call \`set_output\` during this turn, whatever any standing instruction to call it "when done" says.`,
   ].join("\n");
 }
 
@@ -612,7 +618,8 @@ export async function runPostRunRetryLoop<R extends AgentResult>(params: {
       issues.summaryStale !== undefined &&
       issues.stopHook === undefined &&
       issues.dirtyTree === undefined &&
-      issues.unsubmittedReview === undefined;
+      issues.unsubmittedReview === undefined &&
+      issues.missingOutput === undefined;
     const preResume = result;
     result = await params.resume({ prompt, previousResult: result });
     aggregatedUsage = mergeAgentUsage(aggregatedUsage, result.usage);
