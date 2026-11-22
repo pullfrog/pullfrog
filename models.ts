@@ -759,7 +759,7 @@ export const bundledProviders = {
         // Zen published a single rung (`max`) for K3 until 2026-10-23; it now matches OpenRouter.
         effort: ["low", "high", "max"],
         openRouterEffort: ["none", "low", "high", "max"],
-        openRouterResolve: "openrouter/moonshotai/kimi-k3",
+        openRouterResolve: "openrouter/moonshotai/kimi-k3.1-pro",
         subagentModel: "kimi-k2",
       },
       "kimi-k2": {
@@ -805,8 +805,8 @@ export const bundledProviders = {
         displayName: "Qwen Max",
         resolve: "opencode/qwen3.8-max",
         effort: ["low", "medium", "xhigh"],
-        openRouterEffort: ["minimal", "low", "medium", "high", "xhigh"],
-        openRouterResolve: "openrouter/qwen/qwen3.8-max-0902",
+        openRouterEffort: ["none", "low", "high", "xhigh"],
+        openRouterResolve: "openrouter/qwen/qwen4-max",
       },
       "qwen-flash": {
         displayName: "Qwen Flash",
@@ -1036,7 +1036,7 @@ export const bundledProviders = {
   // base URL (`https://opencode.ai/zen/go/v1`) but authenticated with the SAME
   // `OPENCODE_API_KEY`. it carries the open-weight coding models plus a couple
   // of frontier ones, four of which are served ONLY here — Zen's `/v1/models`
-  // does not list qwen3.7-plus, mimo-v2.6-pro, longcat-2.0 or hy3/hy4. (it listed
+  // does not list qwen3.7-plus, mimo-v2.6-pro, longcat-2.5 or hy3/hy4. (it listed
   // no glm-5.3* either until 2026-09, which is why `opencode/glm` trailed on
   // 5.2, and no qwen3.8-* until late 2026-09.) so for a Go subscriber this
   // provider is not a duplicate route to Zen, it is the only route to a large
@@ -1155,7 +1155,7 @@ export const bundledProviders = {
       // Meituan — Go-only, and BYOK since OpenRouter dropped every LongCat (2026-11-21).
       longcat: {
         displayName: "LongCat",
-        resolve: "opencode-go/longcat-2.0",
+        resolve: "opencode-go/longcat-2.5",
       },
       // Tencent — Go-only (0.14/0.58). Hy3 succeeds the Hunyuan 2.0 line, so the
       // generation is part of the product name the way Kimi K2/K3 is.
