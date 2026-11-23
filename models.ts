@@ -272,6 +272,7 @@ export const bundledProviders = {
         openRouterResolve: "openrouter/openai/gpt-5.4",
         fallback: "openai/gpt-sol",
       },
+      // deprecated on models.dev 2026-11-23 — folds stored pins forward to Sol.
       o3: {
         displayName: "O3",
         resolve: "openai/o3",
@@ -282,6 +283,7 @@ export const bundledProviders = {
         // than omitting the field: an absent openRouterEffort falls through to
         // `effort` and would send a rung this route rejects.
         openRouterEffort: [],
+        fallback: "openai/gpt-sol",
       },
     },
   }),
