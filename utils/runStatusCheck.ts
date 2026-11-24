@@ -83,7 +83,7 @@ export function parseCheckRunId(raw: { id: string } | null | undefined): number 
 // action package is on @octokit/rest v22 and the root project on v21, so a nominal type
 // would clash. only the two methods used here are listed.
 interface CheckRunResponse {
-  data: { id: number };
+  data: { id: number; head_sha: string };
 }
 type CheckRunStatus = "queued" | "in_progress" | "completed";
 type CheckRunOutput = { title: string; summary: string };
@@ -286,6 +286,8 @@ export async function createRunStatusCheck(params: {
  * SECOND row rather than replacing the first, so creating twice would show the PR two
  * contradictory `pullfrog` rows. (That is a real bug today — `finalizeSuccessRun` posts
  * success and a later throw posts failure, both as fresh rows.)
+ *
+ * Returns the sha the check is on, which a push during the run leaves behind the PR head.
  */
 export async function finalizeRunStatusCheck(params: {
   octokit: RunStatusCheckOctokit;
@@ -297,7 +299,7 @@ export async function finalizeRunStatusCheck(params: {
   reviewUrl?: string | undefined;
   /** the run's own final report, shown on success when nothing else carries it. */
   note?: string | undefined;
-}): Promise<void> {
+}): Promise<string> {
   const updateParams: UpdateCheckRunParams = {
     owner: params.owner,
     repo: params.repo,
@@ -314,7 +316,8 @@ export async function finalizeRunStatusCheck(params: {
     }),
   };
   if (params.detailsUrl) updateParams.details_url = params.detailsUrl;
-  await params.octokit.rest.checks.update(updateParams);
+  const updated = await params.octokit.rest.checks.update(updateParams);
+  return updated.data.head_sha;
 }
 
 /**
@@ -322,7 +325,9 @@ export async function finalizeRunStatusCheck(params: {
  *
  * The fallback for runs that never got a server-created check to update: a rolling
  * deploy where the dispatch payload predates `checkRun`, or a workflow invoked outside
- * Pullfrog's own dispatch path (`prompt_file`, a hand-written step).
+ * Pullfrog's own dispatch path (`prompt_file`, a hand-written step). Also the second row
+ * a review posts on a head pushed mid-run, which no backstop could close if it were left
+ * `in_progress`.
  */
 export async function createTerminalRunStatusCheck(params: {
   octokit: RunStatusCheckOctokit;

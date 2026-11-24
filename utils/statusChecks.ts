@@ -10,6 +10,7 @@ import {
   GITHUB_ACTIONS_APP_SLUG,
   parseCheckRunId,
   RUN_STATUS_CHECK_NAME,
+  type RunStatusCheckConclusion,
 } from "./runStatusCheck.ts";
 
 /**
@@ -21,6 +22,8 @@ import {
  *     see `runStatusCheck.ts` for why a second create would leave two contradictory rows.
  *     the terminal-create fallback covers a payload with no `checkRun` (older server
  *     build mid-rolling-deploy, or a workflow driven outside Pullfrog's dispatch path).
+ *     a review that took in commits pushed mid-run also posts it on the head it reviewed
+ *     (`mirrorRunStatusCheck`).
  *   - `pullfrog-approval` stays opt-in (`Repo.approvalCheck`, default off) and terminal-only:
  *     it asserts a review verdict, which only exists once a run produces one. anchored
  *     to the exact reviewed sha so a mid-run push leaves the new head unapproved until
@@ -46,7 +49,7 @@ export async function reportStatusChecks(
   const checkRunId = parseCheckRunId(ctx.payload.checkRun);
   if (checkRunId === undefined && !ctx.payload.runStatusCheck && !ctx.payload.approvalCheck) return;
 
-  const conclusion = params.runSucceeded ? "success" : "failure";
+  const conclusion: RunStatusCheckConclusion = params.runSucceeded ? "success" : "failure";
   const detailsUrl = ctx.runId
     ? `https://github.com/${ctx.repo.owner}/${ctx.repo.name}/actions/runs/${ctx.runId}`
     : undefined;
@@ -55,19 +58,37 @@ export async function reportStatusChecks(
   // re-review's "no new review was warranted" — otherwise reaches nobody.
   const note = event.silent && !approval?.url ? ctx.toolState.lastProgressBody : undefined;
 
+  const checkoutSha = primaryRepoState(ctx.toolState).checkoutSha;
+  // the head this run's review covered: the last review's checkout, which a push answered inline
+  // moves past the seeded check, or the checkout itself on a re-review that posted none.
+  const reviewedSha = REVIEW_MODES.has(ctx.toolState.selectedMode ?? "")
+    ? (approval?.sha ?? checkoutSha)
+    : undefined;
+  const runCheck = {
+    octokit: ctx.octokit,
+    owner: ctx.repo.owner,
+    repo: ctx.repo.name,
+    conclusion,
+    detailsUrl,
+    reviewUrl: approval?.url,
+    note,
+  };
+
   if (checkRunId !== undefined) {
-    await finalizeRunStatusCheck({
-      octokit: ctx.octokit,
-      owner: ctx.repo.owner,
-      repo: ctx.repo.name,
-      checkRunId,
-      conclusion,
-      detailsUrl,
-      reviewUrl: approval?.url,
-      note,
-    })
-      .then(() => log.info(`» finalized ${RUN_STATUS_CHECK_NAME} check (${conclusion})`))
-      .catch((err) => log.debug(`status checks: ${RUN_STATUS_CHECK_NAME} finalize failed: ${err}`));
+    const seededSha = await finalizeRunStatusCheck({ ...runCheck, checkRunId })
+      .then((sha) => {
+        log.info(`» finalized ${RUN_STATUS_CHECK_NAME} check (${conclusion})`);
+        return sha;
+      })
+      .catch((err) => {
+        log.debug(`status checks: ${RUN_STATUS_CHECK_NAME} finalize failed: ${err}`);
+        return undefined;
+      });
+    if (params.runSucceeded && seededSha && reviewedSha && reviewedSha !== seededSha) {
+      await mirrorRunStatusCheck(ctx, { ...runCheck, headSha: reviewedSha }).catch((err) =>
+        log.debug(`status checks: ${RUN_STATUS_CHECK_NAME} mirror failed: ${err}`)
+      );
+    }
   }
 
   // a re-review that submits no review records no verdict of its own.
@@ -94,14 +115,8 @@ export async function reportStatusChecks(
 
   if (needsFallbackRunCheck) {
     await createTerminalRunStatusCheck({
-      octokit: ctx.octokit,
-      owner: ctx.repo.owner,
-      repo: ctx.repo.name,
-      headSha: primaryRepoState(ctx.toolState).checkoutSha ?? headSha,
-      conclusion,
-      detailsUrl,
-      reviewUrl: approval?.url,
-      note,
+      ...runCheck,
+      headSha: reviewedSha ?? checkoutSha ?? headSha,
     })
       .then(() => log.info(`» posted ${RUN_STATUS_CHECK_NAME} check (${conclusion})`))
       .catch((err) => log.debug(`status checks: ${RUN_STATUS_CHECK_NAME} post failed: ${err}`));
@@ -142,6 +157,31 @@ export async function reportStatusChecks(
     .create(createParams)
     .then(() => log.info(`» posted ${APPROVAL_CHECK_NAME} check`))
     .catch((err) => log.debug(`status checks: ${APPROVAL_CHECK_NAME} post failed: ${err}`));
+}
+
+const REVIEW_MODES = new Set(["Review", "IncrementalReview"]);
+
+/**
+ * a review that took in commits pushed mid-run covered a head the seeded check is not on, and
+ * the push dedup started no run there, so a required `pullfrog` check never reached it
+ * (pullfrog/pullfrog#136). posted already terminal, since every backstop knows only the seeded
+ * id. a Pullfrog row already on that head belongs to another run, which reports there itself.
+ */
+async function mirrorRunStatusCheck(
+  ctx: ToolContext,
+  params: Parameters<typeof createTerminalRunStatusCheck>[0]
+): Promise<void> {
+  const existing = await ctx.octokit.rest.checks.listForRef({
+    owner: ctx.repo.owner,
+    repo: ctx.repo.name,
+    ref: params.headSha,
+    check_name: RUN_STATUS_CHECK_NAME,
+  });
+  if (existing.data.check_runs.some((run) => run.app?.slug !== GITHUB_ACTIONS_APP_SLUG)) return;
+  await createTerminalRunStatusCheck(params);
+  log.info(
+    `» posted ${RUN_STATUS_CHECK_NAME} check on reviewed head ${params.headSha.slice(0, 7)}`
+  );
 }
 
 /**
