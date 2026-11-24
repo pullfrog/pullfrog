@@ -25,7 +25,7 @@ import {
 } from "../utils/gitAuth.ts";
 import { executeLifecycleHook, type LifecycleHookFailure } from "../utils/lifecycle.ts";
 import { isOutsideThread } from "../utils/payload.ts";
-import { $ } from "../utils/shell.ts";
+import { $, gitAsync } from "../utils/shell.ts";
 import { resolveRepoCtx } from "./resolveRepoCtx.ts";
 import type { ToolContext } from "./server.ts";
 import { execute, tool } from "./shared.ts";
@@ -863,6 +863,8 @@ const COLLAPSE_THRESHOLD = 200;
  * (which uses 5000 for shell commands; diff/log outputs need more headroom).
  * the operator log gets a single summary line instead of a 1000+ line dump. */
 const MAX_GIT_OUTPUT_CHARS = 50_000;
+/** an agent-chosen git command past this is killed: under the clients' 660s tool timeout, with room for a slow checkout or merge. */
+const GIT_TIMEOUT_MS = 300_000;
 const OVERFLOW_PREVIEW_LINES = 50;
 /** absolute char cap on the inline preview, in case the first
  * `OVERFLOW_PREVIEW_LINES` lines contain a minified blob / binary diff /
@@ -877,10 +879,10 @@ const OVERFLOW_PREVIEW_MAX_CHARS = 5_000;
  * diffs, the correct shape), and any call passing `--merge-base` (git's own
  * shorthand for a merge-base diff, also safe). see [run 26545933188](https://github.com/pullfrog/app/actions/runs/26545933188)
  * for the failure mode this guards against. */
-function detectSymmetricDiffTrap(
+async function detectSymmetricDiffTrap(
   args: string[],
   cwd: string
-): { arg: string; aheadRef: string; ahead: number } | null {
+): Promise<{ arg: string; aheadRef: string; ahead: number } | null> {
   // git's own `--merge-base` flag (2.30+) produces a safe merge-base diff
   // regardless of the positional ref; the GHA runner has git 2.54.x.
   if (args.includes("--merge-base")) return null;
@@ -907,8 +909,8 @@ function detectSymmetricDiffTrap(
       if (parts.length !== 2) continue;
       const left = parts[0] || "HEAD";
       const right = parts[1] || "HEAD";
-      const leftAhead = countAhead(right, left, cwd);
-      const rightAhead = countAhead(left, right, cwd);
+      const leftAhead = await countAhead(right, left, cwd);
+      const rightAhead = await countAhead(left, right, cwd);
       if (leftAhead === null || rightAhead === null) continue;
       // `countAhead` is a reachability walk that stops at the shallow boundary
       // and needs no common ancestor, so on a grafted checkout it happily
@@ -916,15 +918,15 @@ function detectSymmetricDiffTrap(
       // prescribes is merge-base-based and guaranteed to fail on that same
       // checkout. the symmetric tree diff is the only meaningful answer left,
       // so let it through rather than sending the agent into a dead end (#1139).
-      if (leftAhead > 0 && rightAhead > 0 && hasMergeBase(left, right, cwd)) {
+      if (leftAhead > 0 && rightAhead > 0 && (await hasMergeBase(left, right, cwd))) {
         const aheadRef = leftAhead >= rightAhead ? left : right;
         return { arg: p, aheadRef, ahead: Math.max(leftAhead, rightAhead) };
       }
       continue;
     }
-    const ahead = countAhead("HEAD", p, cwd);
+    const ahead = await countAhead("HEAD", p, cwd);
     if (ahead === null) continue;
-    if (ahead > 0 && hasMergeBase("HEAD", p, cwd)) return { arg: p, aheadRef: p, ahead };
+    if (ahead > 0 && (await hasMergeBase("HEAD", p, cwd))) return { arg: p, aheadRef: p, ahead };
   }
   return null;
 }
@@ -934,9 +936,14 @@ function detectSymmetricDiffTrap(
  * they may not, and every remedy `detectSymmetricDiffTrap` prescribes is
  * merge-base-based. see #1139.
  */
-function hasMergeBase(a: string, b: string, cwd: string): boolean {
+async function hasMergeBase(a: string, b: string, cwd: string): Promise<boolean> {
   try {
-    return $("git", ["merge-base", a, b], { cwd, log: false }).trim().length > 0;
+    const out = await gitAsync(["merge-base", a, b], {
+      cwd,
+      log: false,
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
+    return out.length > 0;
   } catch {
     return false;
   }
@@ -944,9 +951,13 @@ function hasMergeBase(a: string, b: string, cwd: string): boolean {
 
 /** `rev-list --count head..base` = commits on `base` not on `head`. returns
  * null if either ref is unresolvable (probably a pathspec). */
-function countAhead(head: string, base: string, cwd: string): number | null {
+async function countAhead(head: string, base: string, cwd: string): Promise<number | null> {
   try {
-    const out = $("git", ["rev-list", "--count", `${head}..${base}`], { cwd, log: false }).trim();
+    const out = await gitAsync(["rev-list", "--count", `${head}..${base}`], {
+      cwd,
+      log: false,
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
     const n = parseInt(out, 10);
     return Number.isFinite(n) ? n : null;
   } catch {
@@ -1147,7 +1158,7 @@ export function GitTool(ctx: ToolContext) {
       // reviewer subagents. three-dot (`A...B`) and `--merge-base` are
       // always allowed (both produce merge-base diffs).
       if (command === "diff") {
-        const trap = detectSymmetricDiffTrap(args, cwd);
+        const trap = await detectSymmetricDiffTrap(args, cwd);
         if (trap) {
           throw new Error(
             `git diff '${trap.arg}' would include the inverse of ${trap.ahead} commit(s) on '${trap.aheadRef}' that aren't on the other side — that's a symmetric tree diff full of upstream noise, not your branch's own changes.\n\n` +
@@ -1164,9 +1175,10 @@ export function GitTool(ctx: ToolContext) {
       // instead of throwing on exit 1. see #766.
       if (command === "merge-base" && args.includes("--is-ancestor")) {
         let isAncestor = true;
-        $("git", [command, ...args], {
+        await gitAsync([command, ...args], {
           cwd,
           log: false,
+          timeoutMs: GIT_TIMEOUT_MS,
           onError: (r) => {
             if (r.status === 1) {
               isAncestor = false;
@@ -1192,10 +1204,11 @@ export function GitTool(ctx: ToolContext) {
       // (#1152). same idea as the `--is-ancestor` branch above, generalized.
       const emptyResult = describeEmptyResult(command, args);
       let noResult = false;
-      const output = $("git", [command, ...args], {
+      const output = await gitAsync([command, ...args], {
         cwd,
         log: false,
         env: WORKING_TREE_GIT_ENV,
+        timeoutMs: GIT_TIMEOUT_MS,
         onError: (r) => {
           if (r.status === 1 && emptyResult && !r.stderr.trim() && !r.stdout.trim()) {
             noResult = true;

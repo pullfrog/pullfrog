@@ -43,6 +43,8 @@ type SpawnParams = {
    * inside the namespace and unmount the protective mounts. false only for
    * `shell: enabled`, whose users are trusted and may need `sudo apt-get`. */
   seal: boolean;
+  /** the caller's own kill deadline, which the sandbox enforces again (`buildSandboxInvocation`). */
+  deadlineMs?: number | undefined;
 };
 
 /** Launch one command inside the mandatory PID+mount-namespace sandbox.
@@ -82,6 +84,7 @@ function spawnShell(params: SpawnParams): ChildProcess {
     env: params.env,
     method: sandboxMethod,
     gitWritable: false,
+    deadlineMs: params.deadlineMs,
   });
   return spawn(invocation.bin, invocation.args, { ...spawnOpts, env: invocation.env });
 }
@@ -156,6 +159,7 @@ export async function runSandboxed(params: {
     cwd: params.cwd,
     stdio: ["ignore", "pipe", "pipe"],
     seal: params.seal,
+    deadlineMs: params.timeout,
   });
 
   // bounded: agent-chosen output accumulates in OUR process, and a `data`

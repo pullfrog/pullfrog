@@ -757,7 +757,7 @@ export const bundledProviders = {
       // so the K3 generation could never reach this block by bumping `kimi-k2`.
       "kimi-k3": {
         displayName: "Kimi K3",
-        resolve: "opencode/kimi-k3",
+        resolve: "opencode/kimi-k3.1-pro",
         // Zen published a single rung (`max`) for K3 until 2026-10-23; it now matches OpenRouter.
         effort: ["low", "high", "max"],
         openRouterEffort: ["none", "low", "high", "max"],

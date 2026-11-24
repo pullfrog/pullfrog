@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
 import { confineGit } from "./pathSandbox.ts";
-import { getSandboxMethod, spawnGitSandboxedSync } from "./sandbox.ts";
+import { buildSandboxedCommand, getSandboxMethod, spawnGitSandboxedSync } from "./sandbox.ts";
 import { type EnvMode, resolveEnv } from "./secrets.ts";
+import { SpawnTimeoutError, spawn } from "./subprocess.ts";
 
 interface ShellOptions {
   cwd?: string;
@@ -98,6 +99,85 @@ export function $(cmd: string, args: string[], options?: ShellOptions): string {
           maxBuffer: MAX_BUFFER_BYTES,
         });
 
+  return settle({ cmd, args, options, result });
+}
+
+/**
+ * git off the event loop, for the commands the agent picks: one slow `git grep` held the
+ * MCP server, every parallel tool call and the activity watchdog for 16 minutes (#1745).
+ * same sandbox as `$`, and the command is killed at `timeoutMs`.
+ */
+export async function gitAsync(
+  args: string[],
+  options: ShellOptions & { cwd: string; timeoutMs: number }
+): Promise<string> {
+  const env = resolveEnv(options.env);
+  const launch =
+    getSandboxMethod() === "none"
+      ? (confineGit({ args, env }) ?? { cmd: "git", args, env })
+      : buildSandboxedCommand({ cmd: "git", args, env, deadlineMs: options.timeoutMs });
+  // `maxBuffer`'s contract: past the cap, stop collecting and kill git. under sudo-unshare the
+  // kill stops at `sudo`, so the sandbox's own `timeout` is what ends git there.
+  const overflow = Object.assign(new Error("output over MAX_BUFFER_BYTES"), { code: "ENOBUFS" });
+  const controller = new AbortController();
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  let collected = 0;
+  const collect = (chunks: string[]) => (chunk: string) => {
+    if (controller.signal.aborted) return;
+    collected += chunk.length;
+    if (collected > MAX_BUFFER_BYTES) {
+      controller.abort(overflow);
+      return;
+    }
+    chunks.push(chunk);
+  };
+  const result = await spawn({
+    cmd: launch.cmd,
+    args: launch.args,
+    env: launch.env,
+    cwd: options.cwd,
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: options.timeoutMs,
+    activityTimeout: 0,
+    killGroup: true,
+    retain: "none",
+    signal: controller.signal,
+    onStdout: collect(stdout),
+    onStderr: collect(stderr),
+  }).catch((error: unknown) => {
+    if (error === overflow) return undefined;
+    if (!(error instanceof SpawnTimeoutError)) throw error;
+    throw new Error(
+      `git ${args[0] ?? ""} did not finish in ${options.timeoutMs / 1000}s and was killed`
+    );
+  });
+  if (!result)
+    return settle({ cmd: "git", args, options, result: { status: null, error: overflow } });
+  return settle({
+    cmd: "git",
+    args,
+    options,
+    // with `retain: "none"`, spawn's own stderr holds only its kill or launch-failure note
+    result: {
+      status: result.exitCode,
+      stdout: stdout.join(""),
+      stderr: stderr.join("") + result.stderr,
+    },
+  });
+}
+
+/** logs a finished command's output and turns a failure into `onError` or a thrown error. */
+function settle(params: {
+  cmd: string;
+  args: string[];
+  options: ShellOptions | undefined;
+  result: { status: number | null; stdout?: string; stderr?: string; error?: Error };
+}): string {
+  const cmd = params.cmd;
+  const args = params.args;
+  const options = params.options;
+  const result = params.result;
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
 

@@ -531,6 +531,10 @@ function execCommand(cmd: string, args: string[]): string {
  * cannot re-elevate and unmount the protective mounts (false only for trusted
  * `shell: enabled`). `gitWritable` drops the `.git` read-only bind so sandboxed
  * `git` can write `.git`.
+ *
+ * `deadlineMs`, the caller's own kill deadline, is enforced again inside the sandbox a
+ * second later: under `sudo-unshare` the command runs in a session `su` started, beneath
+ * root processes the caller's signals cannot reach, so its kill left the command running (#1745).
  */
 export function buildSandboxInvocation(params: {
   command: string;
@@ -539,6 +543,7 @@ export function buildSandboxInvocation(params: {
   method: Exclude<SandboxMethod, "none">;
   gitWritable: boolean;
   shimWritable?: boolean;
+  deadlineMs?: number | undefined;
 }): { bin: string; args: string[]; env: Record<string, string | undefined> } {
   const bash = trustedBinary("bash");
   const setpriv = shQuote(trustedBinary("setpriv"));
@@ -549,10 +554,14 @@ export function buildSandboxInvocation(params: {
   const setup =
     `exec </dev/null; export PATH=${shQuote(getRootControlledDirs().join(delimiter))}; ` +
     `${PROC_CLEANUP} ${SOCKET_CLEANUP} ${buildFsMounts({ gitWritable: params.gitWritable, shimWritable: params.shimWritable ?? false })}`;
+  const bounded =
+    params.deadlineMs === undefined
+      ? params.command
+      : `exec ${shQuote(trustedBinary("timeout"))} -k 5 ${Math.ceil(params.deadlineMs / 1000) + 1} ${shQuote(bash)} -c ${shQuote(params.command)}`;
   // the command's own PATH comes back only inside the seal
   const command = params.env.PATH
-    ? `export PATH=${shQuote(sandboxedPath(params.env.PATH))}; ${params.command}`
-    : params.command;
+    ? `export PATH=${shQuote(sandboxedPath(params.env.PATH))}; ${bounded}`
+    : bounded;
   const sealedBash = `${shQuote(bash)} -c ${shQuote(command)}`;
 
   if (params.method === "unshare") {
@@ -698,6 +707,7 @@ export function buildSandboxedCommand(params: {
   args: string[];
   env: Record<string, string | undefined>;
   shimWritable?: boolean;
+  deadlineMs?: number | undefined;
 }): { cmd: string; args: string[]; env: Record<string, string | undefined> } {
   const method = detectSandboxMethod();
   if (method === "none") {
@@ -715,6 +725,7 @@ export function buildSandboxedCommand(params: {
     method,
     gitWritable: true,
     shimWritable: params.shimWritable ?? false,
+    deadlineMs: params.deadlineMs,
   });
   return { cmd: invocation.bin, args: invocation.args, env: invocation.env };
 }
