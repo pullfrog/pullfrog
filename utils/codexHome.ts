@@ -31,7 +31,7 @@
 //      refresh_token, id_token?, account_id? } }` into OpenCode's shape
 //      `{ openai: { type: "oauth", refresh, access, expires, accountId } }`
 //   4. materializes it to disk under a path the MCP-shell mount-namespace
-//      sandbox can hide from bash: `/var/lib/pullfrog/run-*/opencode/auth.json`
+//      sandbox can hide from bash: `/var/lib/pullfrog/<user>/run-*/opencode/auth.json`
 //      in CI (sudo-bootstrapped, fail-closed if sudo unavailable),
 //      `$HOME/.local/share/opencode/auth.json` locally (sandbox is no-op
 //      locally so the path is irrelevant to security)
@@ -49,7 +49,16 @@
 // See [wiki/codex-auth.md] for the full data-flow picture.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import type { CredentialEntry } from "@opencode/client";
@@ -484,7 +493,7 @@ export function canInstallSubscription(name: string) {
  * - **local dev (CI != true)**: use $HOME. mount-namespace sandbox is no-op
  *   locally so the file isn't protected from bash either way; codex auth on
  *   a developer's machine is the developer's responsibility.
- * - **CI**: bootstrap /var/lib/pullfrog via sudo and use a fresh dir inside it.
+ * - **CI**: bootstrap /var/lib/pullfrog via sudo and use a fresh dir in this user's dir inside it.
  *   MCP shell's mount namespace tmpfs-overlays this path, and claude
  *   managed-settings + opencode external_directory both deny it — three
  *   independent layers.
@@ -502,8 +511,21 @@ function resolveDataHome(): string | null {
   return dataHome;
 }
 
-function bootstrapPullfrogDataDir(): string | null {
-  const user = userInfo().username;
+/** sticky, and enterable and writable but not listable by other users: each runner user
+ * makes its own dir here without sudo, and none can remove another's. */
+const SHARED_PARENT_MODE = 0o1733;
+
+function isSharedParent(): boolean {
+  try {
+    return (statSync(PULLFROG_DATA_DIR).mode & SHARED_PARENT_MODE) === SHARED_PARENT_MODE;
+  } catch {
+    return false;
+  }
+}
+
+/** sudo runs only the `mkdir -p` and `chown` of the parent: customers' sudoers allow
+ * exactly those, and refused anything else (wiki/codex-auth.md). */
+function claimSharedParent(user: string): void {
   // `id -gn $user` resolves the user's primary group name correctly even on
   // self-hosted images where the group isn't `<user>:<user>` (e.g., `runner`
   // belongs to `runner`, but a self-hosted setup might use `users`, `docker`,
@@ -520,20 +542,33 @@ function bootstrapPullfrogDataDir(): string | null {
   }
   // `-n` (non-interactive) makes sudo fail-fast on locked-down runners
   // instead of prompting and timing out.
+  execFileSync(trustedBinary("sudo"), ["-n", "mkdir", "-p", PULLFROG_DATA_DIR], {
+    stdio: "pipe",
+  });
+  execFileSync(
+    trustedBinary("sudo"),
+    ["-n", "chown", `${user}:${primaryGroup}`, PULLFROG_DATA_DIR],
+    {
+      stdio: "pipe",
+    }
+  );
+  chmodSync(PULLFROG_DATA_DIR, SHARED_PARENT_MODE);
+}
+
+function bootstrapPullfrogDataDir(): string | null {
+  const me = userInfo();
+  // one dir per runner user: re-owning the shared parent on every run locked every
+  // other runner user's live run out of its own dir (#1742).
+  const userDir = join(PULLFROG_DATA_DIR, me.username);
   try {
-    execFileSync(trustedBinary("sudo"), ["-n", "mkdir", "-p", PULLFROG_DATA_DIR], {
-      stdio: "pipe",
-    });
-    execFileSync(
-      trustedBinary("sudo"),
-      ["-n", "chown", `${user}:${primaryGroup}`, PULLFROG_DATA_DIR],
-      {
-        stdio: "pipe",
-      }
-    );
-    execFileSync(trustedBinary("sudo"), ["-n", "chmod", "700", PULLFROG_DATA_DIR], {
-      stdio: "pipe",
-    });
+    if (!isSharedParent()) claimSharedParent(me.username);
+    mkdirSync(userDir, { recursive: true, mode: 0o700 });
+    // any runner user can create a name in the parent, so use only a real dir this user owns
+    const stat = lstatSync(userDir);
+    if (!stat.isDirectory() || stat.uid !== me.uid) {
+      throw new Error(`${userDir} is not a directory owned by ${me.username}`);
+    }
+    chmodSync(userDir, 0o700);
   } catch (err) {
     log.warning(
       `» subscription auth skipped: could not create ${PULLFROG_DATA_DIR} (${err instanceof Error ? err.message : String(err)}). ` +
@@ -550,7 +585,7 @@ function bootstrapPullfrogDataDir(): string | null {
   // one per run: concurrent runs on a self-hosted host shared opencode's SQLite db and
   // the codex CLI's home here (#1475). the post hook removes it after the writeback; a
   // GitHub-hosted VM is discarded anyway, so it skips that post-step npm bootstrap.
-  const runDir = mkdtempSync(join(PULLFROG_DATA_DIR, "run-"));
+  const runDir = mkdtempSync(join(userDir, "run-"));
   // not a credential: this is just the one state writer the secret-command guard allows.
   if (process.env.RUNNER_ENVIRONMENT !== "github-hosted") {
     saveSecretState(SUBSCRIPTION_DATA_DIR_STATE, runDir);

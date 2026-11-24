@@ -627,7 +627,7 @@ export const opencode = agent({
 
     // external_directory gates ALL native filesystem tools (Read, Write, Edit, Glob, Grep, etc.)
     // for paths outside the project root. last-match-wins: deny everything, then allow /tmp.
-    // codex auth lives at /var/lib/pullfrog/run-*/opencode/auth.json in CI (see codexHome.ts),
+    // codex auth lives at /var/lib/pullfrog/<user>/run-*/opencode/auth.json in CI (see codexHome.ts),
     // which is outside /tmp/* — deny-default protects it from native FS tools.
     //
     // read + edit rules deny git surfaces INSIDE the project root, where
