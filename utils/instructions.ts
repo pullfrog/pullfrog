@@ -9,7 +9,6 @@ import {
 } from "../external.ts";
 import type { Mode } from "../modes.ts";
 import type { ResolvedPayload } from "./payload.ts";
-import type { LearningsHeading } from "./runContext.ts";
 import type { RunRepo } from "./runContextData.ts";
 
 interface InstructionsContext {
@@ -30,10 +29,6 @@ interface InstructionsContext {
    * couldn't be seeded for some reason. main.ts always seeds, so in
    * practice this is always set; the null case keeps the type honest. */
   learningsFilePath: string | null;
-  /** server-parsed TOC for the body of the learnings tmpfile. rendered
-   * inline into the LEARNINGS prompt section so the agent can `read_file`
-   * targeted line ranges instead of pulling the whole file into context. */
-  learningsHeadings: LearningsHeading[];
   /** agent-facing description of a setup lifecycle hook failure (see
    * `describeSetupFailure`), rendered as a SETUP HOOK FAILED banner. empty
    * string when the hook succeeded, was skipped, or wasn't configured. */
@@ -44,8 +39,6 @@ interface InstructionsContext {
   /** absolute path to the seeded cross-repo learnings tmpfile (--xrepo runs
    * only), or null. */
   xrepoLearningsFilePath: string | null;
-  /** server-parsed TOC for the cross-repo learnings body. */
-  xrepoLearningsHeadings: LearningsHeading[];
 }
 
 interface PromptContext extends InstructionsContext {
@@ -213,7 +206,7 @@ ${standing}`;
 
 // cross-repo capability + scope, rendered only on --xrepo runs. lists every
 // repo in the access set with its tier, the operator brief, and the org-level
-// learnings TOC. omitted entirely on single-repo runs.
+// learnings file. omitted entirely on single-repo runs.
 function buildXrepoSection(ctx: PromptContext): string {
   const xrepo = ctx.payload.xrepo;
   if (!xrepo) return "";
@@ -234,11 +227,7 @@ function buildXrepoSection(ctx: PromptContext): string {
 
   let learningsBlock = "";
   if (ctx.xrepoLearningsFilePath) {
-    const toc =
-      ctx.xrepoLearningsHeadings.length === 0
-        ? "(empty or flat — read the whole file if it has content; structure it with headings during the post-run reflection turn so future runs can target ranges.)"
-        : `Read targeted line ranges — do NOT slurp the whole file:\n\n${renderLearningsToc(ctx.xrepoLearningsHeadings)}`;
-    learningsBlock = `\n\nThe cross-repo learnings file at \`${ctx.xrepoLearningsFilePath}\` holds durable org-level structural knowledge (how repos depend on one another, where shared code lives, build/test entrypoints per repo) maintained across runs. ${toc}`;
+    learningsBlock = `\n\nThe cross-repo learnings file at \`${ctx.xrepoLearningsFilePath}\` holds durable org-level structural knowledge (how repos depend on one another, where shared code lives, build/test entrypoints per repo) maintained across runs. ${SEARCH_LEARNINGS}`;
   }
 
   return `************* CROSS-REPO *************
@@ -459,39 +448,18 @@ export interface ResolvedInstructions {
   runtime: string;
 }
 
-/** render the heading list as an indented bullet TOC. ranges shown in
- * parentheses (`(L3-L18)`); the start line is always the heading line
- * itself, so reading the listed range gives the agent the heading +
- * body together. shallowest heading depth in the body sits at the root
- * column; deeper levels indent by `(depth - rootDepth) * 2` spaces. */
-export function renderLearningsToc(headings: LearningsHeading[]): string {
-  if (headings.length === 0) return "";
-  const rootDepth = Math.min(...headings.map((h) => h.depth));
-  return headings
-    .map((h) => {
-      const indent = " ".repeat((h.depth - rootDepth) * 2);
-      return `${indent}- ${h.title} (L${h.startLine}-L${h.endLine})`;
-    })
-    .join("\n");
-}
+/** how a run should use a learnings file it is pointed at. its headings are
+ * not listed in the prompt: they cost every run tokens, and the no-learnings
+ * holdout found no gain from the notes (wiki/learnings.md#result). */
+const SEARCH_LEARNINGS = "Search it for what the task needs rather than reading it whole.";
 
-/** assemble the LEARNINGS prompt section: file path + intro + either
- * the rendered heading TOC (when the body has structure) or a no-headings
- * affordance pointing the agent at the reflection turn for restructuring.
+/** assemble the LEARNINGS prompt section: the file path and how to use it.
  * empty string when the seed step failed and there's no path to surface. */
-export function buildLearningsSection(ctx: {
-  filePath: string | null;
-  headings: LearningsHeading[];
-}): string {
+export function buildLearningsSection(ctx: { filePath: string | null }): string {
   if (!ctx.filePath) return "";
   // intro is neutral about whether content exists so an empty fresh-repo
   // file doesn't open with "accumulated by previous agent runs" (false).
-  const intro = `The repo-level learnings file at \`${ctx.filePath}\` holds durable context (test commands, conventions, gotchas, architecture notes) maintained across runs. If a bullet proves wrong or stale while you work, fix or delete it in the file then.`;
-  const tocBody =
-    ctx.headings.length === 0
-      ? "(no headings yet — the file is empty or contains a flat list. read the whole file if it has content. during the post-run reflection turn, structure it with `## ` / `### ` headings so future runs can read targeted ranges.)"
-      : `Read targeted line ranges via your native file tool — do NOT slurp the whole file. Each range starts at the section heading line, so reading the range gives you heading + body together. The ranges below are a run-start snapshot: any edit shifts the line numbers of every later section, so re-read the TOC range you need before relying on it.\n\n${renderLearningsToc(ctx.headings)}`;
-  return `************* LEARNINGS *************\n\n${intro}\n\n${tocBody}`;
+  return `************* LEARNINGS *************\n\nThe repo-level learnings file at \`${ctx.filePath}\` holds durable context (test commands, conventions, gotchas, architecture notes) maintained across runs. ${SEARCH_LEARNINGS} If a bullet proves wrong or stale while you work, fix or delete it in the file then.`;
 }
 
 function assembleFullPrompt(ctx: {
@@ -504,18 +472,12 @@ function assembleFullPrompt(ctx: {
   eventContext: string;
   system: string;
   learningsFilePath: string | null;
-  learningsHeadings: LearningsHeading[];
   runtime: string;
 }): string {
-  // server-parsed TOC is rendered inline so the agent can target line
-  // ranges via its native file tool. the file body itself is never
-  // inlined — that would re-inflate context every run and clutter CI
-  // logs. post-run reflection (action/agents/postRun.ts) is where
-  // editing is encouraged.
-  const learningsSection = buildLearningsSection({
-    filePath: ctx.learningsFilePath,
-    headings: ctx.learningsHeadings,
-  });
+  // the file body itself is never inlined — that would re-inflate context
+  // every run and clutter CI logs. post-run reflection
+  // (action/agents/postRun.ts) is where editing is encouraged.
+  const learningsSection = buildLearningsSection({ filePath: ctx.learningsFilePath });
 
   const runtimeSection = `************* RUNTIME *************\n\n${ctx.runtime}`;
 
@@ -573,7 +535,7 @@ export function resolveInstructions(ctx: InstructionsContext): ResolvedInstructi
   if (pctx.learningsFilePath)
     tocEntries.push({
       label: "LEARNINGS",
-      description: "repo-specific knowledge file path + heading TOC",
+      description: "repo-specific knowledge file path",
     });
   tocEntries.push({ label: "RUNTIME", description: "environment metadata" });
 
@@ -589,7 +551,6 @@ export function resolveInstructions(ctx: InstructionsContext): ResolvedInstructi
     eventContext,
     system,
     learningsFilePath: pctx.learningsFilePath,
-    learningsHeadings: pctx.learningsHeadings,
     runtime: pctx.runtime,
   });
 

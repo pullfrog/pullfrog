@@ -30,11 +30,10 @@ export { LEARNINGS_BUDGET, MAX_LEARNINGS_LENGTH, truncateAtLineBoundary };
  *
  *   1. server seeds `pullfrog-learnings.md` with the verbatim body of
  *      `Repo.learnings` (or empty for fresh repos), and parses headings
- *      server-side (`utils/learningsToc.ts`) — the parsed TOC is rendered
- *      into the LEARNINGS prompt section, not into the file
- *   2. the agent reads the TOC in the prompt and uses listed line ranges
- *      to read just the sections relevant to the current task — file can
- *      grow large, but only targeted ranges hit the agent's context
+ *      server-side (`utils/learningsToc.ts`), which the runner uses only to
+ *      count the sections a run read
+ *   2. the LEARNINGS prompt section names the file and tells the agent to
+ *      search it rather than read it whole; its headings are not listed
  *   3. agent edits the file in place at end-of-run during the reflection
  *      turn (see action/agents/postRun.ts buildLearningsReflectionPrompt)
  *   4. main.ts reads the file back at end-of-run and PATCHes
@@ -46,8 +45,8 @@ export { LEARNINGS_BUDGET, MAX_LEARNINGS_LENGTH, truncateAtLineBoundary };
  * output-token tax that grew linearly with the learnings size).
  *
  * Section structure is agent-curated. The reflection prompt teaches
- * hierarchy + a soft 300-line-per-section cap to keep TOC ranges
- * agent-targetable on long-lived repos; there is no fixed taxonomy.
+ * hierarchy + a soft 300-line-per-section cap to keep sections small
+ * enough to read whole on long-lived repos; there is no fixed taxonomy.
  *
  * The PATCH carries the seed beside the edited body, so the server merges the
  * run's edit into whatever another run stored meanwhile instead of replacing
@@ -67,10 +66,9 @@ export function xrepoLearningsFilePath(tmpdir: string): string {
 }
 
 /** seed the rolling learnings tmpfile with the verbatim DB body (or empty
- * string for fresh repos). returns the absolute path. the parsed TOC is
- * carried separately via `RepoSettings.learningsHeadings` and rendered
- * into the prompt by `resolveInstructions`, so the file on disk is just
- * the body — no markers, no scaffold, no in-file TOC. */
+ * string for fresh repos). returns the absolute path. the parsed headings
+ * are carried separately via `RepoSettings.learningsHeadings`, so the file on
+ * disk is just the body — no markers, no scaffold, no in-file TOC. */
 export async function seedLearningsFile(params: {
   tmpdir: string;
   current: string | null;
@@ -118,12 +116,16 @@ export function trackLearningsReads(params: {
 /** count a read of the learnings file. reads in the reflection turn are the edit, not use. */
 export function recordLearningsRead(toolState: ToolState, event: AgentToolUseEvent): void {
   if (toolState.learningsReflected) return;
-  recordDiffReadFromToolUse({
+  const read = recordDiffReadFromToolUse({
     state: toolState.learningsReads,
     toolName: event.toolName,
     input: event.input,
     cwd: process.cwd(),
   });
+  // a search or shell command naming the file shows it was consulted, though not which lines
+  if (!read && JSON.stringify(event.input ?? null).includes(LEARNINGS_FILE_NAME)) {
+    toolState.learningsLookups = (toolState.learningsLookups ?? 0) + 1;
+  }
 }
 
 /** the agent-edited file, capped. `cut` is how many characters the cap dropped from its tail. */
@@ -169,7 +171,9 @@ function describeReads(toolState: ToolState): string {
   if (!toolState.learningsReads || toolState.agent === "codex") return "reads untracked";
   const coverage = getDiffCoverageBreakdown({ state: toolState.learningsReads });
   const sections = coverage.files.filter((section) => section.coveredLines > 0).length;
-  return `read ${sections}/${coverage.files.length} sections (${coverage.coveredLines}/${coverage.totalLines} lines)`;
+  const n = toolState.learningsLookups ?? 0;
+  const lookups = n ? `, ${n} other tool call${n === 1 ? "" : "s"}` : "";
+  return `read ${sections}/${coverage.files.length} sections (${coverage.coveredLines}/${coverage.totalLines} lines)${lookups}`;
 }
 
 function describeEdit(params: { seed: string; file: LearningsFile }): string {

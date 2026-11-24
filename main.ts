@@ -917,11 +917,9 @@ export async function main(): Promise<MainResult> {
       signedCommits: runContext.repoSettings.signedCommits,
       repoIntelligence: runContext.repoSettings.repoIntelligence,
       learningsFilePath: toolState.learningsFilePath ?? null,
-      learningsHeadings: runContext.repoSettings.learningsHeadings,
       setupHookFailure: describeSetupFailure(setupHook.failure),
       xrepoBrief: runContext.repoSettings.xrepoBrief,
       xrepoLearningsFilePath: toolState.xrepoLearningsFilePath ?? null,
-      xrepoLearningsHeadings: runContext.repoSettings.xrepoLearningsHeadings,
     });
     // the prompt and the tool registry are decided in different files off
     // overlapping conditions; this is what stops them disagreeing silently.

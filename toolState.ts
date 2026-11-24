@@ -252,6 +252,8 @@ export interface ToolState {
   // which lines of the learnings file the agent read before the reflection turn, for the
   // end-of-run `» learnings:` line. `learningsReflected` stops the count there.
   learningsReads?: DiffCoverageState;
+  // other tool calls naming the file before then (a search, a shell command), whose lines are unknown
+  learningsLookups?: number;
   learningsReflected?: boolean;
   // org-level cross-repo learnings tmpfile — same lifecycle as the repo-level
   // learnings file but seeded from `Account.xrepoLearnings` and only on

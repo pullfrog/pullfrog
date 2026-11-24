@@ -85,7 +85,6 @@ export interface RepoSettings {
   // across runs (org-level analogue of `learnings`).
   xrepoBrief: string | null;
   xrepoLearnings: string | null;
-  xrepoLearningsHeadings: LearningsHeading[];
 }
 
 /**
@@ -173,7 +172,6 @@ const defaultSettings: RepoSettings = {
   envAllowlist: null,
   xrepoBrief: null,
   xrepoLearnings: null,
-  xrepoLearningsHeadings: [],
 };
 
 const defaultRunContext: RunContext = {
@@ -297,7 +295,6 @@ export async function fetchRunContext(params: {
         learningsHeadings: data.settings?.learningsHeadings ?? [],
         xrepoBrief: data.settings?.xrepoBrief ?? null,
         xrepoLearnings: data.settings?.xrepoLearnings ?? null,
-        xrepoLearningsHeadings: data.settings?.xrepoLearningsHeadings ?? [],
       },
       apiToken: data.apiToken,
       oss: data.oss ?? false,
