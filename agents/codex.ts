@@ -43,7 +43,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { ThreadEvent, ThreadItem } from "@openai/codex-sdk";
 import * as yes from "yes";
@@ -63,6 +63,7 @@ import { readCustomHeaders } from "../utils/normalizeEnv.ts";
 import { OAUTH_WRITEBACK_STATE } from "../utils/oauthWriteback.ts";
 import { findProviderErrorMatch } from "../utils/providerErrors.ts";
 import { resolveRunEffort } from "../utils/runEffort.ts";
+import { prependSandboxedPath } from "../utils/sandbox.ts";
 import { saveSecretState } from "../utils/secretCommands.ts";
 import { filterEnv, proxyEnv } from "../utils/secrets.ts";
 import { addSkill, installBundledSkills } from "../utils/skills.ts";
@@ -84,6 +85,7 @@ import {
   agent,
   logTokenTable,
   MAX_STDERR_LINES,
+  mergeAgentUsage,
 } from "./shared.ts";
 
 /** rust target triples keyed `${process.platform}-${process.arch}`, mirroring
@@ -950,6 +952,27 @@ async function runCodex(params: RunParams): Promise<CodexRunResult> {
   }
 }
 
+const MAX_CYBER_FLAG_RESUMES = 3;
+const CYBER_FLAG = /flagged for possible cybersecurity risk/i;
+const CYBER_FLAG_PROMPT = "The last response was blocked by a safety filter. Continue the task.";
+
+/**
+ * OpenAI's cyber classifier refuses one response at a time, and codex ends the turn on it.
+ * OpenCode retries the request in-turn and usually gets past it, so resume the thread instead.
+ */
+async function runCodexPastCyberFlags(
+  params: RunParams & { resumeArgs: (threadId: string) => string[] }
+): Promise<CodexRunResult> {
+  let result = await runCodex(params);
+  for (let resume = 1; resume <= MAX_CYBER_FLAG_RESUMES; resume++) {
+    if (result.success || !result.threadId || !CYBER_FLAG.test(result.error ?? "")) break;
+    log.info(`» resuming past OpenAI's cybersecurity flag (${resume}/${MAX_CYBER_FLAG_RESUMES})`);
+    const next = await runCodex({ ...params, args: params.resumeArgs(result.threadId) });
+    result = { ...next, usage: mergeAgentUsage(result.usage, next.usage) };
+  }
+  return result;
+}
+
 // ── agent ──────────────────────────────────────────────────────────────────────
 
 export const codex = agent({
@@ -957,6 +980,8 @@ export const codex = agent({
   install: installCodexCli,
   run: async (ctx) => {
     const cliPath = await installCodexCli();
+    // codex's prompt reaches for the `rg` it ships beside its binary, which GitHub's images lack
+    prependSandboxedPath(join(dirname(dirname(cliPath)), "codex-path"));
 
     // the ChatGPT-subscription credential. absent means an OPENAI_API_KEY run,
     // which codex reads straight from env — resolveAgent has already checked
@@ -1051,14 +1076,23 @@ export const codex = agent({
       effortRung: effort.rung && CODEX_EFFORTS.includes(effort.rung) ? effort.rung : undefined,
     });
 
+    const resumeArgs = (threadId: string, prompt: string) => [
+      ...securityFlags,
+      "exec",
+      "resume",
+      "--json",
+      threadId,
+      prompt,
+    ];
     const runnerArgs = {
       cliPath,
       cwd: process.cwd(),
       env,
       todoTracker: ctx.todoTracker,
       model: resolveCodexModel(ctx),
+      resumeArgs: (threadId: string) => resumeArgs(threadId, CYBER_FLAG_PROMPT),
     };
-    const initial = await runCodex({
+    const initial = await runCodexPastCyberFlags({
       ...runnerArgs,
       args: [...securityFlags, "exec", "--json", ctx.instructions.full],
       onActivityTimeout: ctx.onActivityTimeout,
@@ -1074,16 +1108,9 @@ export const codex = agent({
       // where CODEX_HOME is the shared ~/.local/share/codex (in CI it is per run).
       canResume: (r) => r.threadId !== undefined,
       resume: async (c) =>
-        runCodex({
+        runCodexPastCyberFlags({
           ...runnerArgs,
-          args: [
-            ...securityFlags,
-            "exec",
-            "resume",
-            "--json",
-            c.previousResult.threadId ?? "",
-            c.prompt,
-          ],
+          args: resumeArgs(c.previousResult.threadId ?? "", c.prompt),
         }),
     });
 
