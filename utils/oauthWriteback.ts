@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import * as core from "@actions/core";
 import { z } from "zod";
 import { apiFetch } from "./apiFetch.ts";
@@ -79,15 +79,15 @@ async function writeBackEntry(apiToken: string, entry: OAuthWriteback): Promise<
     core.warning("oauth post-hook: incomplete writeback entry — skipping");
     return;
   }
-  if (!existsSync(entry.authPath)) {
-    core.info(`oauth post-hook: ${entry.authPath} not found — nothing to write back`);
-    return;
-  }
-
   let authFileContent: string;
   try {
     authFileContent = readFileSync(entry.authPath, "utf8");
   } catch (err) {
+    // `existsSync` read an EACCES as "not found", which hid lost writebacks (#1742).
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      core.info(`oauth post-hook: ${entry.authPath} not found — nothing to write back`);
+      return;
+    }
     core.warning(`oauth post-hook: cannot read ${entry.authPath} — ${err}`);
     return;
   }

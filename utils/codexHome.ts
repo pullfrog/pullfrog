@@ -31,7 +31,7 @@
 //      refresh_token, id_token?, account_id? } }` into OpenCode's shape
 //      `{ openai: { type: "oauth", refresh, access, expires, accountId } }`
 //   4. materializes it to disk under a path the MCP-shell mount-namespace
-//      sandbox can hide from bash: `/var/lib/pullfrog/run-*/opencode/auth.json`
+//      sandbox can hide from bash: `/var/lib/pullfrog/<user>/run-*/opencode/auth.json`
 //      in CI (sudo-bootstrapped, fail-closed if sudo unavailable),
 //      `$HOME/.local/share/opencode/auth.json` locally (sandbox is no-op
 //      locally so the path is irrelevant to security)
@@ -518,22 +518,20 @@ function bootstrapPullfrogDataDir(): string | null {
   } catch {
     primaryGroup = user;
   }
+  // one dir per runner user: re-owning the shared parent locked every other user's
+  // live run out of its own dir on a host with several runner users (#1742).
+  const userDir = join(PULLFROG_DATA_DIR, user);
   // `-n` (non-interactive) makes sudo fail-fast on locked-down runners
   // instead of prompting and timing out.
   try {
-    execFileSync(trustedBinary("sudo"), ["-n", "mkdir", "-p", PULLFROG_DATA_DIR], {
-      stdio: "pipe",
-    });
-    execFileSync(
-      trustedBinary("sudo"),
-      ["-n", "chown", `${user}:${primaryGroup}`, PULLFROG_DATA_DIR],
-      {
-        stdio: "pipe",
-      }
-    );
-    execFileSync(trustedBinary("sudo"), ["-n", "chmod", "700", PULLFROG_DATA_DIR], {
-      stdio: "pipe",
-    });
+    for (const args of [
+      ["mkdir", "-p", userDir],
+      ["chmod", "711", PULLFROG_DATA_DIR],
+      ["chown", `${user}:${primaryGroup}`, userDir],
+      ["chmod", "700", userDir],
+    ]) {
+      execFileSync(trustedBinary("sudo"), ["-n", ...args], { stdio: "pipe" });
+    }
   } catch (err) {
     log.warning(
       `» subscription auth skipped: could not create ${PULLFROG_DATA_DIR} (${err instanceof Error ? err.message : String(err)}). ` +
@@ -550,7 +548,7 @@ function bootstrapPullfrogDataDir(): string | null {
   // one per run: concurrent runs on a self-hosted host shared opencode's SQLite db and
   // the codex CLI's home here (#1475). the post hook removes it after the writeback; a
   // GitHub-hosted VM is discarded anyway, so it skips that post-step npm bootstrap.
-  const runDir = mkdtempSync(join(PULLFROG_DATA_DIR, "run-"));
+  const runDir = mkdtempSync(join(userDir, "run-"));
   // not a credential: this is just the one state writer the secret-command guard allows.
   if (process.env.RUNNER_ENVIRONMENT !== "github-hosted") {
     saveSecretState(SUBSCRIPTION_DATA_DIR_STATE, runDir);
