@@ -384,6 +384,10 @@ async function lookupReferences(params: LookupReferencesParams) {
       treeish: params.treeish,
     });
   });
+  let stderrHead = "";
+  child.stderr.once("data", (chunk: Buffer) => {
+    stderrHead = chunk.toString("utf8").trim().split("\n").slice(0, 2).join(" ");
+  });
   child.stderr.resume();
   const status = await new Promise<number | null>((resolve) => {
     child.once("error", (error) => {
@@ -395,7 +399,7 @@ async function lookupReferences(params: LookupReferencesParams) {
   });
 
   if (spawnError || (status !== 0 && status !== 1)) {
-    const error = spawnError ?? `git grep exit ${status ?? "unknown"}`;
+    const error = spawnError ?? `git grep exit ${status ?? "unknown"}: ${stderrHead}`;
     log.warning(`» change impact lookup failed: ${error}`);
     return { buckets: emptyBuckets(params.candidates), error };
   }

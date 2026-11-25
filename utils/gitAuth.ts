@@ -413,27 +413,18 @@ function listMissingObjects(args: string[]): string[] {
     .map((line) => line.slice(1));
 }
 
-/** `actions/checkout` makes every sparse checkout a `blob:none` clone, so skip its out-of-cone blobs. */
-function sparseFilterArgs(): string[] {
-  const git = (args: string[]) => $("git", args, { log: false }).trim();
-  const sparse = git(["config", "--type=bool", "--default=false", "--get", "core.sparseCheckout"]);
-  if (sparse !== "true") return [];
-  const patterns = git(["rev-parse", "--git-path", "info/sparse-checkout"]);
-  return [`--filter=sparse:oid=${git(["hash-object", "-w", patterns])}`];
-}
-
 /**
  * git's own lazy fetch (`promisor-remote.c`), run under askpass ahead of a working-tree command
  * that would otherwise trigger it with no credentials and die half way through (#1632). Flags
  * match git's, noop negotiation included. A second round covers `tree:0`, whose blobs appear once
- * their trees have.
+ * their trees have. Whole trees even on a sparse checkout: change impact's `git grep`, range-diff
+ * and the agent's `git show` all read outside the cone (#1752).
  */
 export async function prefetchPromisedObjects(
   params: GitAuthOptions & { revs: string[] }
 ): Promise<void> {
   if (!isPartialClone()) return;
-  const args = [...sparseFilterArgs(), ...params.revs];
-  let missing = listMissingObjects(args);
+  let missing = listMissingObjects(params.revs);
   while (missing.length > 0) {
     await $gitFetchWithDeepen(
       [
@@ -452,7 +443,7 @@ export async function prefetchPromisedObjects(
       "promised objects"
     );
     log.info(`» fetched ${missing.length} promised objects`);
-    const remaining = listMissingObjects(args);
+    const remaining = listMissingObjects(params.revs);
     if (remaining.join() === missing.join()) return;
     missing = remaining;
   }
