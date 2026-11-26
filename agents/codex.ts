@@ -718,6 +718,7 @@ async function runCodex(params: RunParams): Promise<CodexRunResult> {
   let finalOutput = "";
   let threadId: string | undefined;
   let turnError: string | null = null;
+  let streamError: string | null = null;
   let lastProviderError: string | null = null;
   let stdoutBuffer = "";
 
@@ -820,7 +821,8 @@ async function runCodex(params: RunParams): Promise<CodexRunResult> {
         log.info(`» turn failed: ${turnError}`);
         return;
       case "error":
-        turnError = event.message;
+        // codex reports its retries here too ("Reconnecting... 2/5"); a fatal one also exits 1
+        streamError = event.message;
         log.info(`» codex error: ${event.message}`);
         return;
       case "item.started":
@@ -919,6 +921,7 @@ async function runCodex(params: RunParams): Promise<CodexRunResult> {
       const stderrSnapshot = recentStderr.join("\n");
       const error =
         turnError ||
+        streamError ||
         stderrSnapshot ||
         (lastProviderError && `provider error: ${lastProviderError}`) ||
         `unknown error - no output from Codex CLI (exit ${result.exitCode})`;
