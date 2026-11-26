@@ -3,7 +3,7 @@ import { defineFixture, getAgentOutput } from "../utils.ts";
 
 /**
  * BYOK missing-key error test — proves that an account configured for a
- * BYOK model (here: `moonshotai/kimi-k2`) but with no provider API keys
+ * BYOK model (here: `moonshotai/kimi-k3`) but with no provider API keys
  * present in the runner env fails fast with an actionable error instead
  * of silently downgrading to a free model.
  *
@@ -58,7 +58,7 @@ export const test: TestRunnerOptions = {
     // no-model path also refuses now (an unauthenticated opencode catalog no
     // longer counts as a credential), but with the generic "any provider key"
     // copy, which these validators don't match.
-    PULLFROG_MODEL: "moonshotai/kimi-k2",
+    PULLFROG_MODEL: "moonshotai/kimi-k3",
   },
   tags: ["agnostic"],
 };

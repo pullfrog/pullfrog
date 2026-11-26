@@ -462,6 +462,9 @@ export const bundledProviders = {
         displayName: "Kimi K2",
         resolve: "moonshotai/kimi-k2.7-code",
         openRouterResolve: "openrouter/moonshotai/kimi-k2.7-code",
+        // models.dev deprecated Moonshot's whole K2 line (k2.6, k2.7-code and its highspeed twin) on
+        // 2026-11-26, leaving K3 as the only direct build; stored picks fold forward to it.
+        fallback: "moonshotai/kimi-k3",
       },
     },
   }),
@@ -1975,12 +1978,7 @@ const PROVIDER_LADDERS: Record<string, Ladder> = {
     standard: "xai/grok",
     deep: "xai/grok",
   },
-  moonshotai: {
-    minimal: "moonshotai/kimi-k2",
-    light: "moonshotai/kimi-k2",
-    standard: "moonshotai/kimi-k3",
-    deep: "moonshotai/kimi-k3",
-  },
+  // no moonshotai ladder since 2026-11-26: with K2 retired its direct API serves only K3, one model.
   openrouter: {
     minimal: "openrouter/deepseek-flash",
     light: "openrouter/gpt-luna",

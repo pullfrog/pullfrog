@@ -87,7 +87,7 @@ export const providers: ProviderEntry[] = [
   },
   {
     name: "moonshotai",
-    flagship: "moonshotai/kimi-k2",
+    flagship: "moonshotai/kimi-k3",
     agent: "opencode",
   },
   {
