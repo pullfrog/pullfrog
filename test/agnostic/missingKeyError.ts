@@ -26,7 +26,7 @@ function validator(result: AgentResult): ValidationCheck[] {
   const output = getAgentOutput(result);
   return [
     { name: "error_has_marker", passed: output.includes("No API key found") },
-    { name: "error_names_model", passed: output.includes("Kimi K2") },
+    { name: "error_names_model", passed: output.includes("Kimi K3") },
     { name: "error_names_env_var", passed: output.includes("MOONSHOT_API_KEY") },
   ];
 }
