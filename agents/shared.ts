@@ -137,6 +137,15 @@ export interface AgentResult {
  */
 export const DEADLINE_RESERVE_MS = 5 * 60_000;
 
+/** a `reviewfrog` lens's budget: leaves 4,608 of 4,615 finished lenses untouched (#1524). */
+export const LENS_BUDGET_MS = 20 * 60_000;
+
+/** why a subagent dispatch is refused, on both harnesses (#1666, #1718). */
+export const RESERVE_DISPATCH_REFUSAL =
+  "the run is within 5 minutes of its time limit, so no subagent may start. Submit your work now, with what you have.";
+export const LENS_STOPPED_DISPATCH_REFUSAL =
+  "Pullfrog stopped a review specialist in this run for exceeding its time budget, so no other may start. Continue with the findings you have.";
+
 /**
  * Context passed to agent.run() and threaded through the post-run loop.
  *

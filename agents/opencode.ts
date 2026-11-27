@@ -120,6 +120,7 @@ import {
   type AgentRunContext,
   agent,
   DEADLINE_RESERVE_MS,
+  LENS_BUDGET_MS,
   MAX_STDERR_LINES,
   mergeAgentUsage,
 } from "./shared.ts";
@@ -501,9 +502,6 @@ function startInnerActivityWatchdog(params: {
     firedThisTurn: () => fired,
   };
 }
-
-/** a `reviewfrog` lens's budget: leaves 4,608 of 4,615 finished lenses untouched (#1524). */
-const LENS_BUDGET_MS = 20 * 60_000;
 
 function noteOrchestrator(session: OpencodeSession, text: string): void {
   session.note(text).catch((err) => log.debug(`» could not note the orchestrator: ${String(err)}`));

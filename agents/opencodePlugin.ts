@@ -56,7 +56,12 @@ import { openCodeHomeEnv } from "../utils/openCodeModels.ts";
 import { resolveRepoRoot } from "../utils/sandbox.ts";
 import { HOOK_ASSET_TMPDIR_RELPATHS } from "./nativeFsDenies.ts";
 import { REVIEWER_AGENT_NAME } from "./reviewer.ts";
-import { type AgentRunContext, DEADLINE_RESERVE_MS } from "./shared.ts";
+import {
+  type AgentRunContext,
+  DEADLINE_RESERVE_MS,
+  LENS_STOPPED_DISPATCH_REFUSAL,
+  RESERVE_DISPATCH_REFUSAL,
+} from "./shared.ts";
 
 export const PULLFROG_BUS_EVENT_TYPE = "pullfrog_bus_event" as const;
 
@@ -327,18 +332,14 @@ export function lensStoppedFile(tmpdir: string): string {
 function dispatchGateSource(ctx: AgentRunContext): string {
   const startsAt =
     ctx.deadlineAt === undefined ? Number.POSITIVE_INFINITY : ctx.deadlineAt - DEADLINE_RESERVE_MS;
-  const reserveRefusal =
-    "the run is within 5 minutes of its time limit, so no subagent may start. Submit your work now, with what you have.";
-  const lensRefusal =
-    "Pullfrog stopped a review specialist in this run for exceeding its time budget, so no other may start. Continue with the findings you have.";
   return `import { existsSync } from "node:fs";
 
 const RESERVE_STARTS_AT = ${startsAt};
 const LENS_STOPPED_FILE = ${JSON.stringify(lensStoppedFile(ctx.tmpdir))};
 
 function refuseDispatch(agent: unknown) {
-  if (Date.now() >= RESERVE_STARTS_AT) throw new Error(${JSON.stringify(reserveRefusal)});
-  if (agent === ${JSON.stringify(REVIEWER_AGENT_NAME)} && existsSync(LENS_STOPPED_FILE)) throw new Error(${JSON.stringify(lensRefusal)});
+  if (Date.now() >= RESERVE_STARTS_AT) throw new Error(${JSON.stringify(RESERVE_DISPATCH_REFUSAL)});
+  if (agent === ${JSON.stringify(REVIEWER_AGENT_NAME)} && existsSync(LENS_STOPPED_FILE)) throw new Error(${JSON.stringify(LENS_STOPPED_DISPATCH_REFUSAL)});
 }`;
 }
 

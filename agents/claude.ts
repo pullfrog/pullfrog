@@ -32,7 +32,12 @@ import {
   VERTEX_MODEL_ID_ENV,
 } from "../models.ts";
 
-import { AGENT_ACTIVITY_TIMEOUT_MS, getIdleMs, markActivity } from "../utils/activity.ts";
+import {
+  AGENT_ACTIVITY_TIMEOUT_MS,
+  getIdleMs,
+  markActivity,
+  watchdogBudgetMs,
+} from "../utils/activity.ts";
 import { preflightClaudeSubscription } from "../utils/claudeSubscription.ts";
 import { formatJsonValue, log } from "../utils/cli.ts";
 import { installFromNpmTarball } from "../utils/install.ts";
@@ -73,6 +78,8 @@ import {
   type AgentRunContext,
   type AgentUsage,
   agent,
+  DEADLINE_RESERVE_MS,
+  LENS_BUDGET_MS,
   logTokenTable,
   MAX_STDERR_LINES,
 } from "./shared.ts";
@@ -406,6 +413,7 @@ type RunParams = {
   todoTracker?: TodoTracker | undefined;
   onActivityTimeout?: (() => void) | undefined;
   onToolUse?: ((event: { toolName: string; input: unknown }) => void) | undefined;
+  onSystemEvent?: ((event: ClaudeSystemEvent) => void) | undefined;
 };
 
 type ClaudeRunResult = AgentResult & { sessionId?: string | undefined };
@@ -515,6 +523,7 @@ export async function runClaude(params: RunParams): Promise<ClaudeRunResult> {
       // SDK ever adds one) wouldn't go silently misattributed.
       const label = eventLabel(event);
       log.debug(withLabel(label, `» ${params.label} system event`));
+      params.onSystemEvent?.(event);
     },
     assistant: (event: ClaudeAssistantEvent) => {
       settled = false;
@@ -988,8 +997,9 @@ const MANAGED_SETTINGS_PATH = `${MANAGED_SETTINGS_DIR}/managed-settings.json`;
 
 /**
  * env var carrying the gate-server URL to the Claude subprocess. the Stop
- * hook curls it on every stop; an absent value disables the hook (e.g.
- * non-CI local dev paths that don't install managed settings either).
+ * hook curls its `/gates` on every stop and the PreToolUse gate its `/pretool`;
+ * an absent value disables both (e.g. non-CI local dev paths that don't
+ * install managed settings either).
  */
 const STOP_HOOK_GATE_URL_ENV = "PULLFROG_GATE_URL";
 
@@ -1016,7 +1026,7 @@ function buildStopHookScript(): string {
     `url="\${${STOP_HOOK_GATE_URL_ENV}:-}"`,
     'if [ -z "$url" ]; then exit 0; fi',
     "cat >/dev/null",
-    'response=$(curl -fsS --max-time 30 "$url" 2>/dev/null || printf \'{"block":false}\')',
+    'response=$(curl -fsS --max-time 30 "$url/gates" 2>/dev/null || printf \'{"block":false}\')',
     'block=$(printf "%s" "$response" | jq -r ".block // false")',
     'if [ "$block" != "true" ]; then exit 0; fi',
     'reason=$(printf "%s" "$response" | jq -r ".reason // \\"\\"")',
@@ -1338,6 +1348,11 @@ export const claude = agent({
     // unset, first-party routes defer every MCP tool behind ToolSearch, a turn spent before the
     // first Pullfrog call. `false` loads them up front, as gateway routes already do.
     env.ENABLE_TOOL_SEARCH ||= "false";
+    // `-p` stops background subagents 10 minutes after the orchestrator's last turn and exits with no
+    // turn to use their results (#1757). the gate server's lens budget ends them first.
+    env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS ||= String(
+      watchdogBudgetMs(LENS_BUDGET_MS, "PULLFROG_E2E_LENS_BUDGET_MS") + DEADLINE_RESERVE_MS
+    );
     // claude-code refuses bypass mode as root unless told it is sandboxed; our policy layer holds at
     // any uid. undocumented, so revalidate on each claude-code bump (wiki/security.md).
     if (process.getuid?.() === 0) env.IS_SANDBOX = "1";
@@ -1450,7 +1465,8 @@ export const claude = agent({
 
     // gate server lives only as long as the claude subprocess does. the
     // Stop hook curls `gateServer.url` and turns the response into its
-    // `{decision: "block", reason}` payload (or exits 0 to allow stop).
+    // `{decision: "block", reason}` payload (or exits 0 to allow stop);
+    // `trackTask` tells it which subagents still run.
     await using gateServer = await startGateServer(ctx);
 
     const result = await runClaude({
@@ -1461,6 +1477,7 @@ export const claude = agent({
       todoTracker: ctx.todoTracker,
       onActivityTimeout: ctx.onActivityTimeout,
       onToolUse: ctx.onToolUse,
+      onSystemEvent: gateServer.trackTask,
       args: [...baseArgs, "-p", ctx.instructions.full],
     });
 
