@@ -343,6 +343,28 @@ function refuseDispatch(agent: unknown) {
 }`;
 }
 
+/**
+ * Anthropic refuses a tool whose input schema has `anyOf`, `oneOf` or `allOf` at its root, and the
+ * refusal fails every request of the run: one MCP server's tool shaped so (Better Stack's
+ * `documentation`) killed the log audit. Lifting the branches into the root keeps every argument;
+ * the dropped "one of these" rule is still checked by the server when the tool is called.
+ */
+function toolSchemaRootSource(): string {
+  return `type JsonObject = { [key: string]: any };
+
+function flattenSchemaRoot(schema: JsonObject) {
+  for (const key of ["allOf", "anyOf", "oneOf"]) {
+    if (!Array.isArray(schema[key])) continue;
+    const branches: JsonObject[] = schema[key].filter((branch: unknown) => branch && typeof branch === "object");
+    delete schema[key];
+    schema.properties = Object.assign({}, ...branches.map((branch) => branch.properties), schema.properties);
+    const required: string[][] = branches.map((branch) => branch.required ?? []);
+    const lifted = key === "allOf" ? required.flat() : required.reduce((all, names) => all.filter((name) => names.includes(name)), required[0] ?? []);
+    schema.required = [...new Set([...(schema.required ?? []), ...lifted])];
+  }
+}`;
+}
+
 /** the id the V2 gate registers under, which the harness requires `plugin.list` to report active. */
 export const OPENCODE_V2_GATE_PLUGIN_ID = "pullfrog.gate";
 
@@ -360,6 +382,7 @@ export function buildOpencode2GateSource(ctx: AgentRunContext): string {
 // tmpdir (XDG_CONFIG_HOME/opencode/plugin/), never inside the user's working tree.
 ${realPathGateSource(ctx)}
 ${dispatchGateSource(ctx)}
+${toolSchemaRootSource()}
 const SUBAGENT_DENIED_TOOLS = new Set(${JSON.stringify(ctx.subagentDeniedTools)});
 
 // the orchestrator calls a tool (its \`subagent\` dispatch) before any subagent
@@ -370,11 +393,14 @@ export default {
   id: ${JSON.stringify(OPENCODE_V2_GATE_PLUGIN_ID)},
   async setup(ctx: {
     tool: { hook: (name: string, fn: (event: { tool?: string; sessionID?: string; input?: Record<string, unknown> }) => void) => Promise<unknown> };
-    session: { hook: (name: string, fn: (event: { options: { maxTokens?: number } }) => void, options: { providerID: string }) => Promise<unknown> };
+    session: { hook: (name: string, fn: (event: { options: { maxTokens?: number }; tools: Record<string, { input: JsonObject }> }) => void, options?: { providerID: string }) => Promise<unknown> };
   }) {
     // V2 fails the run on a summary cut off at the output limit, and a custom endpoint's limit can be
     // smaller than a summary. the limit is optional on that API, so a compaction just doesn't send it.
     await ctx.session.hook("compaction", (event) => { delete event.options.maxTokens; }, { providerID: ${JSON.stringify(OPENAI_COMPATIBLE_PROVIDER)} });
+    for (const kind of ["context", "compaction", "generate"]) {
+      await ctx.session.hook(kind, (event) => { for (const tool of Object.values(event.tools)) flattenSchemaRoot(tool.input); });
+    }
     await ctx.tool.hook("execute.before", (event) => {
       const tool = typeof event?.tool === "string" ? event.tool : "";
       const sessionID = typeof event?.sessionID === "string" ? event.sessionID : "";
