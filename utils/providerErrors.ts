@@ -98,8 +98,20 @@ const PROVIDER_ERROR_PATTERNS: ProviderErrorPattern[] = [
   { regex: /\bhit your usage limit\b/i, label: PROVIDER_USAGE_LIMIT_LABEL },
   // the message opencode synthesizes for a Go cap's 429 and publishes only on `session.status`:
   // `weekly usage limit reached. It will reset in 4 days. …` (#1575). the window name varies.
-  { regex: /usage limit reached\. It will reset in/i, label: PROVIDER_USAGE_LIMIT_LABEL },
-  { regex: /Free usage exceeded, subscribe to Go/i, label: PROVIDER_BILLING_EXHAUSTED_LABEL },
+  // opencode's every resetting cap says it the same way since (Go, workspace budget, ChatGPT sharing):
+  // `OpenCode Go usage limit reached (monthly, resets in 4h 34m)` (#1759). the free tier is below.
+  { regex: /(?<!free )usage limit reached/i, label: PROVIDER_USAGE_LIMIT_LABEL },
+  // Zen's free tier, before and after #1759: `Free usage limit reached. Connect a provider or …`.
+  {
+    regex: /Free usage (?:exceeded, subscribe to Go|limit reached\. Connect a provider)/i,
+    label: PROVIDER_BILLING_EXHAUSTED_LABEL,
+  },
+  // a BYOK key's own resetting ceiling: `Key limit exceeded (monthly limit). … resets 2026-12-01`.
+  // a key we mint has no reset (`utils/openrouter.ts`), so only its `(total limit)` is billing (#1759).
+  {
+    regex: /Key limit exceeded \((?:daily|weekly|monthly) limit\)/i,
+    label: PROVIDER_USAGE_LIMIT_LABEL,
+  },
   // the OpenRouter shapes `isRouterKeylimitExhaustedError` matches. on a Router
   // run those mean the PULLFROG wallet is empty and `renderRunError` returns a
   // `BillingError` before ever reaching this list; on a BYOK run the very same

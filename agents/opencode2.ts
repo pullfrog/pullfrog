@@ -353,16 +353,10 @@ function dispatchEvent(ctx: RunnerContext, event: OpenCodeEvent): void {
       ctx.executionEnded = undefined;
       return;
     case "session.step.failed":
-      onProviderError(ctx, {
-        sessionID: event.data.sessionID,
-        message: describeError(event.data.error),
-      });
+      onProviderError(ctx, { sessionID: event.data.sessionID, error: event.data.error });
       return;
     case "session.retry.scheduled":
-      onProviderError(ctx, {
-        sessionID: event.data.sessionID,
-        message: describeError(event.data.error),
-      });
+      onProviderError(ctx, { sessionID: event.data.sessionID, error: event.data.error });
       // a capped provider asks for days, and V2 keeps retrying at 15min a time. the watchdog would only
       // re-prompt into the same wait, so the turn ends now. `at` is capped; `retryAfterMs` is what it asked.
       if (
@@ -485,11 +479,19 @@ function describeError(error: SessionStructuredError): string {
     : `${error.message}${status}`;
 }
 
-function onProviderError(ctx: RunnerContext, params: { sessionID: string; message: string }): void {
+function onProviderError(
+  ctx: RunnerContext,
+  params: { sessionID: string; error: SessionStructuredError }
+): void {
   if (params.sessionID !== ctx.orchestratorSessionID) return;
-  log.info(`» ${ctx.label} provider error: ${params.message}`);
-  const match = findProviderErrorMatch(params.message);
-  if (match) ctx.diagnostic.lastProviderError = match.label;
+  const message = describeError(params.error);
+  log.info(`» ${ctx.label} provider error: ${message}`);
+  // the status patterns read V1's `status: 503`, not V2's `(503)`; an HTTP error the text
+  // doesn't classify is still the provider's, not a silent model (#1760)
+  const status = params.error.status ?? 0;
+  const label =
+    findProviderErrorMatch(message)?.label ?? (status >= 400 ? `HTTP ${status}` : undefined);
+  if (label) ctx.diagnostic.lastProviderError = label;
 }
 
 /** best-effort: the close-time mirror catches up whatever a failed one missed. */
